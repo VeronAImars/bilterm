@@ -150,7 +150,9 @@ impl WindowManager {
         let mut idx = 2usize;
         loop {
             let candidate = format!("session-{idx}");
-            if !existing.contains(&candidate) {
+            if !existing.contains(&candidate)
+                && !self.window_manage.background_sessions.contains_key(&candidate)
+            {
                 return candidate;
             }
             idx += 1;
@@ -202,23 +204,30 @@ impl WindowManager {
         }
     }
 
-    /// Resets the workspace to a clean 1-pane session named `name` (or auto-generated if `None`).
+    /// Starts a clean 1-pane session named `name` (or auto-generated if `None`) and makes it active.
+    /// The outgoing session keeps running in the background; only re-creating the active session
+    /// under its own name resets it in place. A name that is already live in the background is refused.
     /// When `blank` is `true`, clears initial command history and scrollback without saving the outgoing session.
     pub fn create_new_session(&mut self, name_opt: Option<&str>, blank: bool) -> Result<String> {
         let outgoing = sanitize_profile_name(&self.config.history_session);
-        if !blank && self.config.layout_autosave {
+        let new_name = match name_opt.filter(|s| !s.trim().is_empty()) {
+            Some(raw) => sanitize_profile_name(raw),
+            None if blank => "blank".to_string(),
+            None => self.generate_next_session_name(),
+        };
+        if new_name != outgoing && self.window_manage.background_sessions.contains_key(&new_name) {
+            return Err(crate::error::BiltermError::Config(format!(
+                "session '{new_name}' is already running in the background (use :session switch {new_name})"
+            )));
+        }
+        // An empty pane map means the caller already parked the outgoing session.
+        if !blank && self.config.layout_autosave && !self.panes.is_empty() {
             let snap = self.snapshot_session(&outgoing);
             self.layout_profiles_mem.insert(outgoing.clone(), snap);
             if self.should_persist_sessions_to_disk() {
                 let _ = self.save_session(&outgoing);
             }
         }
-
-        let new_name = match name_opt.filter(|s| !s.trim().is_empty()) {
-            Some(raw) => sanitize_profile_name(raw),
-            None if blank => "blank".to_string(),
-            None => self.generate_next_session_name(),
-        };
 
         let (rows, cols) = self.default_size;
         let mut initial_pane = if self.headless_mode {
@@ -239,6 +248,9 @@ impl WindowManager {
         let mut new_panes = BTreeMap::new();
         new_panes.insert(1, initial_pane);
         self.forget_all_pane_ids_before_replace();
+        if new_name != outgoing {
+            self.park_active_session();
+        }
         self.panes = new_panes;
         self.split_tree = SplitTree::new(1);
         self.z_stack = ZStack::new(1);
@@ -351,45 +363,45 @@ impl WindowManager {
         Ok((old_name, new_name))
     }
 
-    /// Switches to an existing session `name`, or creates a new session named `name` if it does not exist yet.
+    /// Switches to session `name`, or creates it if it does not exist yet. The outgoing session
+    /// keeps running in the background whichever way the target comes up (live, saved, or new).
+    /// Returns `(session, pane_count, created)`; switching to the active session changes nothing.
     pub fn switch_or_create_session(&mut self, name: &str) -> Result<(String, usize, bool)> {
         let target = sanitize_profile_name(name);
-        if self.window_manage.background_sessions.contains_key(name)
-            || self.window_manage.background_sessions.contains_key(&target)
-        {
+        let live = [name, target.as_str()]
+            .into_iter()
+            .find(|k| self.window_manage.background_sessions.contains_key(*k))
+            .map(str::to_string);
+        if let Some(key) = live {
             let count = self
-                .switch_to_session_preserving_panes(if self.window_manage.background_sessions.contains_key(name) { name } else { &target })
+                .switch_to_session_preserving_panes(&key)
                 .map_err(crate::error::BiltermError::Config)?;
             return Ok((self.config.history_session.clone(), count, false));
         }
-        let exists_on_disk = self
-            .resolve_session_dir()
-            .map(|d| d.join(format!("{target}.toml")).is_file())
-            .unwrap_or(false);
-        let exists_in_mem = self.layout_profiles_mem.contains_key(&target);
-        if exists_on_disk || exists_in_mem {
-            let outgoing = sanitize_profile_name(&self.config.history_session);
-            if self.config.layout_autosave && outgoing != target {
-                let snap = self.snapshot_session(&outgoing);
-                self.layout_profiles_mem.insert(outgoing.clone(), snap);
-                if self.should_persist_sessions_to_disk() {
-                    let _ = self.save_session(&outgoing);
-                }
-            }
-            let count = if exists_on_disk {
-                self.restore_session(&target)?
-            } else {
-                self.switch_layout_profile(&target)?
-            };
-            self.config.history_session = target.clone();
-            self.config.active_layout_profile = target.clone();
-            self.sync_history_config();
-            self.reflow_default_viewport();
-            Ok((target, count, false))
-        } else {
-            let created = self.create_new_session(Some(&target), false)?;
-            Ok((created, 1, true))
+        let outgoing = sanitize_profile_name(&self.config.history_session);
+        if outgoing == target {
+            return Ok((target, self.panes.len(), false));
         }
+        let saved = self.layout_profiles_mem.contains_key(&target)
+            || self
+                .resolve_session_dir()
+                .map(|d| d.join(format!("{target}.toml")).is_file())
+                .unwrap_or(false);
+        if self.config.layout_autosave {
+            let snap = self.snapshot_session(&outgoing);
+            self.layout_profiles_mem.insert(outgoing.clone(), snap);
+            if self.should_persist_sessions_to_disk() {
+                let _ = self.save_session(&outgoing);
+            }
+        }
+        // Restoring or creating the target over the live panes would drop them and kill their
+        // programs, so the outgoing session is parked first.
+        let count = self
+            .switch_to_session_preserving_panes(&target)
+            .map_err(crate::error::BiltermError::Config)?;
+        self.sync_history_config();
+        self.reflow_default_viewport();
+        Ok((target, count, !saved))
     }
 
     /// Moves `session_opt` (or the active session) to `target_pos` (`up`, `down`, `top`, `bottom`, or 1-based index).
@@ -459,6 +471,10 @@ impl WindowManager {
             ));
         }
         let mut removed = self.layout_profiles_mem.remove(&target).is_some();
+        // Deleting a session is the explicit way to end one that is still live in the background.
+        for key in [name, target.as_str()] {
+            removed |= self.window_manage.background_sessions.remove(key).is_some();
+        }
         if let Ok(dir) = self.resolve_session_dir() {
             let p = dir.join(format!("{target}.toml"));
             if p.is_file() && std::fs::remove_file(p).is_ok() {
