@@ -244,6 +244,7 @@ pub const HELP_LINES: &[(&str, &str)] = &[
     (":appearance <legacy|obsidian|midnight|arctic|liquid|tron>", "Switch the visual look; legacy restores the classic retro style"),
     (":chrome title all|focused|none|auto", "Non-Legacy looks: which pane frames show a title"),
     (":chrome ring on|off", "Non-Legacy looks: accent-colored border on the focused pane"),
+    (":cycles [on|off|1..60]", "TRON: light cycles race around the active window border; value = cells per second (default 12, 0/off = static; config appearance.lightcycle_speed)"),
     (":panel scale <75..200>", "GUI only: scale the font of the side drawer, :mcp console and agent traffic window (100 = normal)"),
     (":glyphs <unicode|cp437|nerd-font|ascii>", "Switch box-drawing & status indicator glyph pack"),
     (":cursor [window|global] [shape|blink|color]", "Customize active window or global cursor (block|hollow|underline|bar|custom, cursor-color)"),

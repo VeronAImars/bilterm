@@ -77,6 +77,7 @@ fn assert_action_reachable(action: &Action) {
         Action::PanelScaleStepOf(..) => Some(":mcp scale +"),
         Action::ChromeTitle(_) => Some(":chrome title focused"),
         Action::ChromeRing(_) => Some(":chrome ring on"),
+        Action::LightCycles(_) => Some(":cycles 20"),
         Action::Cursor(_) => Some(":cursor block"),
         Action::Outline { .. } => Some(":outline double"),
         Action::CrosshairToggle { .. } => Some(":crosshair"),
@@ -336,6 +337,7 @@ fn every_action_is_reachable_from_keymap_colon_or_rpc() {
         Action::PanelScaleStepOf(crate::ui::typography::PanelTarget::Mcp, 10),
         Action::ChromeTitle(Some(crate::ui::design::TitlePolicy::Focused)),
         Action::ChromeRing(true),
+        Action::LightCycles(crate::ui::lightcycle::LightCycleOp::Speed(20)),
         Action::Cursor(CaretStyle::SolidBlock),
         Action::Outline {
             window: Some(OutlineStyle::Double),

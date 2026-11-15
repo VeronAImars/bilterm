@@ -555,6 +555,10 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
                 }))));
             false
         }
+        ColonCommand::LightCycles(op) => {
+            wm.apply_lightcycle_op(op);
+            false
+        }
         ColonCommand::ChromeRing(on) => {
             wm.config_mut().appearance.focus_ring = on;
             wm.active_pane_mut()
