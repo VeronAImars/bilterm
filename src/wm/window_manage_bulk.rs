@@ -349,7 +349,7 @@ impl WindowManager {
                     let snap = SavedWorkspaceSession {
                         name: s.clone(),
                         format_version: crate::wm::session::SESSION_FORMAT_VERSION,
-                        layout_mode: self.layout_mode,
+                        layout_mode: bg.layout_mode,
                         split_tree: bg.split_tree.clone(),
                         z_order: bg.z_stack.order().to_vec(),
                         z_geometries: BTreeMap::new(),
@@ -432,7 +432,94 @@ impl WindowManager {
         res
     }
 
-    /// Switches sessions while preserving live PTY instances in [`BackgroundSessionState`] (`SES-01`).
+    /// Moves the active session's live panes, layout and per-window chrome into
+    /// `background_sessions`, so whatever fills `self.panes` next cannot drop them: dropping a
+    /// pane kills its program. Leaves `self.panes` empty, so the caller must install a session
+    /// before returning. A no-op when the panes are already parked.
+    pub(crate) fn park_active_session(&mut self) {
+        if self.panes.is_empty() {
+            return;
+        }
+        let state = BackgroundSessionState {
+            panes: std::mem::take(&mut self.panes),
+            split_tree: self.split_tree.clone(),
+            z_stack: self.z_stack.clone(),
+            zoomed_pane: self.zoomed_pane,
+            selected_windows: self.window_manage.selected_windows.clone(),
+            layout_mode: self.layout_mode,
+            pane_chrome: std::mem::take(&mut self.pane_chrome),
+        };
+        self.window_manage
+            .background_sessions
+            .insert(self.config.history_session.clone(), state);
+    }
+
+    /// Makes the parked session `name` the active one; `false` when no live session is parked
+    /// under that name. The caller parks the outgoing session first.
+    fn activate_parked_session(&mut self, name: &str) -> bool {
+        let Some(bg) = self.window_manage.background_sessions.remove(name) else {
+            return false;
+        };
+        let Some(&max_id) = bg.panes.keys().next_back() else {
+            return false;
+        };
+        // Pane ids are per session: the counter must clear this session's ids, or the next split
+        // would overwrite one of its live panes.
+        self.next_pane_id = max_id + 1;
+        self.panes = bg.panes;
+        self.split_tree = bg.split_tree;
+        self.z_stack = bg.z_stack;
+        self.zoomed_pane = bg.zoomed_pane;
+        self.window_manage.selected_windows = bg.selected_windows;
+        self.layout_mode = bg.layout_mode;
+        self.pane_chrome = bg.pane_chrome;
+        self.config.history_session = name.to_string();
+        self.config.active_layout_profile = name.to_string();
+        true
+    }
+
+    /// Drains PTY output of parked sessions so their programs keep running instead of blocking
+    /// on a full terminal buffer. Exited panes stay until their session is active again.
+    pub(crate) fn poll_background_ptys(&mut self) {
+        for bg in self.window_manage.background_sessions.values_mut() {
+            for pane in bg.panes.values_mut() {
+                pane.poll_pty_events();
+            }
+        }
+    }
+
+    /// When every pane of the active session has exited while another session is still live in
+    /// the background, makes that one active: the app quits once all active panes are gone, and
+    /// quitting would kill the parked programs. Returns `true` when it switched.
+    pub(crate) fn fall_back_to_parked_session(&mut self) -> bool {
+        if !self.all_panes_exited() {
+            return false;
+        }
+        let Some(next) = self
+            .window_manage
+            .background_sessions
+            .iter()
+            .find(|(_, bg)| bg.panes.values().any(|p| !p.has_exited()))
+            .map(|(name, _)| name.clone())
+        else {
+            return false;
+        };
+        let ended = self.config.history_session.clone();
+        self.forget_all_pane_ids_before_replace();
+        if !self.activate_parked_session(&next) {
+            return false;
+        }
+        self.reflow_default_viewport();
+        self.drawer.invalidate_saved_sessions();
+        self.active_pane_mut().set_status_message(Some(format!(
+            "Session '{ended}' ended (all its panes exited); switched to '{next}'"
+        )));
+        true
+    }
+
+    /// Switches to session `target`, keeping the outgoing session's panes alive in
+    /// [`BackgroundSessionState`] (`SES-01`). A target that is not live is restored from its saved
+    /// layout, or created; if that fails the outgoing session becomes active again.
     pub fn switch_to_session_preserving_panes(
         &mut self,
         target: &str,
@@ -441,50 +528,50 @@ impl WindowManager {
         if cur_session == target {
             return Ok(self.panes.len());
         }
-
-        let outgoing_panes = std::mem::take(&mut self.panes);
-        let outgoing_bg = BackgroundSessionState {
-            panes: outgoing_panes,
-            split_tree: self.split_tree.clone(),
-            z_stack: self.z_stack.clone(),
-            zoomed_pane: self.zoomed_pane,
-            selected_windows: self.window_manage.selected_windows.clone(),
-        };
-        self.window_manage
+        let cur_profile = self.config.active_layout_profile.clone();
+        let target_is_live = self
+            .window_manage
             .background_sessions
-            .insert(cur_session.clone(), outgoing_bg);
+            .get(target)
+            .is_some_and(|bg| !bg.panes.is_empty());
+        if !target_is_live {
+            // A session built below restarts its pane ids: names, queued prompts and fleet
+            // references of the outgoing panes must not carry over to it.
+            self.forget_all_pane_ids_before_replace();
+        }
+        self.park_active_session();
 
-        if let Some(bg) = self.window_manage.background_sessions.remove(target) {
-            self.panes = bg.panes;
-            self.split_tree = bg.split_tree;
-            self.z_stack = bg.z_stack;
-            self.zoomed_pane = bg.zoomed_pane;
-            self.window_manage.selected_windows = bg.selected_windows;
-            self.config.history_session = target.to_string();
-            self.config.active_layout_profile = target.to_string();
+        if self.activate_parked_session(target) {
             self.reflow_default_viewport();
             self.drawer.invalidate_saved_sessions();
-            Ok(self.panes.len())
-        } else {
-            self.config.history_session = target.to_string();
-            self.config.active_layout_profile = target.to_string();
-            let count = if self
-                .resolve_session_dir()
-                .map(|d| d.join(format!("{target}.toml")).is_file())
-                .unwrap_or(false)
-            {
-                self.restore_session(target).map_err(|e| e.to_string())?
-            } else if self.layout_profiles_mem.contains_key(target) {
-                self.switch_layout_profile(target)
-                    .map_err(|e| e.to_string())?
-            } else {
-                let _ = self
-                    .create_new_session(Some(target), false)
-                    .map_err(|e| e.to_string())?;
-                1
-            };
-            self.drawer.invalidate_saved_sessions();
-            Ok(count)
+            return Ok(self.panes.len());
         }
+
+        self.config.history_session = target.to_string();
+        self.config.active_layout_profile = target.to_string();
+        let built = if self
+            .resolve_session_dir()
+            .map(|d| d.join(format!("{target}.toml")).is_file())
+            .unwrap_or(false)
+        {
+            self.restore_session(target).map_err(|e| e.to_string())
+        } else if self.layout_profiles_mem.contains_key(target) {
+            self.switch_layout_profile(target).map_err(|e| e.to_string())
+        } else {
+            self.create_new_session(Some(target), false)
+                .map(|_| 1)
+                .map_err(|e| e.to_string())
+        };
+        if self.panes.is_empty() {
+            // Nothing replaced the panes (unreadable or newer-format session file): bring the
+            // outgoing session back rather than leave the workspace without a pane.
+            self.activate_parked_session(&cur_session);
+            self.config.active_layout_profile = cur_profile;
+            self.reflow_default_viewport();
+            self.drawer.invalidate_saved_sessions();
+            return Err(built.err().unwrap_or_else(|| format!("session '{target}' has no panes")));
+        }
+        self.drawer.invalidate_saved_sessions();
+        built
     }
 }

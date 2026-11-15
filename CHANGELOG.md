@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Chromium-family browser on Linux or macOS for the real engine (`BILTERM_CHROME_PATH` overrides discovery). Without one the placeholder engine is used and the status line says so.
 
 ### Fixed
+- **Switching sessions no longer ends the programs in the session you leave.** `:session switch <name>` (and the drawer, the find palette and `:session new` / `:session blank`) rebuilt the target over the live panes whenever the target was not already live, for example a session saved by an earlier run. That closed every pane of the outgoing session, so its shells, agents and ssh links were killed. The outgoing session is now always kept running in the background, and switching back returns the same panes.
+  - Programs in background sessions keep running: their output is read every tick instead of piling up until the session is shown again.
+  - Returning to a background session restores its tiled/stacked mode and per-window themes; a new pane there no longer takes the id of a live one (which closed that pane).
+  - Moving a window into a session that already has a window with the same id keeps both (the moved window gets the next free id) instead of closing the one that was there.
+  - When the last pane of the active session exits while other sessions are still running, bilterm switches to one of them instead of quitting.
+  - `:session switch` to the session you are already in does nothing (it used to reload it from disk). A session file that cannot be read leaves you in the current session. `:session new <name>` is refused when `<name>` is running in the background; `:session delete <name>` ends a background session.
+  - Not changed: `:session restore <name>` still rebuilds the saved layout in place of the active panes.
 - **Control sequences split across PTY reads**: the side scanner that handles what the VT engine does not (OSC 0/7/8/9/52/133/777/1337, DECSET flags, Kitty keyboard, DECRQSS/XTGETTCAP, Sixel, Kitty graphics, DEC line size, Tektronix entry) is now a stateful framer (`src/vt/framer.rs`). A sequence cut by a read boundary is handled exactly as if it arrived whole; previously only OSC 52 survived a split, and a split Sixel or Kitty image printed its payload on the grid.
 - **Scanner cost**: each output byte is consumed once. A long unterminated OSC 52 fed in small reads, and many unterminated OSCs in one read, were quadratic.
 - **Sequence boundaries**: a title or notification now ends at its own terminator instead of at a later `BEL`; `CSI 6n` and image placements use the cursor position at the sequence, not at the end of the read; `CSI ?38h` no longer swallows earlier sequences that shared its read.
