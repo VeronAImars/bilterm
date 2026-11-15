@@ -5,10 +5,15 @@
 //! - **Windows Run (`Win+R` -> `bilterm` or `bilterm --gui`) & Start Menu `.lnk` shortcuts**
 //! - **Linux Ubuntu GNOME Application Launcher / Rofi / dmenu (`bilterm.desktop`)**
 //! - **macOS Spotlight / Launchpad / Finder (`Bilterm.app`)**
+//!
+//! Which terminal hosts the TUI is decided by the pure [`crate::launcher_terminal`] module.
 
 use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+pub use crate::launcher_terminal::{TargetOs, TermEnv, TerminalCmd, terminal_candidates, tui_fallback_args};
+use crate::launcher_terminal::program_exists;
 
 /// Environment variable guarding against infinite relaunch recursion when no terminal emulator succeeds.
 pub const RELAUNCH_GUARD_ENV: &str = "BILTERM_RELAUNCHED";
@@ -83,107 +88,47 @@ pub fn resolve_log_directory() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// Builds the prioritized list of `(program, args)` candidate terminal emulator commands used to
-/// host `exe_path` when `bilterm` is launched without a controlling TTY (`LAUNCH-01`).
+/// Ordered terminal commands for this machine (see [`crate::launcher_terminal::terminal_candidates`]).
 pub fn candidate_terminal_commands(
     exe_path: &Path,
     passthrough_args: &[String],
-) -> Vec<(String, Vec<String>)> {
-    let exe = exe_path.to_string_lossy().to_string();
-    let mut candidates: Vec<(String, Vec<String>)> = Vec::new();
-
-    for env_key in ["BILTERM_TERMINAL", "TERMINAL"] {
-        if let Ok(custom) = std::env::var(env_key) {
-            let trimmed = custom.trim();
-            if !trimmed.is_empty() {
-                let mut cmd_args = vec!["-e".to_string(), exe.clone()];
-                cmd_args.extend(passthrough_args.iter().cloned());
-                candidates.push((trimmed.to_string(), cmd_args));
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let mut wt_args = vec![
-            "new-tab".to_string(),
-            "--title".to_string(),
-            "Bilterm".to_string(),
-            "--".to_string(),
-            exe.clone(),
-        ];
-        wt_args.extend(passthrough_args.iter().cloned());
-        candidates.push(("wt.exe".to_string(), wt_args));
-
-        let mut conhost_args = vec![exe.clone()];
-        conhost_args.extend(passthrough_args.iter().cloned());
-        candidates.push(("conhost.exe".to_string(), conhost_args));
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        for (app_bin, flag) in [
-            ("/Applications/Ghostty.app/Contents/MacOS/ghostty", "-e"),
-            ("/Applications/kitty.app/Contents/MacOS/kitty", "-e"),
-            ("/Applications/Alacritty.app/Contents/MacOS/alacritty", "-e"),
-        ] {
-            let mut a = vec![flag.to_string(), exe.clone()];
-            a.extend(passthrough_args.iter().cloned());
-            candidates.push((app_bin.to_string(), a));
-        }
-        let mut wez_args = vec!["start".to_string(), "--".to_string(), exe.clone()];
-        wez_args.extend(passthrough_args.iter().cloned());
-        candidates.push((
-            "/Applications/WezTerm.app/Contents/MacOS/wezterm".to_string(),
-            wez_args,
-        ));
-
-        let quoted_cmd = shell_quote_command(&exe, passthrough_args);
-        let script = format!(
-            "tell application \"Terminal\"\nactivate\ndo script \"exec {}\"\nend tell",
-            quoted_cmd.replace('\\', "\\\\").replace('"', "\\\"")
-        );
-        candidates.push(("osascript".to_string(), vec!["-e".to_string(), script]));
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let mut wez_args = vec!["start".to_string(), "--".to_string(), exe.clone()];
-        wez_args.extend(passthrough_args.iter().cloned());
-
-        for (prog, prefix) in [
-            ("x-terminal-emulator", vec!["-e"]),
-            ("ghostty", vec!["-e"]),
-            ("kitty", vec!["--"]),
-            ("alacritty", vec!["-e"]),
-            ("ptyxis", vec!["--"]),
-            ("gnome-terminal", vec!["--"]),
-            ("konsole", vec!["-e"]),
-            ("xfce4-terminal", vec!["-x"]),
-            ("tilix", vec!["-e"]),
-            ("mate-terminal", vec!["-x"]),
-            ("foot", vec!["--"]),
-            ("urxvt", vec!["-e"]),
-            ("xterm", vec!["-e"]),
-        ] {
-            let mut a: Vec<String> = prefix.into_iter().map(String::from).collect();
-            a.push(exe.clone());
-            a.extend(passthrough_args.iter().cloned());
-            candidates.push((prog.to_string(), a));
-        }
-        candidates.insert(2, ("wezterm".to_string(), wez_args));
-    }
-
-    candidates
+) -> Vec<TerminalCmd> {
+    terminal_candidates(
+        TargetOs::current(),
+        &TermEnv::from_process(),
+        &program_exists,
+        &exe_path.to_string_lossy(),
+        passthrough_args,
+    )
 }
 
-#[cfg(target_os = "macos")]
-fn shell_quote_command(exe: &str, args: &[String]) -> String {
-    let mut parts = Vec::with_capacity(1 + args.len());
-    for token in std::iter::once(exe).chain(args.iter().map(String::as_str)) {
-        parts.push(format!("'{}'", token.replace('\'', "'\\''")));
+/// Starts one terminal candidate. `true` once the terminal was handed the command.
+fn spawn_terminal(cmd: &TerminalCmd) -> bool {
+    let mut c = Command::new(&cmd.program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        if cmd.raw_args {
+            for a in &cmd.args {
+                c.raw_arg(a);
+            }
+        } else {
+            c.args(&cmd.args);
+        }
+        if cmd.new_console {
+            c.creation_flags(0x0000_0010); // CREATE_NEW_CONSOLE
+        }
     }
-    parts.join(" ")
+    #[cfg(not(windows))]
+    c.args(&cmd.args);
+    c.env(RELAUNCH_GUARD_ENV, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if cmd.wait {
+        return c.status().is_ok_and(|s| s.success());
+    }
+    c.spawn().is_ok()
 }
 
 /// Facts that decide whether a bare `bilterm` should open the native GUI window instead of the TUI.
@@ -191,7 +136,8 @@ fn shell_quote_command(exe: &str, args: &[String]) -> String {
 pub struct LaunchContext {
     /// stdin and stdout are both attached to a terminal.
     pub has_tty: bool,
-    /// A graphical session is reachable (Linux: `DISPLAY` set; macOS/Windows: always).
+    /// The native GUI can reach a display (Linux: `DISPLAY` set, i.e. X11 or XWayland; a Wayland-only
+    /// session without `DISPLAY` has no GUI and goes to a terminal; macOS/Windows: always).
     pub display: bool,
     /// Windows only: this process is the sole owner of its console (started from Run/Explorer, not a shell).
     pub private_console: bool,
@@ -269,19 +215,39 @@ pub fn ensure_terminal_or_relaunch(passthrough_args: &[String]) -> io::Result<bo
         return Ok(false);
     }
     let exe = std::env::current_exe()?;
-    for (prog, cmd_args) in candidate_terminal_commands(&exe, passthrough_args) {
-        let spawn_res = Command::new(&prog)
-            .args(&cmd_args)
-            .env(RELAUNCH_GUARD_ENV, "1")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-        if spawn_res.is_ok() {
+    for cmd in candidate_terminal_commands(&exe, passthrough_args) {
+        if spawn_terminal(&cmd) {
             return Ok(true);
         }
     }
     Ok(false)
+}
+
+/// The native GUI could not start (`BiltermError::GuiUnavailable`). A launcher click has no visible
+/// stderr, so never exit silently: continue as the terminal UI. From a shell (TTY present) that runs
+/// `bilterm --tui` in the same terminal; otherwise it opens a native terminal (see
+/// [`crate::launcher_terminal`]). Returns `Ok(Some(code))` with the exit code to use once the TUI ended,
+/// or `Ok(None)` when it was handed to a new terminal window or no terminal could be opened.
+/// `BILTERM_GUI=0` and `--tui` keep the child from trying the GUI again, so this cannot loop.
+pub fn fall_back_to_tui(args: &[String]) -> io::Result<Option<i32>> {
+    let tui_args = tui_fallback_args(args);
+    if has_controlling_tty() {
+        let status = Command::new(std::env::current_exe()?)
+            .args(&tui_args)
+            .env("BILTERM_GUI", "0")
+            .status()?;
+        return Ok(Some(status.code().unwrap_or(1)));
+    }
+    if std::env::var(RELAUNCH_GUARD_ENV).as_deref() == Ok("1") {
+        return Ok(None);
+    }
+    let exe = std::env::current_exe()?;
+    for cmd in candidate_terminal_commands(&exe, &tui_args) {
+        if spawn_terminal(&cmd) {
+            return Ok(None);
+        }
+    }
+    Ok(None)
 }
 
 /// Generates a freedesktop.org `.desktop` launcher entry for Linux application launchers
@@ -374,12 +340,13 @@ mod tests {
     }
 
     #[test]
-    fn builds_candidate_terminal_commands_with_env_override() {
+    fn candidate_terminal_commands_carry_passthrough_args() {
         let exe = Path::new("/usr/local/bin/bilterm");
         let args = vec!["-s".to_string(), "ops".to_string()];
-        let list = candidate_terminal_commands(exe, &args);
-        assert!(!list.is_empty());
-        assert!(list.iter().any(|(_, a)| a.contains(&"-s".to_string())));
+        // Windows and macOS always have a last-resort terminal; Linux depends on what is installed.
+        for c in candidate_terminal_commands(exe, &args) {
+            assert!(c.args.iter().any(|a| a.contains("-s")), "{c:?}");
+        }
     }
 
     #[test]

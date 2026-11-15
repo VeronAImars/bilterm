@@ -27,6 +27,11 @@ pub enum BiltermError {
 
     #[error("Tmux integration error: {0}")]
     Tmux(String),
+
+    /// The native GUI window could not be started (no X11 library or display, window creation failed).
+    /// `main` falls back to the terminal UI in a native terminal instead of exiting silently.
+    #[error("native GUI unavailable: {0}")]
+    GuiUnavailable(String),
 }
 
 pub type Result<T> = std::result::Result<T, BiltermError>;

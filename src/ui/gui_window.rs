@@ -8,7 +8,8 @@
 //!   `WM_SYSKEYDOWN` / `WM_CHAR`), mouse drag/click/scroll (`WM_LBUTTONDOWN`, `WM_MOUSEMOVE`,
 //!   `WM_MOUSEWHEEL` + `Ctrl+Wheel` font zoom), and live pixel-to-cell window resizing (`WM_SIZE`).
 //! - **Linux / macOS (`#[cfg(not(windows))]`)**: Renders initial [`GuiFrameSurface`](crate::ui::renderer::GuiFrameSurface) verification
-//!   and launches a dedicated standalone window via [`crate::launcher::ensure_terminal_or_relaunch`].
+//!   and launches a dedicated standalone window; a startup failure returns `BiltermError::GuiUnavailable` and
+//!   `main` falls back to the terminal UI via [`crate::launcher::fall_back_to_tui`].
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 #[cfg(windows)]
@@ -500,7 +501,9 @@ pub fn run_native_gui_window(mut app: App) -> Result<()> {
         )
     };
     if hwnd.is_null() {
-        return Err(crate::error::BiltermError::Io(std::io::Error::last_os_error()));
+        let why = std::io::Error::last_os_error().to_string();
+        app.wm.end_run();
+        return Err(crate::error::BiltermError::GuiUnavailable(format!("CreateWindowExW failed: {why}")));
     }
 
     unsafe {

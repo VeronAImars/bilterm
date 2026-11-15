@@ -12,6 +12,7 @@ pub mod daemon;
 pub mod error;
 pub mod input;
 pub mod launcher;
+pub mod launcher_terminal;
 pub mod mcp_console;
 pub mod pane;
 pub mod pty;

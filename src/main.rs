@@ -666,7 +666,17 @@ async fn main() -> color_eyre::Result<()> {
     }
 
     if gui_mode {
-        bilterm::ui::gui_window::run_native_gui_window(app)?;
+        match bilterm::ui::gui_window::run_native_gui_window(app) {
+            Err(bilterm::error::BiltermError::GuiUnavailable(why)) => {
+                // No visible stderr from a launcher click: continue as the terminal UI in a native terminal.
+                tracing::warn!("native GUI unavailable ({why}); falling back to the terminal UI");
+                eprintln!("bilterm: native GUI unavailable ({why}); using the terminal UI");
+                if let Some(code) = bilterm::launcher::fall_back_to_tui(&args)? {
+                    std::process::exit(code);
+                }
+            }
+            other => other?,
+        }
         return Ok(());
     }
 

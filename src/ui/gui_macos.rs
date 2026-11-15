@@ -363,7 +363,8 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
     app.wm.set_gui_surface(true);
     let ns_app = unsafe { msg_send_id_0(class(c"NSApplication"), sel(c"sharedApplication")) };
     if ns_app.is_null() {
-        return Ok(());
+        app.wm.end_run();
+        return Err(crate::error::BiltermError::GuiUnavailable("NSApplication is unavailable".into()));
     }
     unsafe {
         let _ = msg_send_bool_isize(
@@ -397,7 +398,8 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
         )
     };
     if window.is_null() {
-        return Ok(());
+        app.wm.end_run();
+        return Err(crate::error::BiltermError::GuiUnavailable("NSWindow could not be created".into()));
     }
 
     let title = format!(
