@@ -274,6 +274,19 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     (KeyModifiers::NONE, KeyCode::F(7), Action::DrawerToggle),
     (KeyModifiers::NONE, KeyCode::F(11), Action::VisualStyleCommand(None)),
     (KeyModifiers::ALT, KeyCode::F(12), Action::FkeyModeCommand(None)),
+    // Next / previous window of the session: Ctrl+Tab / Ctrl+Shift+Tab (kitty keyboard protocol terminals and the GUI;
+    // plain terminals send a bare Tab, use `Ctrl+X Tab` / `Ctrl+X Shift+Tab` there)
+    (KeyModifiers::CONTROL, KeyCode::Tab, Action::DeckNext),
+    (KeyModifiers::CONTROL.union(KeyModifiers::SHIFT), KeyCode::Tab, Action::DeckPrev),
+    (KeyModifiers::CONTROL, KeyCode::BackTab, Action::DeckPrev),
+    (KeyModifiers::CONTROL.union(KeyModifiers::SHIFT), KeyCode::BackTab, Action::DeckPrev),
+    // Keyboard focus across every pane and open side window (drawer, MCP console, traffic, docked panels): Ctrl+Alt+Tab / Ctrl+Alt+Shift+Tab
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Tab, Action::KeyboardFocus(FocusOp::NextAll)),
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT).union(KeyModifiers::SHIFT), KeyCode::Tab, Action::KeyboardFocus(FocusOp::PrevAll)),
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::BackTab, Action::KeyboardFocus(FocusOp::PrevAll)),
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT).union(KeyModifiers::SHIFT), KeyCode::BackTab, Action::KeyboardFocus(FocusOp::PrevAll)),
+    // Any-terminal fallback of Ctrl+Alt+Tab (ESC + Ctrl+E reaches every terminal; the leader overlay has no room for more rows)
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('e'), Action::KeyboardFocus(FocusOp::NextAll)),
     (KeyModifiers::ALT, KeyCode::Tab, Action::DeckNext),
     (KeyModifiers::ALT, KeyCode::BackTab, Action::DeckPrev),
     (KeyModifiers::ALT, KeyCode::Char('1'), Action::FocusPane(1)),
