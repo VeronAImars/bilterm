@@ -134,11 +134,12 @@ fn drawer_preview_resolves_active_pane_background_pane_and_saved_session() {
     let _ = wm
         .move_window_to_session(Some(p_bg), &first_session, false)
         .unwrap();
-    assert!(
-        wm.window_manage()
-            .background_sessions
-            .contains_key(&first_session)
-    );
+    // The first session is still live in the background with its panes 1 and 2, so the moved
+    // window cannot keep id 2 there: it lands under the next free id.
+    let parked = &wm.window_manage().background_sessions[&first_session];
+    assert_eq!(parked.panes.len(), 3);
+    let p_bg = *parked.panes.keys().next_back().unwrap();
+    assert_eq!(p_bg, 3);
 
     wm.apply(Action::DrawerPreview(DrawerPreviewOp::Session(
         first_session.clone(),

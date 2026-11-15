@@ -969,6 +969,8 @@ impl WindowManager {
         if self.reap_or_hold_exited(exited_ids) {
             changed = true;
         }
+        self.poll_background_ptys();
+        changed |= self.fall_back_to_parked_session();
         let prev_qt_ld = *self.quick_terminal.pane.line_discipline();
         if self.quick_terminal.pane.poll_pty_events() {
             changed = true;

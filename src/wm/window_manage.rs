@@ -11,7 +11,8 @@ use crate::wm::journal::validate_safe_name;
 use crate::wm::layout_profile::sanitize_profile_name;
 use crate::wm::split_tree::{SplitDirection, SplitTree};
 use crate::wm::z_stack::ZStack;
-use crate::wm::{SavedWorkspaceSession, WindowManager};
+use crate::wm::chrome_style::PaneChromeStyle;
+use crate::wm::{SavedWorkspaceSession, WindowManager, WorkspaceLayoutMode};
 
 #[path = "window_manage_bulk.rs"]
 mod bulk;
@@ -116,6 +117,10 @@ pub struct BackgroundSessionState {
     pub z_stack: ZStack,
     pub zoomed_pane: Option<PaneId>,
     pub selected_windows: BTreeSet<PaneId>,
+    /// Tiled/stacked mode the session was left in.
+    pub layout_mode: WorkspaceLayoutMode,
+    /// Per-window theme/outline overrides, keyed by this session's pane ids.
+    pub pane_chrome: BTreeMap<PaneId, PaneChromeStyle>,
 }
 
 impl std::fmt::Debug for BackgroundSessionState {
@@ -126,6 +131,7 @@ impl std::fmt::Debug for BackgroundSessionState {
             .field("z_stack", &self.z_stack)
             .field("zoomed_pane", &self.zoomed_pane)
             .field("selected_windows", &self.selected_windows)
+            .field("layout_mode", &self.layout_mode)
             .finish()
     }
 }
@@ -429,7 +435,8 @@ impl WindowManager {
         }
 
         // Detach live CompositePane from active session
-        let pane = self.panes.remove(&target_id).expect("pane exists");
+        let mut pane = self.panes.remove(&target_id).expect("pane exists");
+        let chrome = self.pane_chrome.remove(&target_id);
         let _ = self.split_tree.remove_leaf(target_id);
         self.z_stack.remove(target_id);
         if self.zoomed_pane == Some(target_id) {
@@ -439,6 +446,7 @@ impl WindowManager {
         self.reflow_default_viewport();
 
         // Attach live CompositePane into target background session
+        let layout_mode = self.layout_mode;
         let bg = self
             .window_manage
             .background_sessions
@@ -459,31 +467,50 @@ impl WindowManager {
                     z_stack,
                     zoomed_pane: None,
                     selected_windows: BTreeSet::new(),
+                    layout_mode: snap.map_or(layout_mode, |s| s.layout_mode),
+                    pane_chrome: BTreeMap::new(),
                 }
             });
 
+        // Pane ids are only unique inside one session: a window already living under this id in
+        // the target must not be overwritten (dropping it would kill its program).
+        let landed_id = if bg.panes.contains_key(&target_id) {
+            let free = bg.panes.keys().next_back().map_or(1, |max| max + 1);
+            pane.set_id(free);
+            free
+        } else {
+            target_id
+        };
+
         if !bg.panes.is_empty() {
-            let top_id = bg.z_stack.top().unwrap_or(target_id);
+            let top_id = bg.z_stack.top().unwrap_or(landed_id);
             bg.split_tree.split_leaf(
                 top_id,
-                target_id,
+                landed_id,
                 SplitDirection::Horizontal,
             );
-            bg.z_stack.push(target_id);
+            bg.z_stack.push(landed_id);
         } else {
-            bg.split_tree = SplitTree::new(target_id);
-            bg.z_stack = ZStack::new(target_id);
+            bg.split_tree = SplitTree::new(landed_id);
+            bg.z_stack = ZStack::new(landed_id);
         }
-        bg.panes.insert(target_id, pane);
+        bg.panes.insert(landed_id, pane);
+        if let Some(style) = chrome {
+            bg.pane_chrome.insert(landed_id, style);
+        }
 
         if switch {
             self.switch_to_session_preserving_panes(target_clean)?;
         }
 
         self.drawer.invalidate_saved_sessions();
-        Ok(format!(
-            "Moved window {target_id} to session '{target_clean}'"
-        ))
+        if landed_id == target_id {
+            Ok(format!("Moved window {target_id} to session '{target_clean}'"))
+        } else {
+            Ok(format!(
+                "Moved window {target_id} to session '{target_clean}' as window {landed_id} (id {target_id} was taken there)"
+            ))
+        }
     }
 
     /// Loads a `SavedWorkspaceSession` from in-memory cache or disk if available.
