@@ -20,7 +20,7 @@ struct PersistedSessionOrder {
 }
 
 impl WindowManager {
-    fn should_persist_sessions_to_disk(&self) -> bool {
+    pub(crate) fn should_persist_sessions_to_disk(&self) -> bool {
         !self.headless_mode || self.config.session_dir.is_some()
     }
 
@@ -462,16 +462,27 @@ impl WindowManager {
         new_order
     }
 
-    /// Deletes a saved session from disk and removes it from `session_order`.
+    /// Deletes a saved session from disk and removes it from `session_order`; a session live in the
+    /// background ends with it. The active session is ended through `end_session` instead.
     pub fn delete_session(&mut self, name: &str) -> std::result::Result<String, String> {
         let target = sanitize_profile_name(name);
         if target == sanitize_profile_name(&self.config.history_session) {
             return Err(format!(
-                "Cannot delete currently active session '{target}' (switch or create another session first)"
+                "Cannot delete currently active session '{target}' (use :session kill, or switch first)"
             ));
         }
+        if self.forget_session_everywhere(name) {
+            Ok(target)
+        } else {
+            Err(format!("Session '{target}' not found"))
+        }
+    }
+
+    /// Drops every trace of session `name`: its live background panes (ending their programs), its
+    /// in-memory and on-disk layout and its `session_order` slot. `false` when nothing was there.
+    pub(crate) fn forget_session_everywhere(&mut self, name: &str) -> bool {
+        let target = sanitize_profile_name(name);
         let mut removed = self.layout_profiles_mem.remove(&target).is_some();
-        // Deleting a session is the explicit way to end one that is still live in the background.
         for key in [name, target.as_str()] {
             removed |= self.window_manage.background_sessions.remove(key).is_some();
         }
@@ -488,11 +499,7 @@ impl WindowManager {
             self.save_session_order(order);
             removed = true;
         }
-        if removed {
-            Ok(target)
-        } else {
-            Err(format!("Session '{target}' not found"))
-        }
+        removed
     }
 
     /// Handles `:session new|blank|rename|switch|move|reorder|delete` subcommands.
@@ -632,21 +639,17 @@ impl WindowManager {
                     .set_status_message(Some(format!("Session order: {}", order.join(", "))));
                 true
             }
-            "delete" | "rm" | "remove" => {
-                let Some(&name) = parts.get(1) else {
+            "delete" | "rm" | "remove" | "kill" | "end" | "close" => {
+                let name = parts.get(1).copied();
+                let delete = matches!(verb, "delete" | "rm" | "remove");
+                if delete && name.is_none() {
                     let msg = "Usage: :session delete <name>".to_string();
                     self.record_automation_error_msg(msg.clone());
                     self.active_pane_mut().set_status_message(Some(msg));
                     return true;
-                };
-                let msg = match self.delete_session(name) {
-                    Ok(del) => format!("Deleted session '{del}'"),
-                    Err(e) => {
-                        self.record_automation_error_msg(e.clone());
-                        e
-                    }
-                };
-                self.active_pane_mut().set_status_message(Some(msg));
+                }
+                // The quit request of ending the last session is only honoured through `apply`.
+                let _ = self.end_session_command(name, delete);
                 true
             }
             _ => self.execute_session_pane_state_command(verb, &parts, subcmd),

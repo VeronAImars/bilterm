@@ -448,6 +448,7 @@ impl WindowManager {
             selected_windows: self.window_manage.selected_windows.clone(),
             layout_mode: self.layout_mode,
             pane_chrome: std::mem::take(&mut self.pane_chrome),
+            parked_seq: super::next_park_seq(),
         };
         self.window_manage
             .background_sessions
@@ -486,35 +487,6 @@ impl WindowManager {
                 pane.poll_pty_events();
             }
         }
-    }
-
-    /// When every pane of the active session has exited while another session is still live in
-    /// the background, makes that one active: the app quits once all active panes are gone, and
-    /// quitting would kill the parked programs. Returns `true` when it switched.
-    pub(crate) fn fall_back_to_parked_session(&mut self) -> bool {
-        if !self.all_panes_exited() {
-            return false;
-        }
-        let Some(next) = self
-            .window_manage
-            .background_sessions
-            .iter()
-            .find(|(_, bg)| bg.panes.values().any(|p| !p.has_exited()))
-            .map(|(name, _)| name.clone())
-        else {
-            return false;
-        };
-        let ended = self.config.history_session.clone();
-        self.forget_all_pane_ids_before_replace();
-        if !self.activate_parked_session(&next) {
-            return false;
-        }
-        self.reflow_default_viewport();
-        self.drawer.invalidate_saved_sessions();
-        self.active_pane_mut().set_status_message(Some(format!(
-            "Session '{ended}' ended (all its panes exited); switched to '{next}'"
-        )));
-        true
     }
 
     /// Switches to session `target`, keeping the outgoing session's panes alive in

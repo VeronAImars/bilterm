@@ -47,6 +47,7 @@ pub mod quick_terminal;
 pub mod registry;
 pub mod rename_dialog;
 pub mod session;
+pub mod session_end;
 pub mod session_manager;
 pub mod session_map;
 pub mod session_pack_layout;
@@ -915,7 +916,7 @@ impl WindowManager {
         true
     }
 
-    /// Closes the focused pane (if more than 1 workspace pane exists).
+    /// Closes the focused pane; the last one ends the session if another session exists.
     pub fn close_focused_pane(&mut self) -> bool {
         if self.quick_terminal.visible {
             self.quick_terminal.visible = false;
@@ -924,6 +925,10 @@ impl WindowManager {
         let Some(target_id) = self.z_stack.top() else {
             return false;
         };
+        if self.panes.len() == 1 && self.panes.contains_key(&target_id) {
+            // The session's last window: closing it ends the session when another one exists.
+            return self.close_last_window_of_session();
+        }
         self.remove_pane(target_id)
     }
 
