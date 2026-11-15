@@ -460,6 +460,12 @@ impl CompositePane {
         self.id
     }
 
+    /// Re-keys a live pane that moves into a session where its id is already taken. Only the
+    /// owning `WindowManager` map may call this, and it must re-insert the pane under `id`.
+    pub(crate) fn set_id(&mut self, id: PaneId) {
+        self.id = id;
+    }
+
     pub fn title(&self) -> &str {
         &self.title
     }
