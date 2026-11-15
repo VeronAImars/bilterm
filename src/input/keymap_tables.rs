@@ -275,7 +275,7 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     (KeyModifiers::NONE, KeyCode::F(11), Action::VisualStyleCommand(None)),
     (KeyModifiers::ALT, KeyCode::F(12), Action::FkeyModeCommand(None)),
     // Next / previous window of the session: Ctrl+Tab / Ctrl+Shift+Tab (kitty keyboard protocol terminals and the GUI;
-    // plain terminals send a bare Tab, use `Ctrl+X Tab` / `Ctrl+X Shift+Tab` there)
+    // plain terminals send a bare Tab: use `Ctrl+Alt+X` / `Ctrl+Alt+Z` (focus all) or `Ctrl+X Tab` there)
     (KeyModifiers::CONTROL, KeyCode::Tab, Action::DeckNext),
     (KeyModifiers::CONTROL.union(KeyModifiers::SHIFT), KeyCode::Tab, Action::DeckPrev),
     (KeyModifiers::CONTROL, KeyCode::BackTab, Action::DeckPrev),
@@ -285,8 +285,10 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT).union(KeyModifiers::SHIFT), KeyCode::Tab, Action::KeyboardFocus(FocusOp::PrevAll)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::BackTab, Action::KeyboardFocus(FocusOp::PrevAll)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT).union(KeyModifiers::SHIFT), KeyCode::BackTab, Action::KeyboardFocus(FocusOp::PrevAll)),
-    // Any-terminal fallback of Ctrl+Alt+Tab (ESC + Ctrl+E reaches every terminal; the leader overlay has no room for more rows)
-    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('e'), Action::KeyboardFocus(FocusOp::NextAll)),
+    // PRIMARY focus-all pair, works in every terminal: Ctrl+Alt+X next / Ctrl+Alt+Z previous (ESC + control byte 0x18 / 0x1A).
+    // Free of other bindings, no control-byte alias, not a readline/zsh/tmux/emacs default; Ctrl+Alt+Tab above is the kitty/GUI alias.
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('x'), Action::KeyboardFocus(FocusOp::NextAll)),
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('z'), Action::KeyboardFocus(FocusOp::PrevAll)),
     (KeyModifiers::ALT, KeyCode::Tab, Action::DeckNext),
     (KeyModifiers::ALT, KeyCode::BackTab, Action::DeckPrev),
     (KeyModifiers::ALT, KeyCode::Char('1'), Action::FocusPane(1)),

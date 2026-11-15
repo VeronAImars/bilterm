@@ -8,7 +8,7 @@
 //! - [`WindowManager::settle_keyboard_owner`] repairs the invariant after any action or pointer
 //!   event, so a window focused by direct state change still ends up the only owner;
 //! - [`FocusOp`] (`:focus cycle|pane|<window>`, `Ctrl+Alt+O`) walks pane -> open side windows in
-//!   visual order -> pane; `:focus all` (`Ctrl+Alt+Tab`) also visits every pane.
+//!   visual order -> pane; `:focus all` (`Ctrl+Alt+X`) also visits every pane.
 
 use ratatui::layout::Rect;
 
@@ -122,10 +122,10 @@ pub enum FocusOp {
     Next,
     /// `:focus cycle prev` - the same walk backwards.
     Prev,
-    /// `:focus all` (`Ctrl+Alt+Tab`) - every open stop in one walk: each pane in pane-number order,
+    /// `:focus all` (`Ctrl+Alt+X`) - every open stop in one walk: each pane in pane-number order,
     /// then the open side windows in visual order, then wrap to the first pane.
     NextAll,
-    /// `:focus all prev` (`Ctrl+Alt+Shift+Tab`) - the same walk backwards.
+    /// `:focus all prev` (`Ctrl+Alt+Z`) - the same walk backwards.
     PrevAll,
     /// `:focus pane` - hand the keyboard back to the active pane; every window stays open.
     Pane,
@@ -395,7 +395,7 @@ impl WindowManager {
         ring.into_iter().map(|(_, _, o)| o).collect()
     }
 
-    /// `Ctrl+Alt+Tab` walk: panes by number, then the side windows of [`Self::keyboard_focus_ring`].
+    /// `Ctrl+Alt+X` / `Ctrl+Alt+Z` walk: panes by number, then the side windows of [`Self::keyboard_focus_ring`].
     fn keyboard_focus_all(&mut self, forward: bool) -> String {
         let panes: Vec<_> = self.panes.keys().copied().collect();
         let ring = self.keyboard_focus_ring();

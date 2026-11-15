@@ -208,7 +208,7 @@ fn chords_lower_to_actions_with_colon_twins_and_a_leader_fallback() {
         assert_eq!(Action::KeyboardFocus(FocusOp::PrevAll).colon_form_or_summary(), ":focus all prev");
         assert_eq!(Action::DeckNext.colon_form_or_summary(), ":deck next");
 
-        // Any-terminal fallbacks: `Ctrl+X Tab` (deck) and `Ctrl+Alt+E` (focus all).
+        // Any-terminal chords: `Ctrl+X Tab` (deck) and `Ctrl+Alt+X` / `Ctrl+Alt+Z` (focus all next / prev).
         let mut wm = fixture(2);
         colon(&mut wm, ":agents list open");
         colon(&mut wm, ":focus pane");
@@ -216,10 +216,13 @@ fn chords_lower_to_actions_with_colon_twins_and_a_leader_fallback() {
         press(&mut wm, KeyCode::Char('x'), CTRL);
         press(&mut wm, KeyCode::Tab, KeyModifiers::NONE);
         assert_ne!(wm.active_pane_id(), start);
-        press(&mut wm, KeyCode::Char('e'), CTRL_ALT);
-        press(&mut wm, KeyCode::Char('e'), CTRL_ALT);
+        press(&mut wm, KeyCode::Char('x'), CTRL_ALT);
+        press(&mut wm, KeyCode::Char('x'), CTRL_ALT);
         assert_eq!(wm.keyboard_owner(), KeyboardOwner::AgentsList, "pane, pane, then the list");
-        press(&mut wm, KeyCode::BackTab, CTRL_ALT_SHIFT);
+        press(&mut wm, KeyCode::Char('z'), CTRL_ALT);
         assert!(wm.keyboard_owner().is_pane());
+        assert_eq!(g(KeyCode::Char('x'), CTRL_ALT), Some(Action::KeyboardFocus(FocusOp::NextAll)));
+        assert_eq!(g(KeyCode::Char('z'), CTRL_ALT), Some(Action::KeyboardFocus(FocusOp::PrevAll)));
+        assert_eq!(g(KeyCode::Char('e'), CTRL_ALT), None, "the old Ctrl+Alt+E fallback is gone");
     });
 }

@@ -360,7 +360,7 @@ The AGENTS list is a floating window with one row per tracked pane: its agent st
 | `q` | Close the list |
 | `Ctrl+Alt+N` | Close (the same toggle as outside the list) |
 | `Ctrl+Alt+O` | Move the keyboard to the next side window, then back to the pane |
-| `Ctrl+Alt+Tab` / `Ctrl+Alt+Shift+Tab` | Walk every pane and every open side window (`:focus all [prev]`; leader fallback `Ctrl+Alt+E`) |
+| `Ctrl+Alt+X` / `Ctrl+Alt+Z` (kitty/GUI aliases `Ctrl+Alt+Tab` / `Ctrl+Alt+Shift+Tab`) | Walk every pane and every open side window forward / backward (`:focus all [prev]`; works in every terminal) |
 
 The leader key is never consumed. Other keys are swallowed while the list has the keyboard, so typing does not reach the pane underneath. Press `Esc`, click a pane, or run `:agents list blur`, to hand the keyboard back while the list stays open.
 
@@ -400,7 +400,7 @@ The side windows (AGENTS list, Agent Traffic, session map, clipboard viewer, tra
 | Jump to a pane from the AGENTS list | Click its row, or press `Enter` on it. The pane is raised and gets the keyboard in the same step; the list stays open. Arrow keys still browse without jumping |
 | Jump to a pane from the drawer | Click its row (a pane, window or session row), or press `Enter` on the selected row. The pane is raised and gets the keyboard in the same step; the drawer stays open, whether it is fixed, pinned or was opened on demand. Arrow keys still browse without jumping, and `Space` (`:drawer raise`) raises a pane while the drawer keeps the keyboard |
 | Give the drawer the keyboard with the mouse | Click its title or an empty part of it (in the Classic style also its header chips and footer; the Navigator footer buttons act without moving the keyboard). Fold markers, `Ctrl` + click and the classic layout-group header row also leave the keyboard in the drawer |
-| Walk through everything, panes included | `Ctrl+Alt+Tab` (`:focus all`): each pane by number, then each open side window from left to right, then the first pane again; `Ctrl+Alt+Shift+Tab` / `:focus all prev` walks backwards. `Ctrl+Tab` / `Ctrl+Shift+Tab` (`:deck next` / `:deck prev`) move between the panes only and hand the keyboard back to the pane |
+| Walk through everything, panes included | `Ctrl+Alt+X` (`:focus all`): each pane by number, then each open side window from left to right, then the first pane again; `Ctrl+Alt+Z` / `:focus all prev` walks backwards (`Ctrl+Alt+Tab` / `Ctrl+Alt+Shift+Tab` are kitty/GUI aliases). `Ctrl+Tab` / `Ctrl+Shift+Tab` (`:deck next` / `:deck prev`) move between the panes only and hand the keyboard back to the pane |
 | Walk through the side windows | `Ctrl+Alt+O` (`:focus cycle`): pane, each open side window from left to right, pane again. `:focus cycle prev` walks backwards. The chord also works while a full-screen program owns the pane; with no side window open it is passed to that program |
 | Close a side window | `q` (windows without a text field), its close badge, or `:<window> close` / `toggle` |
 
