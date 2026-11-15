@@ -106,6 +106,8 @@ Table `NAVIGATOR_DRAWER_BINDINGS` in `src/input/keymap.rs`. Keys it does not cla
 | `Enter`, `Space` | Focus the selected pane (or fold a workspace/session row) |
 | `!` | Jump to the next pane needing attention |
 | `e` | Fold / unfold the selected session |
+| `Right` | On a session row: unfold it; on an open one, step onto its first window. On a window row with a comms glyph, focus the glyph |
+| `Left` | Fold the open session, or from a window row climb to its session row |
 | `E`, `C` | Expand all / collapse all (a second `C` on a fully folded tree unfolds) |
 | `N` | New session |
 | `n`, `c`, `+`, `w` | New pane (split the focused pane) |
@@ -204,6 +206,8 @@ All of these lower to the same internal action as their key and mouse twin. `:na
 | :--- | :--- | :--- | :--- |
 | `:drawer attention` | `!`, `<L> !` | footer `!` | Next pane needing attention |
 | `:drawer fold` | `e` | click fold marker | Fold / unfold the selected session |
+| `:drawer unfold` | `Right` on a session row | | Unfold the selected session, or select its first window when it is already open |
+| `:drawer fold-up` | `Left` | | Fold the open session, or select the session row of the selected window |
 | `:drawer enter` | `Enter` | click row | Switch to the selected row's pane and give it the keyboard; the drawer stays open |
 | `:drawer raise` | `Space` | | Raise the selected row's pane and keep the keyboard in the drawer (on a pane row `Space` toggles the multi-selection instead) |
 | `:drawer next` | `j`, `Down` | wheel | Select next row |

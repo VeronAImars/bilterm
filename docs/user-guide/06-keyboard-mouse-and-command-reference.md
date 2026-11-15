@@ -413,6 +413,7 @@ The previous defaults stay available on the `legacy` profile and, for one releas
 | `Space` | `:drawer raise` | Raise the selected row's pane; the keyboard stays in the drawer |
 | `!` | `:drawer attention` | Jump to the next pane needing attention |
 | `e` | `:drawer fold` | Fold or unfold the selected session (a pane row folds its session) |
+| `Right` / `Left` | `:drawer unfold` / `:drawer fold-up` | `Right` on a session row unfolds it (open already: selects its first window); `Left` folds it or climbs from a window to its session |
 | `E` | `:drawer expand all`, `:navigator expand all` | Unfold every workspace and session |
 | `C` | `:drawer collapse all`, `:navigator collapse all` | Fold everything to workspace rows; pressing it again on a fully folded tree unfolds all |
 | `N` | `:drawer new-session` | Create a new session and switch to it |

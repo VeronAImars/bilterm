@@ -73,6 +73,8 @@ pub const HELP_LINES: &[(&str, &str)] = &[
     (":drawer rows [1|2]", "Drawer: lines per row (Navigator row_lines, Classic classic_row_lines; key 2, header chip [R:n])"),
     (":drawer attention", "Focus the next pane needing attention (blocked, then errored, then done)"),
     (":drawer fold", "Navigator drawer: fold or unfold the selected session (key e)"),
+    (":drawer unfold", "Navigator drawer: unfold the selected session, or select its first window (key Right on a session row)"),
+    (":drawer fold-up", "Navigator drawer: fold the open session, or select a window's session row (key Left)"),
     (":drawer enter", "Drawer: switch to the selected row's pane and give it the keyboard (key Enter, click)"),
     (":drawer raise", "Drawer: raise the selected row's pane, keyboard stays in the drawer (key Space)"),
     (":drawer next", "Navigator drawer: select the next row (keys j / Down)"),

@@ -109,6 +109,8 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":drawer menu pick 1", "Click menu entry (Navigator drawer)", "Run context-menu entry n on the selected row and close the menu"),
     (":drawer comms", "o (Navigator drawer)", "Open the agent traffic window on the selected pane row's conversation"),
     (":drawer comms-focus on", "Right (Navigator drawer)", "Focus the comms glyph of the selected row (off / Left releases it)"),
+    (":drawer unfold", "Right on a session row (Navigator drawer)", "Unfold the selected session, or select its first window when it is open"),
+    (":drawer fold-up", "Left (Navigator drawer)", "Fold the open session, or select the session row of the selected window"),
     (":navigator add window", "a (Navigator drawer)", "Add a window to the selected session (alias of :drawer add window)"),
     (":navigator add pane", "A (Navigator drawer)", "Split the selected pane (alias of :drawer add pane)"),
     (":agents list", "—", "Agent state per pane: working / blocked / idle / done / errored (data over RPC)"),

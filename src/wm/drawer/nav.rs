@@ -21,6 +21,12 @@ pub enum DrawerNavOp {
     NextAttention,
     /// Fold or unfold the selected session (a pane row folds its enclosing session).
     Fold,
+    /// Unfold the selected session; on one that is already open, step onto its first child row
+    /// (`Right`). Only a session row with children reacts.
+    Unfold,
+    /// Fold the selected open session; on a window row, or a session that cannot fold, move up to the
+    /// enclosing session row (`Left`).
+    FoldUp,
     /// Select the highlighted row (the keyboard twin of a click): a pane, window or session row is
     /// switched to and that pane gets the keyboard; the drawer stays open.
     Activate,
@@ -128,6 +134,8 @@ impl WindowManager {
         match op {
             DrawerNavOp::NextAttention => self.jump_next_attention().is_some(),
             DrawerNavOp::Fold => self.fold_selected_navigator_row(),
+            DrawerNavOp::Unfold => self.unfold_selected_navigator_row(),
+            DrawerNavOp::FoldUp => self.fold_up_selected_navigator_row(),
             DrawerNavOp::Activate => {
                 self.drawer_jump_to_selected();
                 true
@@ -378,6 +386,55 @@ impl WindowManager {
         self.daemon_state.session_tree.toggle_fold(&name);
         self.drawer.selected_index = idx;
         self.clamp_drawer_selection();
+        true
+    }
+
+    /// `Right` on a session row: unfolds it, or (already open) selects its first child row.
+    fn unfold_selected_navigator_row(&mut self) -> bool {
+        let rows = self.drawer_rows();
+        let sel = self.drawer.selected_index;
+        let Some(DrawerRow { kind: DrawerRowKind::SessionHeader(name), navigator: Some(meta), .. }) = rows.get(sel) else {
+            return false;
+        };
+        if !meta.has_children {
+            return false;
+        }
+        if meta.collapsed {
+            // The active session may not have a tree node yet (it is synthesised for the row walk).
+            if self.daemon_state.session_tree.node(name).is_none() {
+                self.daemon_state.session_tree.upsert_session(name, SessionNodeKind::Independent, None);
+            }
+            self.daemon_state.session_tree.toggle_fold(name);
+            self.clamp_drawer_selection();
+            return true;
+        }
+        if rows.get(sel + 1).and_then(|r| r.navigator.as_ref()).is_some_and(|m| m.depth > meta.depth) {
+            self.drawer.selected_index = sel + 1;
+            self.on_drawer_selection_changed(true);
+            return true;
+        }
+        false
+    }
+
+    /// `Left`: folds an open session row; on a window row (or a session that cannot fold) selects the
+    /// enclosing session row.
+    fn fold_up_selected_navigator_row(&mut self) -> bool {
+        let rows = self.drawer_rows();
+        let sel = self.drawer.selected_index;
+        let Some(row) = rows.get(sel) else { return false };
+        let depth = row.navigator.as_ref().map_or(0, |m| m.depth);
+        if matches!(row.kind, DrawerRowKind::SessionHeader(_))
+            && row.navigator.as_ref().is_some_and(|m| m.has_children && !m.collapsed)
+        {
+            return self.fold_selected_navigator_row();
+        }
+        let parent = (0..sel).rev().find(|&i| {
+            matches!(rows[i].kind, DrawerRowKind::SessionHeader(_))
+                && rows[i].navigator.as_ref().is_some_and(|m| m.depth < depth)
+        });
+        let Some(idx) = parent else { return false };
+        self.drawer.selected_index = idx;
+        self.on_drawer_selection_changed(true);
         true
     }
 

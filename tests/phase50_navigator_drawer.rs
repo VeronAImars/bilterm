@@ -875,6 +875,8 @@ fn drawer_nav_colon_form(op: &DrawerNavOp) -> String {
     match op {
         DrawerNavOp::NextAttention => ":drawer attention".into(),
         DrawerNavOp::Fold => ":drawer fold".into(),
+        DrawerNavOp::Unfold => ":drawer unfold".into(),
+        DrawerNavOp::FoldUp => ":drawer fold-up".into(),
         DrawerNavOp::Activate => ":drawer enter".into(),
         DrawerNavOp::Raise => ":drawer raise".into(),
         DrawerNavOp::Next => ":drawer next".into(),
@@ -908,6 +910,8 @@ fn all_nav_ops() -> Vec<DrawerNavOp> {
     vec![
         DrawerNavOp::NextAttention,
         DrawerNavOp::Fold,
+        DrawerNavOp::Unfold,
+        DrawerNavOp::FoldUp,
         DrawerNavOp::Activate,
         DrawerNavOp::Raise,
         DrawerNavOp::Next,
@@ -946,6 +950,9 @@ fn keys_colon_equivalents_match_keys() {
         // Rows of the comms scope only apply while the selected row's glyph has focus.
         let setup = |wm: &mut WindowManager| {
             with_states(wm, &[(3, Some(AgentState::Blocked))]);
+            if scope == bilterm::input::keymap::DrawerKeyScope::NavigatorSession {
+                run_colon(wm, ":drawer row 1");
+            }
             if scope == bilterm::input::keymap::DrawerKeyScope::NavigatorComms {
                 wm.record_traffic(TrafficEndpoint::User, TrafficEndpoint::Pane(1), TrafficKind::Broadcast, "x", now());
                 wm.update_agent_states(now());
