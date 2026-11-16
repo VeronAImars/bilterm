@@ -151,6 +151,13 @@ impl WindowManager {
             return false;
         }
         let ended = self.config.history_session.clone();
+        if self.keeps_empty_session() {
+            self.enter_empty_session();
+            self.active_pane_mut().set_status_message(Some(format!(
+                "Session '{ended}' is empty (its last window exited): :new / :split to open a window, :session kill to end it"
+            )));
+            return true;
+        }
         let Some(next) = self.end_active_session_and_move_on() else {
             return false;
         };
@@ -161,10 +168,23 @@ impl WindowManager {
     }
 
     /// `:close` on the only window of the active session: ends the session and moves to another
-    /// one. On the last session nothing changes (`:quit` leaves bilterm). Returns `true` when it
+    /// one, or with `session_on_empty = keep` leaves it open and empty. On the last session nothing changes (`:quit` leaves bilterm). Returns `true` when it
     /// switched.
     pub(crate) fn close_last_window_of_session(&mut self) -> bool {
         let ended = self.config.history_session.clone();
+        if self.keeps_empty_session() {
+            if self.is_session_empty() {
+                self.active_pane_mut().set_status_message(Some(
+                    "Session is already empty: :new / :split to open a window, :session kill to end it".to_string(),
+                ));
+                return false;
+            }
+            self.enter_empty_session();
+            self.active_pane_mut().set_status_message(Some(format!(
+                "Closed the last window of session '{ended}' (session kept empty): :new / :split to open a window, :session kill to end it"
+            )));
+            return true;
+        }
         let Some(next) = self.end_active_session_and_move_on() else {
             return false;
         };

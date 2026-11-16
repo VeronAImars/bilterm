@@ -164,7 +164,7 @@ impl AutomationControlPlane {
             ("saved", JsonValue::Bool(true)),
             ("session", JsonValue::String(name)),
             ("path", JsonValue::String(path.display().to_string())),
-            ("panes", JsonValue::Number(self.wm.pane_count() as i64)),
+            ("panes", JsonValue::Number(self.wm.window_count() as i64)),
         ]))
     }
 

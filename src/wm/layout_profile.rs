@@ -637,7 +637,11 @@ impl WindowManager {
         }
 
         if new_panes.is_empty() {
-            new_panes.insert(1, CompositePane::new_headless(1, rows, cols));
+            if saved.empty_session {
+                new_panes.insert(1, self.placeholder_for_restore(1));
+            } else {
+                new_panes.insert(1, CompositePane::new_headless(1, rows, cols));
+            }
         }
 
         let pane_count = new_panes.len();

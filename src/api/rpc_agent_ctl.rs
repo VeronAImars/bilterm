@@ -186,7 +186,7 @@ impl AutomationControlPlane {
         let active = self.wm.active_pane_id();
         let statuses = self.wm.agent_statuses();
         let mut out = Vec::new();
-        for (&id, pane) in self.wm.panes() {
+        for (&id, pane) in self.wm.window_panes() {
             let st = statuses.iter().find(|x| x.pane_id == id);
             let (rows, cols) = pane.vt().size();
             out.push(JsonValue::obj([
@@ -229,7 +229,7 @@ impl AutomationControlPlane {
         Ok(JsonValue::obj([
             ("status", s("split")),
             ("active_pane_id", num(self.wm.active_pane_id())),
-            ("pane_count", num(self.wm.pane_count())),
+            ("pane_count", num(self.wm.window_count())),
         ]))
     }
 
@@ -280,7 +280,7 @@ impl AutomationControlPlane {
             ("name", JsonValue::String(active.clone())),
             ("active", JsonValue::Bool(true)),
             ("live", JsonValue::Bool(true)),
-            ("pane_count", num(self.wm.pane_count())),
+            ("pane_count", num(self.wm.window_count())),
         ])];
         for (i, name) in self.wm.list_sessions().into_iter().filter(|n| *n != active).enumerate() {
             rows.push(JsonValue::obj([

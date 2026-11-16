@@ -111,7 +111,7 @@ pub fn agent_json(wm: &WindowManager, id: PaneId, hub: Option<&OutputHub>) -> Op
 
 /// All panes as protocol `Agent`s, in pane-id order.
 pub fn agents_json(wm: &WindowManager, hub: Option<&OutputHub>) -> Vec<JsonValue> {
-    wm.panes().keys().filter_map(|&id| agent_json(wm, id, hub)).collect()
+    wm.window_panes().map(|(id, _)| id).filter_map(|&id| agent_json(wm, id, hub)).collect()
 }
 
 fn split_node_json(node: &SplitNode) -> JsonValue {
