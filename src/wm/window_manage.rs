@@ -121,6 +121,14 @@ pub struct BackgroundSessionState {
     pub layout_mode: WorkspaceLayoutMode,
     /// Per-window theme/outline overrides, keyed by this session's pane ids.
     pub pane_chrome: BTreeMap<PaneId, PaneChromeStyle>,
+    /// When the session was last left ([`next_park_seq`]); the highest is the most recently used.
+    pub parked_seq: u64,
+}
+
+/// Monotonic stamp for [`BackgroundSessionState::parked_seq`].
+pub(crate) fn next_park_seq() -> u64 {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl std::fmt::Debug for BackgroundSessionState {
@@ -132,6 +140,7 @@ impl std::fmt::Debug for BackgroundSessionState {
             .field("zoomed_pane", &self.zoomed_pane)
             .field("selected_windows", &self.selected_windows)
             .field("layout_mode", &self.layout_mode)
+            .field("parked_seq", &self.parked_seq)
             .finish()
     }
 }
@@ -156,6 +165,9 @@ pub struct WindowManageState {
     pub rename_dialog: Option<crate::wm::rename_dialog::RenameDialogState>,
     pub context_menu_anchor: Option<(u16, u16)>,
     pub background_sessions: BTreeMap<String, BackgroundSessionState>,
+    /// Sessions ended in this run (`:session kill`, last window gone). Their saved layouts stay
+    /// restorable by name, but ending another session never falls back to them.
+    pub ended_sessions: BTreeSet<String>,
 }
 
 impl std::fmt::Debug for WindowManageState {
@@ -167,6 +179,7 @@ impl std::fmt::Debug for WindowManageState {
             .field("rename_dialog", &self.rename_dialog)
             .field("context_menu_anchor", &self.context_menu_anchor)
             .field("background_sessions_count", &self.background_sessions.len())
+            .field("ended_sessions", &self.ended_sessions)
             .finish()
     }
 }
@@ -469,6 +482,7 @@ impl WindowManager {
                     selected_windows: BTreeSet::new(),
                     layout_mode: snap.map_or(layout_mode, |s| s.layout_mode),
                     pane_chrome: BTreeMap::new(),
+                    parked_seq: next_park_seq(),
                 }
             });
 

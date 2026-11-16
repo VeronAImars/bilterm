@@ -127,6 +127,8 @@ pub struct CompositePane {
     /// Number of canvas resizes applied to the VT/PTY (SIGWINCH sources); read by Phase 70 no-resize tests.
     resize_events: u64,
     exited: bool,
+    /// Inert stand-in that holds an empty session open (`:session on-empty keep`); not a window.
+    pub(crate) empty_placeholder: bool,
     /// Hold-on-exit state when a final/root pane shell exits under `ExitProtectionPolicy::Guard` (`SAFE-01`).
     pub(crate) held_exited_shell: Option<HeldExitedShellState>,
     /// Commands submitted since the last registry tick (bounded by `PANE_OUTBOX_CAP`, Phase 50.1).
@@ -199,6 +201,7 @@ impl CompositePane {
             last_canvas_size: (canvas_rows, canvas_cols),
             resize_events: 0,
             exited: false,
+            empty_placeholder: false,
             held_exited_shell: None,
             captured: Vec::new(),
             captured_masked: 0,

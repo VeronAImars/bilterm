@@ -5,13 +5,16 @@
 use super::ColonCommand;
 use crate::wm::keyboard_focus::{FocusOp, KeyboardOwner};
 
-pub const FOCUS_USAGE: &str = "Usage: :focus <pane_id|left|right|up|down|h|j|k|l|w|a|s|d|next|prev|cycle [next|prev]|pane|agents-list|agents|sessions|clipboard|traffic|commands|script|fonts|daemon|hud|drawer|console>";
+pub const FOCUS_USAGE: &str = "Usage: :focus <pane_id|left|right|up|down|h|j|k|l|w|a|s|d|next|prev|cycle [next|prev]|all [prev]|pane|agents-list|agents|sessions|clipboard|traffic|commands|script|fonts|daemon|hud|drawer|console>";
 
 /// Parses `head` (the word after `:focus`) and the remaining arguments.
 pub(super) fn parse(head: &str, rest: &[&str]) -> Result<ColonCommand, String> {
     let op = match (head, rest) {
         ("cycle", [] | ["next" | "forward"]) => FocusOp::Next,
         ("cycle", ["prev" | "previous" | "back"]) => FocusOp::Prev,
+        ("all", [] | ["next" | "forward"]) => FocusOp::NextAll,
+        ("all", ["prev" | "previous" | "back"]) => FocusOp::PrevAll,
+        ("all", _) => return Err(FOCUS_USAGE.to_string()),
         ("cycle", _) => return Err(FOCUS_USAGE.to_string()),
         (word, []) => match word.parse::<usize>() {
             Ok(id) => return Ok(ColonCommand::FocusPane(id)),
@@ -36,7 +39,7 @@ mod tests {
 
     #[test]
     fn every_focus_op_round_trips_through_its_colon_form() {
-        let ops = [FocusOp::Next, FocusOp::Prev, FocusOp::Pane]
+        let ops = [FocusOp::Next, FocusOp::Prev, FocusOp::NextAll, FocusOp::PrevAll, FocusOp::Pane]
             .into_iter()
             .chain(KeyboardOwner::WINDOWS.into_iter().map(FocusOp::Window));
         for op in ops {

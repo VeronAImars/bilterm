@@ -186,7 +186,7 @@ impl AutomationControlPlane {
         let active = self.wm.active_pane_id();
         let statuses = self.wm.agent_statuses();
         let mut out = Vec::new();
-        for (&id, pane) in self.wm.panes() {
+        for (&id, pane) in self.wm.window_panes() {
             let st = statuses.iter().find(|x| x.pane_id == id);
             let (rows, cols) = pane.vt().size();
             out.push(JsonValue::obj([
@@ -229,7 +229,7 @@ impl AutomationControlPlane {
         Ok(JsonValue::obj([
             ("status", s("split")),
             ("active_pane_id", num(self.wm.active_pane_id())),
-            ("pane_count", num(self.wm.pane_count())),
+            ("pane_count", num(self.wm.window_count())),
         ]))
     }
 
@@ -272,7 +272,31 @@ impl AutomationControlPlane {
         Ok(JsonValue::obj([("status", s("sent")), ("pane_id", num(id)), ("bytes", num(bytes.len()))]))
     }
 
-    /// `workspace.list`: `w1` is the live workspace (the active session); the rest are saved.
+    /// Every session except the active one, in `w2..` order, with whether its panes are live in
+    /// the background: saved sessions by name, then live sessions that have no saved layout yet.
+    fn other_workspaces(&self) -> Vec<(String, bool)> {
+        let active = &self.wm.config().history_session;
+        let live = &self.wm.window_manage().background_sessions;
+        let mut rows: Vec<(String, bool)> = self
+            .wm
+            .list_sessions()
+            .into_iter()
+            .filter(|n| n != active)
+            .map(|n| {
+                let is_live = live.contains_key(&n);
+                (n, is_live)
+            })
+            .collect();
+        for name in live.keys() {
+            if name != active && !rows.iter().any(|(n, _)| n == name) {
+                rows.push((name.clone(), true));
+            }
+        }
+        rows
+    }
+
+    /// `workspace.list`: `w1` is the active session; the rest are saved sessions and sessions
+    /// still running in the background (`live`).
     pub(super) fn rpc_workspace_list(&mut self) -> Result<JsonValue, String> {
         let active = self.wm.config().history_session.clone();
         let mut rows = vec![JsonValue::obj([
@@ -280,20 +304,22 @@ impl AutomationControlPlane {
             ("name", JsonValue::String(active.clone())),
             ("active", JsonValue::Bool(true)),
             ("live", JsonValue::Bool(true)),
-            ("pane_count", num(self.wm.pane_count())),
+            ("pane_count", num(self.wm.window_count())),
         ])];
-        for (i, name) in self.wm.list_sessions().into_iter().filter(|n| *n != active).enumerate() {
+        for (i, (name, live)) in self.other_workspaces().into_iter().enumerate() {
             rows.push(JsonValue::obj([
                 ("id", JsonValue::String(format!("w{}", i + 2))),
                 ("name", JsonValue::String(name)),
                 ("active", JsonValue::Bool(false)),
-                ("live", JsonValue::Bool(false)),
+                ("live", JsonValue::Bool(live)),
             ]));
         }
         Ok(JsonValue::obj([("workspaces", JsonValue::Array(rows))]))
     }
 
-    /// `workspace.select` by saved-session `name` or `w<N>` id.
+    /// `workspace.select` by session `name` or `w<N>` id. Switches like `:session switch`, so
+    /// the session being left keeps running in the background; `SessionRestore` would rebuild
+    /// the saved layout over its panes and end their programs.
     pub(super) fn rpc_workspace_select(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
         let raw = params
             .get("name")
@@ -303,19 +329,27 @@ impl AutomationControlPlane {
             .trim()
             .to_string();
         let active = self.wm.config().history_session.clone();
+        let others = self.other_workspaces();
         let target = match raw.strip_prefix(['w', 'W']).and_then(|n| n.parse::<usize>().ok()) {
             Some(1) => active.clone(),
-            Some(n) => self
-                .wm
-                .list_sessions()
-                .into_iter()
-                .filter(|x| *x != active)
-                .nth(n - 2)
+            Some(n) => others
+                .get(n.wrapping_sub(2))
+                .map(|(name, _)| name.clone())
                 .ok_or_else(|| format!("workspace w{n} not found"))?,
             None => raw,
         };
         if target != active {
-            self.apply_trusted(Action::SessionRestore(target.clone()))?;
+            // Selecting never creates: `:session switch` would make a new session for an
+            // unknown name, and that is `workspace.new`'s job.
+            if !others.iter().any(|(name, _)| *name == target) {
+                return Err(format!("workspace '{target}' not found"));
+            }
+            crate::secure_fs::validate_safe_name(&target)?;
+            self.apply_trusted(Action::SessionTreeCommand(format!("switch {target}")))?;
+            if self.wm.config().history_session != target {
+                let why = self.wm.active_pane().status_message().unwrap_or("session switch failed").to_string();
+                return Err(why);
+            }
         }
         Ok(JsonValue::obj([("status", s("selected")), ("name", JsonValue::String(target))]))
     }

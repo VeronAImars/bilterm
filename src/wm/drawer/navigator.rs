@@ -288,12 +288,12 @@ impl WalkCtx<'_> {
         let children: Vec<&SessionTreeNode> = node.children.iter().filter_map(|c| tree.node(c)).collect();
         let has_children = !children.is_empty()
             || (live && !self.pane_ids.is_empty())
-            || bg_sess.is_some_and(|bg| !bg.panes.is_empty());
+            || bg_sess.is_some_and(|bg| bg.panes.values().any(|p| !p.empty_placeholder));
         let collapsed = node.collapsed && has_children;
         let pane_count = if live {
             self.pane_ids.len()
         } else if let Some(bg) = bg_sess {
-            bg.panes.len()
+            bg.panes.values().filter(|p| !p.empty_placeholder).count()
         } else {
             node.pane_count
         };
@@ -376,7 +376,8 @@ impl WalkCtx<'_> {
         rows: &mut Vec<DrawerRow>,
     ) {
         let two_line = self.wm.config.drawer.navigator_row_lines() == 2;
-        let mut ids: Vec<PaneId> = bg.panes.keys().copied().collect();
+        let mut ids: Vec<PaneId> =
+            bg.panes.iter().filter(|(_, p)| !p.empty_placeholder).map(|(id, _)| *id).collect();
         ids.sort_unstable();
         for id in ids {
             let Some(pane) = bg.panes.get(&id) else { continue };

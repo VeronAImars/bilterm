@@ -50,7 +50,7 @@ fn state_json(wm: &WindowManager) -> JsonValue {
         ("display_mode", JsonValue::String(crate::ui::shell::effective_display_mode(cfg).label().to_string())),
         ("layout_mode", JsonValue::String(layout.to_string())),
         ("active_pane_id", JsonValue::Number(wm.active_pane_id() as i64)),
-        ("pane_count", JsonValue::Number(wm.pane_count() as i64)),
+        ("pane_count", JsonValue::Number(wm.window_count() as i64)),
         ("drawer_visible", JsonValue::Bool(wm.is_drawer_effectively_visible())),
     ])
 }

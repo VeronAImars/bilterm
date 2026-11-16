@@ -131,6 +131,8 @@ pub(crate) const EXTRA: &[(&str, &str, &str)] = &[
     (":netmon", ":traffic", "Alias of :traffic."),
     (":tab", "", "Tab-style window commands (:tab new|next|prev|close|rename)."),
     (":tabnew", ":tab", "Alias of :tab new (create a new terminal window)."),
+    (":new", ":tab", "Alias of :tab new: open a new terminal window (refills an empty session)."),
+    (":new-window", ":tab", "Alias of :new."),
     (":tabnext", ":tab", "Alias of :tab next (focus next terminal window)."),
     (":tabprev", ":tab", "Alias of :tab prev (focus previous terminal window)."),
     (":tabclose", ":tab", "Alias of :tab close (close active terminal window)."),
@@ -601,7 +603,7 @@ mod tests {
     }
 
     /// Parser arm heads that are not Tab-completion rows (short spellings kept for muscle memory).
-    const PARSER_ONLY_ALIASES: &[&str] = &["?", "a", "cb", "d", "h", "p", "sb", "sp", "vi", "vs"];
+    const PARSER_ONLY_ALIASES: &[&str] = &["?", "a", "cb", "d", "h", "lightcycles", "p", "sb", "sp", "vi", "vs"];
 
     #[test]
     fn parser_heads_are_known_best_effort() {

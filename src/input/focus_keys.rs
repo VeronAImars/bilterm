@@ -2,14 +2,14 @@
 //! one side window that owns the keyboard, and the pointer-event wrapper that keeps the
 //! single-owner invariant. The owner comes from [`WindowManager::keyboard_owner`].
 
-use crossterm::event::{KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::layout::Rect;
 
 use super::AppAction;
 use crate::action::Action;
 use crate::error::Result;
 use crate::wm::WindowManager;
-use crate::wm::keyboard_focus::KeyboardOwner;
+use crate::wm::keyboard_focus::{FocusOp, KeyboardOwner};
 
 /// The focus-cycle chord (`Ctrl+Alt+O` by default) is answered before any side window sees the
 /// key and also over raw PTY passthrough, so it always moves the keyboard on, whichever window
@@ -21,9 +21,19 @@ pub(super) fn handle_focus_chord(wm: &mut WindowManager, key: KeyEvent) -> Optio
     }
     let action = match wm.keymap().global_action(key, false) {
         Some(action @ Action::KeyboardFocus(_)) => action,
+        // `Ctrl+Tab` / `Ctrl+Shift+Tab` move between windows even while a side window holds the keys
+        // (the window would otherwise read Tab as its own); the pane owner takes the normal route.
+        Some(action @ (Action::DeckNext | Action::DeckPrev))
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(key.code, KeyCode::Tab | KeyCode::BackTab)
+                && !wm.keyboard_owner().is_pane() =>
+        {
+            return Some(wm.apply(action).unwrap_or(AppAction::Handled));
+        }
         _ => return None,
     };
-    if wm.keyboard_owner().is_pane() && wm.keyboard_focus_ring().is_empty() {
+    let walks_panes = matches!(action, Action::KeyboardFocus(FocusOp::NextAll | FocusOp::PrevAll));
+    if wm.keyboard_owner().is_pane() && wm.keyboard_focus_ring().is_empty() && !(walks_panes && wm.pane_count() > 1) {
         return None;
     }
     Some(wm.apply(action).unwrap_or(AppAction::Handled))

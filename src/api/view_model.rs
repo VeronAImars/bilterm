@@ -111,7 +111,7 @@ pub fn agent_json(wm: &WindowManager, id: PaneId, hub: Option<&OutputHub>) -> Op
 
 /// All panes as protocol `Agent`s, in pane-id order.
 pub fn agents_json(wm: &WindowManager, hub: Option<&OutputHub>) -> Vec<JsonValue> {
-    wm.panes().keys().filter_map(|&id| agent_json(wm, id, hub)).collect()
+    wm.window_panes().map(|(id, _)| id).filter_map(|&id| agent_json(wm, id, hub)).collect()
 }
 
 fn split_node_json(node: &SplitNode) -> JsonValue {
@@ -210,7 +210,7 @@ impl WorkspaceViewModelDto {
 pub fn health_json(agents: usize) -> JsonValue {
     JsonValue::obj([
         ("ok", JsonValue::Bool(true)),
-        ("version", JsonValue::String(env!("CARGO_PKG_VERSION").to_string())),
+        ("version", JsonValue::String(crate::version_info::VERSION.to_string())),
         ("contract", JsonValue::Number(CONTRACT_VERSION)),
         ("epoch", JsonValue::String(server_epoch())),
         (

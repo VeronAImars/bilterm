@@ -133,6 +133,9 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
             (Some("scale"), Some(n)) if (75..=200).contains(&n) => Some(Ok(ColonCommand::PanelScale(n))),
             _ => Some(Err("Usage: :panel scale <75..200> (GUI only; 100 = normal)".to_string())),
         },
+        "cycles" | "lightcycles" => {
+            Some(crate::ui::lightcycle::parse_cycles_arg(parts.get(1).copied()).map(ColonCommand::LightCycles))
+        }
         "chrome" => {
             let usage = || Some(Err("Usage: :chrome title all|focused|none|auto | :chrome ring on|off".to_string()));
             match (parts.get(1).copied(), parts.get(2).map(|s| s.to_ascii_lowercase())) {
@@ -375,6 +378,21 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
             }
             match parts.get(1).copied() {
                 Some("map") => Some(super::parse_session_map::parse_session_map(&parts[2..])),
+                Some("on-empty" | "on_empty" | "empty") => Some(match parts.get(2) {
+                    None => Ok(ColonCommand::SessionOnEmpty(None)),
+                    Some(v) => match crate::config::SessionOnEmpty::from_name(v) {
+                        Some(p) => Ok(ColonCommand::SessionOnEmpty(Some(p))),
+                        None => Err("Usage: :session on-empty [end|keep]".to_string()),
+                    },
+                }),
+                Some("kill" | "end" | "close") => Some(Ok(ColonCommand::SessionEnd {
+                    name: parts.get(2).map(|n| (*n).to_string()),
+                    delete: false,
+                })),
+                Some("delete" | "rm" | "remove") => Some(match parts.get(2) {
+                    Some(n) => Ok(ColonCommand::SessionEnd { name: Some((*n).to_string()), delete: true }),
+                    None => Err("Usage: :session delete <name>".to_string()),
+                }),
                 Some("save" | "save-as") => {
                     let name = parts.get(2).copied().unwrap_or("").to_string();
                     Some(Ok(ColonCommand::SessionSave(name)))
@@ -397,9 +415,6 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
                     | "down"
                     | "top"
                     | "bottom"
-                    | "delete"
-                    | "rm"
-                    | "remove"
                     | "processes"
                     | "apps"
                     | "restore-processes"
@@ -432,7 +447,7 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
                 }
                 None | Some("list" | "ls") => Some(Ok(ColonCommand::SessionList)),
                 _ => Some(Err(
-                    "Usage: :session new [name] | blank [name] | rename [old] <new> | switch <name> | move [name] <up|down|top|bottom|idx> | reorder <s1> <s2>... | save [name] | restore [name] | processes [on|off] | cmd <command|clear> | shell <prog> [args...] | cwd <path> | relaunch | info | delete <name> | list | tree"
+                    "Usage: :session new [name] | blank [name] | rename [old] <new> | switch <name> | move [name] <up|down|top|bottom|idx> | reorder <s1> <s2>... | save [name] | restore [name] | processes [on|off] | cmd <command|clear> | shell <prog> [args...] | cwd <path> | relaunch | info | kill [name] | on-empty [end|keep] | delete <name> | list | tree"
                         .to_string(),
                 )),
             }
@@ -780,7 +795,7 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
             super::parse_visual::parse_visual_colon_command("window", &parts)
         }
         "kill-pane" => Some(Ok(ColonCommand::ClosePane)),
-        "tabnew" => Some(Ok(ColonCommand::SplitHorizontal)),
+        "tabnew" | "new" | "new-window" => Some(Ok(ColonCommand::SplitHorizontal)),
         "tabnext" => Some(Ok(ColonCommand::DeckNext)),
         "tabprev" => Some(Ok(ColonCommand::DeckPrev)),
         "tabclose" => Some(Ok(ColonCommand::ClosePane)),
