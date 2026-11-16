@@ -229,6 +229,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":session info", "—", "Inspect each pane's saved shell, working directory (CWD), and running command"),
     (":session relaunch", "—", "Relaunch saved running commands across all writable session panes"),
     (":session list", "—", "List all saved workspace sessions"),
+    (":session kill", "Exit Guard K", "End the active (or named) session and switch to another (quits only on the last); saved layout kept, :session delete <name> also removes it"),
     (":session tree", "—", "Show hierarchical SessionTree in floating/push window"),
     (":session checkpoint", "—", "Persist crash-safe WorkspaceJournal checkpoint"),
     (":record start", "Ctrl+X R", "Start Asciicast v2 (.cast) terminal recording"),

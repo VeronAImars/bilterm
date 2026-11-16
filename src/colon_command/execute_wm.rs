@@ -864,6 +864,7 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             wm.execute_window_style_command(subcmd);
             false
         }
+        ColonCommand::SessionEnd { ref name, delete } => wm.end_session_command(name.as_deref(), delete),
         ColonCommand::SessionTreeCommand(ref subcmd) => {
             wm.execute_session_tree_command(subcmd);
             false

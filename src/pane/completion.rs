@@ -588,6 +588,7 @@ const COLON_COMMANDS: &[(&str, &[&str])] = &[
             "tree",
             "move ",
             "reorder ",
+            "kill",
             "delete ",
             "branch ",
             "graft ",
