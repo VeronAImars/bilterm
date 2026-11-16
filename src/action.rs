@@ -267,6 +267,9 @@ pub enum Action {
     /// `:session delete <name>` (`delete: true`). Ending the active session moves to another one;
     /// ending the last session quits.
     SessionEnd { name: Option<String>, delete: bool },
+    /// `:session on-empty [end|keep]`: what happens when a session's last window exits or is closed
+    /// (`None` reports the current setting). `keep` leaves the session open with zero windows.
+    SessionOnEmpty(Option<crate::config::SessionOnEmpty>),
     /// `:profile [list|switch|save|default|autosave|next|prev|delete ...]` / `:layout [save|load|default|autosave|next|prev ...]`.
     LayoutProfileCommand(String),
     /// `:mcp [status|tree|attach|spawn|graft|broadcast|freeze|thaw|derez|checkpoint|shutdown ...]` (`MCP-01..02`).
@@ -415,6 +418,8 @@ impl Action {
             Self::AgentsWatchdog(_) => ":agents watchdog status".to_string(),
             Self::WindowManage(_) => ":window undo".to_string(),
             Self::SessionManage(_) => ":session undo".to_string(),
+            Self::SessionOnEmpty(None) => ":session on-empty".to_string(),
+            Self::SessionOnEmpty(Some(p)) => format!(":session on-empty {}", p.label()),
             Self::SessionEnd { name: None, .. } => ":session kill".to_string(),
             Self::SessionEnd { name: Some(n), delete: false } => format!(":session kill {n}"),
             Self::SessionEnd { name: Some(n), delete: true } => format!(":session delete {n}"),

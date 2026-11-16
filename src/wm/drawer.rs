@@ -464,7 +464,8 @@ impl WindowManager {
                 ids.push(id);
             }
         }
-        ids.retain(|id| self.panes.contains_key(id));
+        // An empty session's placeholder is not a window.
+        ids.retain(|id| self.panes.get(id).is_some_and(|p| !p.empty_placeholder));
         ids
     }
 

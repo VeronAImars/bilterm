@@ -2,6 +2,8 @@ pub mod agents;
 pub mod dotted;
 pub mod keys;
 pub mod coords;
+pub mod session_empty;
+pub use session_empty::SessionOnEmpty;
 pub mod traffic;
 pub use dotted::ApiConfig;
 pub use crate::stt::SttConfig;
@@ -144,6 +146,8 @@ pub struct BiltermConfig {
     pub scroll_mode: PaneScrollMode,
     /// Policy for accidental `exit`/`logout`/`Ctrl+D` on the final pane or root session (`"guard"`, `"respawn"`, `"detach"`, `"off"`, `SAFE-01`).
     pub exit_protection: ExitProtectionPolicy,
+    /// What happens when the last window of a session exits or is closed (`"end"` or `"keep"`, `:session on-empty`).
+    pub session_on_empty: SessionOnEmpty,
     /// Marks this workspace session as a protected Root Session (`SAFE-02`).
     pub is_root_session: bool,
     /// Navigator-style slide-out Sessions / Windows / Panes & Fleet drawer configuration (`[drawer]`, `DRW-01`).
@@ -256,6 +260,7 @@ impl Default for BiltermConfig {
             scrollback: ScrollbackConfig::default(),
             scroll_mode: PaneScrollMode::Smooth,
             exit_protection: ExitProtectionPolicy::Guard,
+            session_on_empty: SessionOnEmpty::default(),
             is_root_session: false,
             drawer: DrawerConfig::default(),
             font_family: "Cascadia Mono".to_string(),

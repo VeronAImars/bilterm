@@ -313,9 +313,11 @@ impl WindowManager {
                 if let Some(snap) = self.layout_profiles_mem.get(s) {
                     snapshot_before.insert(s.clone(), snap.clone());
                 } else if let Some(bg) = self.window_manage.background_sessions.get(s) {
+                    let bg_empty = bg.panes.len() == 1 && bg.panes.values().all(|p| p.empty_placeholder);
                     let panes_vec: Vec<crate::wm::SavedPaneState> = bg
                         .panes
                         .values()
+                        .filter(|p| !p.empty_placeholder)
                         .map(|p| {
                             let chrome = self.pane_chrome(p.id());
                             crate::wm::SavedPaneState {
@@ -357,6 +359,7 @@ impl WindowManager {
                         detached: false,
                         panes: panes_vec,
                         selected_windows: bg.selected_windows.clone(),
+                        empty_session: bg_empty,
                     };
                     snapshot_before.insert(s.clone(), snap);
                 }

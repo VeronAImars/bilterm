@@ -44,7 +44,7 @@ impl AutomationControlPlane {
                 ("mimeType", s("text/markdown")),
             ]),
         ];
-        for &id in self.wm.panes().keys() {
+        for &id in self.wm.window_panes().map(|(id, _)| id) {
             list.push(resource(
                 &format!("bilterm://pane/{id}"),
                 &format!("Pane #{id}"),

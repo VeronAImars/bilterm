@@ -48,6 +48,7 @@ pub mod quick_terminal;
 pub mod registry;
 pub mod rename_dialog;
 pub mod session;
+pub mod session_empty;
 pub mod session_end;
 pub mod session_manager;
 pub mod session_map;
@@ -905,9 +906,15 @@ impl WindowManager {
         new_pane.set_scroll_mode_from_config(self.config.scroll_mode);
         new_pane.font_options_mut().scale_pct = Some(100);
 
-        self.panes.insert(new_id, new_pane);
-        self.split_tree.split_leaf(target_id, new_id, direction);
-        self.z_stack.push(new_id);
+        if self.is_session_empty() {
+            // The first window of an empty session replaces its placeholder.
+            self.install_sole_pane(new_id, new_pane);
+            self.drawer.invalidate_saved_sessions();
+        } else {
+            self.panes.insert(new_id, new_pane);
+            self.split_tree.split_leaf(target_id, new_id, direction);
+            self.z_stack.push(new_id);
+        }
         self.zoomed_pane = None;
         self.sync_config_scale_from_active_pane();
         self.reflow_default_viewport();

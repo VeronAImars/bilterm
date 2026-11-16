@@ -376,7 +376,7 @@ impl AutomationControlPlane {
             WorkspaceLayoutMode::Stacked => "stacked",
         };
         let mut panes = Vec::new();
-        for (&id, pane) in self.wm.panes() {
+        for (&id, pane) in self.wm.window_panes() {
             let (rows, cols) = pane.vt().size();
             let (cur_r, cur_c) = pane.vt().cursor_position();
             let input_mode = match pane.effective_routing_mode() {
@@ -415,7 +415,12 @@ impl AutomationControlPlane {
             ),
             (
                 "pane_count",
-                JsonValue::Number(self.wm.pane_count() as i64),
+                JsonValue::Number(self.wm.window_count() as i64),
+            ),
+            ("session_empty", JsonValue::Bool(self.wm.is_session_empty())),
+            (
+                "session_on_empty",
+                JsonValue::String(self.wm.config().session_on_empty.label().to_string()),
             ),
             ("broadcast_input", JsonValue::Bool(self.wm.is_broadcast_input())),
             (

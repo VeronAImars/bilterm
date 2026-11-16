@@ -46,7 +46,7 @@ pub fn layout_pills(wm: &WindowManager, bar: Rect) -> Vec<Pill> {
     let mut out = Vec::new();
     let mut x = bar.x.saturating_add(1);
     let end = bar.x.saturating_add(bar.width);
-    let ids: Vec<PaneId> = wm.panes().keys().copied().collect();
+    let ids: Vec<PaneId> = wm.window_panes().map(|(id, _)| *id).collect();
     for (n, id) in ids.iter().enumerate() {
         let title = wm.pane(*id).map(|p| p.title().to_string()).unwrap_or_default();
         let short: String = title.chars().take(18).collect();

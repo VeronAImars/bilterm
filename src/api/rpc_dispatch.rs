@@ -253,7 +253,7 @@ impl AutomationControlPlane {
                     ),
                     (
                         "pane_count",
-                        JsonValue::Number(self.wm.pane_count() as i64),
+                        JsonValue::Number(self.wm.window_count() as i64),
                     ),
                 ];
                 if let Some(data) = self.wm.take_command_data().and_then(|d| JsonValue::parse(&d)) {

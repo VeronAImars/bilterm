@@ -85,10 +85,14 @@ impl WindowManager {
         pane.set_scroll_mode_from_config(self.config.scroll_mode);
         Self::attach_history(&mut pane, &self.config.history_settings());
         let top = self.z_stack.top().unwrap_or(1);
-        self.panes.insert(new_id, pane);
-        self.split_tree
-            .split_leaf(top, new_id, SplitDirection::Vertical);
-        self.z_stack.push(new_id);
+        if self.is_session_empty() {
+            self.install_sole_pane(new_id, pane);
+        } else {
+            self.panes.insert(new_id, pane);
+            self.split_tree
+                .split_leaf(top, new_id, SplitDirection::Vertical);
+            self.z_stack.push(new_id);
+        }
         self.rebalance_scrollback(Instant::now());
         new_id
     }
@@ -397,7 +401,7 @@ impl WindowManager {
     /// so `:mcp status`, `:mcp tree`, and `:session tree` always reflect live panes (`DAEM-01`, `TREE-01`).
     pub fn sync_daemon_state_from_workspace(&mut self) {
         let sess = self.config.history_session.clone();
-        let pane_count = self.panes.len().max(1);
+        let pane_count = self.window_count();
         if self.daemon_state.session_tree.node(&sess).is_none() {
             self.daemon_state
                 .session_tree

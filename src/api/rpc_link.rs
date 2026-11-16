@@ -46,7 +46,7 @@ impl AutomationControlPlane {
             ("status", JsonValue::String(status.to_string())),
             ("command", JsonValue::String(cmd.to_string())),
             ("active_pane_id", JsonValue::Number(self.wm.active_pane_id() as i64)),
-            ("pane_count", JsonValue::Number(self.wm.pane_count() as i64)),
+            ("pane_count", JsonValue::Number(self.wm.window_count() as i64)),
         ];
         if let Some(data) = self.wm.take_command_data().and_then(|d| JsonValue::parse(&d)) {
             out.push(("data", data));

@@ -95,6 +95,9 @@ pub struct SavedWorkspaceSession {
     /// Multi-selected window IDs (`SES-03`).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub selected_windows: BTreeSet<PaneId>,
+    /// `true` for a session kept open with no windows (`:session on-empty keep`); `panes` is empty.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub empty_session: bool,
 }
 
 impl WindowManager {
@@ -390,9 +393,8 @@ impl WindowManager {
     /// Captures a `SavedWorkspaceSession` of the current multi-pane workspace (`ECO-02`).
     pub fn snapshot_session(&self, name: &str) -> SavedWorkspaceSession {
         let panes = self
-            .panes
-            .values()
-            .map(|p| {
+            .window_panes()
+            .map(|(_, p)| {
                 let (rows, _cols) = p.vt().size();
                 let mut scrollback_lines = Vec::new();
                 for r in 0..rows {
@@ -436,22 +438,28 @@ impl WindowManager {
                 }
             })
             .collect();
+        let empty = self.is_session_empty();
         SavedWorkspaceSession {
             name: name.to_string(),
             format_version: SESSION_FORMAT_VERSION,
             layout_mode: self.layout_mode,
-            split_tree: self.split_tree.clone(),
-            z_order: self.z_stack.order().to_vec(),
-            z_geometries: self
-                .z_stack
-                .geometries()
-                .iter()
-                .map(|(k, v)| (k.to_string(), *v))
-                .collect(),
-            zoomed_pane: self.zoomed_pane,
+            // An empty session has no windows to lay out; restore recreates the placeholder as pane 1.
+            split_tree: if empty { SplitTree::new(1) } else { self.split_tree.clone() },
+            z_order: if empty { vec![1] } else { self.z_stack.order().to_vec() },
+            z_geometries: if empty {
+                BTreeMap::new()
+            } else {
+                self.z_stack
+                    .geometries()
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), *v))
+                    .collect()
+            },
+            zoomed_pane: if empty { None } else { self.zoomed_pane },
             detached: self.client_detached,
             panes,
             selected_windows: self.selected_windows().clone(),
+            empty_session: empty,
         }
     }
 
