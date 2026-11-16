@@ -25,12 +25,25 @@ cargo build --release
 ./target/release/bilterm
 ```
 
+### Starting from the desktop (app launcher, Win+R, Spotlight)
+
+A bare `bilterm` started by the desktop opens the native GUI window; started from a shell (a TTY is attached) it stays the terminal UI. `--tui` or `BILTERM_GUI=0` always selects the terminal UI.
+
+| OS | What counts as a desktop start | GUI | If the GUI is unavailable (or there is no display) |
+|----|--------------------------------|-----|-----------------------------------------------------|
+| Linux | no TTY on stdin/stdout and `DISPLAY` set (X11 or XWayland) | X11 window | terminal: `$BILTERM_TERMINAL`, `$TERMINAL`, `xdg-terminal-exec`, `x-terminal-emulator`, gnome-terminal, kgx, ptyxis, konsole, xfce4-terminal, alacritty, kitty, foot, wezterm, ghostty, tilix, mate-terminal, lxterminal, urxvt, xterm (first installed one; needs `DISPLAY` or `WAYLAND_DISPLAY`) |
+| Windows | the process is the sole owner of its console (Win+R, Explorer) | Win32 window | Windows Terminal (`wt.exe`), `pwsh.exe`, `powershell.exe`, `cmd.exe`; a start inside a console just runs the TUI there |
+| macOS | `Bilterm.app` always passes `--gui` | Cocoa window | iTerm2 if installed (`/Applications` or `~/Applications`), otherwise Terminal.app |
+
+A Wayland-only session (`WAYLAND_DISPLAY` without `DISPLAY`) has no native GUI (it is X11), so it opens the TUI in a terminal. If the GUI fails to start (no libX11, unreachable display, window creation error), bilterm does not exit silently: it falls back to `bilterm --tui` in the same terminal when started from a shell, or in one of the terminals above otherwise. The relaunched process carries `BILTERM_RELAUNCHED=1` and `--tui`, so it never loops. The selection is the pure function `launcher_terminal::terminal_candidates`.
+
 ### Complete CLI Options (`v3.2.0`)
 ```bash
 bilterm                                         # Launch interactive TUI multiplexer (auto-resumes detached session)
 bilterm attach [session] / -a / --attach        # Re-attach to live background daemon or restore saved multi-pane layout
 bilterm ls / sessions / --list-sessions         # List live background daemon sockets & saved .toml session layouts
 bilterm -G / --gui                              # Launch standalone native desktop GUI window (X11 / Win32 / Cocoa)
+bilterm --tui                                   # Force the terminal UI (also BILTERM_GUI=0), even from a desktop launcher
 bilterm --gui --gui-font "JetBrains Mono" --gui-font-size 16 # Native GUI with custom font family & point size
 bilterm --gui --gui-font-file /path/to/font.ttf --gui-font-size 15 # Native GUI with explicit TTF/OTF file
 bilterm -T / --theme ibm-3278-green             # Launch with a specific color palette preset

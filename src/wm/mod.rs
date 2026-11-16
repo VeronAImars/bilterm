@@ -39,6 +39,7 @@ pub mod keyboard_focus;
 pub mod key_mode;
 pub mod which_key_state;
 pub mod layout_profile;
+pub mod lightcycle;
 pub mod link_cmd;
 pub mod pane_hold;
 pub mod panel_dock;
@@ -47,6 +48,7 @@ pub mod quick_terminal;
 pub mod registry;
 pub mod rename_dialog;
 pub mod session;
+pub mod session_end;
 pub mod session_manager;
 pub mod session_map;
 pub mod session_pack_layout;
@@ -142,6 +144,8 @@ pub enum Modal {
     None,
     /// Interactive `<F1>` Borland Turbo Vision Help modal.
     Help { scroll: usize },
+    /// `:version` build/platform details window.
+    Version { scroll: usize },
     /// Interactive `<F9>` / `:inspector` Live 3270 Terminal Inspector modal (`BEL-01`).
     Inspector { scroll: usize },
     /// Interactive Fuzzy Command Palette modal (`Ctrl+P` / `:palette`, `v0.6.0`).
@@ -211,6 +215,8 @@ pub struct WindowManager {
     pub(crate) drawer: WorkspaceDrawer,
     /// Per-pane agent state tracker (`FLT-01`, Phase 50-03).
     pub(crate) agents: agent_state::AgentTracker,
+    /// TRON light-cycle border animation clock (`:cycles`).
+    pub(crate) lightcycle: lightcycle::LightCycleClock,
     /// In-memory agent traffic bus read by the zoom graph and snoop view (`FLT-02`, Phase 50-05).
     pub(crate) traffic: traffic::TrafficBus,
     /// Unified agent / session / command-history registry behind `:find` (Phase 50.1).
@@ -361,6 +367,7 @@ impl WindowManager {
             tmux_link: crate::tmux::link::TmuxLinkState::default(),
             drawer: WorkspaceDrawer::new(),
             agents: agent_state::AgentTracker::new(),
+            lightcycle: lightcycle::LightCycleClock::default(),
             traffic: traffic::TrafficBus::new(),
             registry: registry::RegistryState::new(),
             agents_window: agents_window::AgentsWindowState::default(),
@@ -738,6 +745,22 @@ impl WindowManager {
         }
     }
 
+    /// Toggles the `:version` details window.
+    pub fn toggle_version_info(&mut self) {
+        self.modal = if matches!(self.modal, Modal::Version { .. }) { Modal::None } else { Modal::Version { scroll: 0 } };
+    }
+
+    pub fn is_version_info_visible(&self) -> bool {
+        matches!(self.modal, Modal::Version { .. })
+    }
+
+    pub fn version_info_scroll(&self) -> usize {
+        match self.modal {
+            Modal::Version { scroll } => scroll,
+            _ => 0,
+        }
+    }
+
     /// Toggles the `<F9>` / `:inspector` Live 3270 Terminal Inspector modal (`BEL-01`).
     pub fn toggle_inspector(&mut self) {
         let next = !self.is_inspector_visible();
@@ -915,7 +938,7 @@ impl WindowManager {
         true
     }
 
-    /// Closes the focused pane (if more than 1 workspace pane exists).
+    /// Closes the focused pane; the last one ends the session if another session exists.
     pub fn close_focused_pane(&mut self) -> bool {
         if self.quick_terminal.visible {
             self.quick_terminal.visible = false;
@@ -924,6 +947,10 @@ impl WindowManager {
         let Some(target_id) = self.z_stack.top() else {
             return false;
         };
+        if self.panes.len() == 1 && self.panes.contains_key(&target_id) {
+            // The session's last window: closing it ends the session when another one exists.
+            return self.close_last_window_of_session();
+        }
         self.remove_pane(target_id)
     }
 
@@ -969,6 +996,9 @@ impl WindowManager {
             changed = true;
         }
         if !self.headless_mode && self.tick_cursor_blink(Instant::now()) {
+            changed = true;
+        }
+        if !self.headless_mode && self.tick_lightcycle(Instant::now()) {
             changed = true;
         }
         self.update_drawer_telemetry();

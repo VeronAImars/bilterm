@@ -8,6 +8,7 @@
 
 use std::sync::Mutex;
 
+use bilterm::api::{AutomationControlPlane, JsonValue};
 use bilterm::pty::PtyEvent;
 use bilterm::wm::split_tree::SplitDirection;
 use bilterm::wm::{WindowManager, WorkspaceLayoutMode};
@@ -44,6 +45,11 @@ fn screen(wm: &WindowManager, id: usize) -> String {
 fn save_on_disk(dir: &std::path::Path, name: &str) {
     let other = headless(dir);
     other.save_session(name).unwrap();
+}
+
+/// `{"name": <name>}`, the parameter object of the `workspace.*` RPC methods.
+fn name_param(name: &str) -> JsonValue {
+    JsonValue::obj([("name", JsonValue::String(name.to_string()))])
 }
 
 #[cfg(unix)]
@@ -107,6 +113,24 @@ mod live_programs {
                 .child_pid()
                 .unwrap();
             assert!(alive_after_reaper_window(fresh_pid), "shell {fresh_pid} was killed by switch-to-new");
+        });
+    }
+
+    /// `bilterm workspace select`, RPC `workspace.select` and MCP `workspace_select` all land here.
+    #[test]
+    fn workspace_select_rpc_keeps_the_outgoing_shell_alive() {
+        isolated(|dir| {
+            save_on_disk(dir, "other");
+            let mut cp = AutomationControlPlane::new_headless(24, 80);
+            cp.wm = real(dir);
+            let pid = shell_pid(&cp.wm, 1);
+
+            cp.dispatch_method("workspace.select", &name_param("other")).unwrap();
+            assert_eq!(cp.wm.config().history_session, "other");
+            assert!(alive_after_reaper_window(pid), "outgoing shell {pid} was killed by workspace.select");
+
+            cp.dispatch_method("workspace.select", &name_param("default")).unwrap();
+            assert_eq!(shell_pid(&cp.wm, 1), pid, "selecting it again must return the same live shell");
         });
     }
 }
@@ -246,5 +270,39 @@ fn last_pane_exit_falls_back_to_a_parked_session_instead_of_quitting() {
         assert_eq!(wm.config().history_session, "default");
         assert!(screen(&wm, 1).contains("DEFAULT_PANE_ONE"));
         assert!(wm.active_pane().status_message().unwrap_or("").contains("Session 'b' ended"));
+    });
+}
+
+#[test]
+fn workspace_select_rpc_parks_the_outgoing_session_and_lists_it_as_live() {
+    isolated(|dir| {
+        save_on_disk(dir, "other");
+        let mut cp = AutomationControlPlane::new_headless(24, 80);
+        cp.wm.config_mut().session_dir = Some(dir.join("sessions").to_string_lossy().into_owned());
+        mark(&mut cp.wm, 1, "DEFAULT_PANE_ONE");
+
+        let res = cp.dispatch_method("workspace.select", &name_param("other")).unwrap();
+        assert_eq!(res.get("name").and_then(JsonValue::as_str), Some("other"));
+        assert_eq!(cp.wm.config().history_session, "other");
+        let parked = &cp.wm.window_manage().background_sessions["default"];
+        assert!(parked.panes[&1].vt().snapshot().contents().contains("DEFAULT_PANE_ONE"));
+
+        // The session left behind is listed as live; selecting it by its `wN` id returns its panes.
+        let list = cp.dispatch_method("workspace.list", &JsonValue::obj(Vec::<(String, JsonValue)>::new())).unwrap();
+        let rows = list.get("workspaces").and_then(JsonValue::as_array).unwrap();
+        let row = rows
+            .iter()
+            .find(|r| r.get("name").and_then(JsonValue::as_str) == Some("default"))
+            .expect("the parked session is listed");
+        assert_eq!(row.get("live").and_then(JsonValue::as_bool), Some(true));
+        let id = row.get("id").and_then(JsonValue::as_str).unwrap().to_string();
+        cp.dispatch_method("workspace.select", &name_param(&id)).unwrap();
+        assert_eq!(cp.wm.config().history_session, "default");
+        assert!(screen(&cp.wm, 1).contains("DEFAULT_PANE_ONE"), "live screen lost on the way back");
+
+        // Selecting never creates a session: that is `workspace.new`.
+        let err = cp.dispatch_method("workspace.select", &name_param("no-such-session")).unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+        assert_eq!(cp.wm.config().history_session, "default");
     });
 }

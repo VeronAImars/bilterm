@@ -192,6 +192,15 @@ TRON is a built-in look: black canvas, neon cyan light-cycle borders (thin, roun
 
 `:tron off` restores the look that was active when TRON was switched on in this session. When TRON came from `--tron`, the config file or `:appearance tron` there is nothing to restore, so `:tron off` lands on Classic. Pressing `F11` on TRON always goes to Classic. `:snazzy` and `:glass` can be layered on top of TRON; switching TRON on clears them first.
 
+**Light cycles.** The active window's border is animated: a bright cyan cycle with a fading trail races clockwise around it, through every corner, and an orange one runs the other way once the window has 20 or more border cells (smaller windows get just the cyan one). Unfocused windows stay static, and the title and window controls are not recoloured. The cycles only run in the TRON look.
+
+| Surface | How |
+|---------|-----|
+| Colon command | `:cycles` shows the speed, `:cycles 20` sets it (cells per second, 1 to 60), `:cycles off` stops the animation, `:cycles on` starts it again at the default |
+| Config file | `[appearance]` then `lightcycle_speed = 12` (`0` = off; `:set appearance.lightcycle_speed 20`, `:config save`) |
+
+The default is 12 cells per second, about 17 seconds for a lap of an 80x24 window. The window is redrawn once per cell travelled (12 times per second at the default, never more than about 30 per second), and not at all when TRON or the animation is off. There is no separate reduced-motion setting; `:cycles off` is the switch.
+
 A custom `:theme` still wins over the TRON palette, as it does for every look. (`:theme tron-grid` is a separate, older colour theme for the classic chrome.)
 
 ## 7. Declarative Configuration (`~/.config/bilterm/config.toml`) (`CFG-01`)
