@@ -20,6 +20,10 @@ pub const ROW_OVERHEAD_BYTES: u64 = 64;
 pub const MIN_AUTO_BUDGET_BYTES: u64 = 64 * MIB;
 /// Budget used when total system memory cannot be probed.
 pub const FALLBACK_BUDGET_BYTES: u64 = 256 * MIB;
+/// Hard per-pane line cap applied when `[scrollback] max_lines = "auto"`.
+pub const DEFAULT_MAX_LINES: usize = 100_000;
+/// Rows every pane keeps even when `min_lines` cannot be honoured within the memory budget.
+pub const PANE_FLOOR_LINES: usize = 200;
 /// Default initial per-pane capacity for live panes before any rebalance.
 pub const DEFAULT_INITIAL_LINES: usize = 10_000;
 /// Minimum interval between periodic rebalances from the app tick.
@@ -122,7 +126,7 @@ pub enum MemoryBudget {
     Bytes(u64),
 }
 
-/// `max_lines` setting: `"auto"` (derived from the budget) or a fixed hard cap per pane.
+/// `max_lines` setting: `"auto"` (`DEFAULT_MAX_LINES`, still bounded by the budget) or a fixed hard cap per pane.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "IntOrString", into = "IntOrString")]
 pub enum LineLimit {
@@ -244,9 +248,10 @@ fn de_lenient_usize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<usize, D::
 pub struct ScrollbackConfig {
     /// Global budget for all panes' scrollback (`"auto"`, `"<n>%"`, `"<n>[KMGT]iB"`).
     pub memory_budget: MemoryBudget,
-    /// Hard per-pane cap in lines (`"auto"` = limited only by the budget).
+    /// Hard per-pane cap in lines (`"auto"` = [`DEFAULT_MAX_LINES`], still limited by the budget).
     pub max_lines: LineLimit,
-    /// Floor that contraction never goes below.
+    /// Floor that contraction never goes below, unless honouring it for every pane would exceed
+    /// the memory budget (then each pane keeps at least [`PANE_FLOOR_LINES`] rows).
     #[serde(deserialize_with = "de_lenient_usize")]
     pub min_lines: usize,
     /// Capacity each new pane starts with before growing by doubling.
@@ -300,7 +305,7 @@ pub struct ResolvedPolicy {
 impl ResolvedPolicy {
     pub fn resolve(cfg: &ScrollbackConfig, mem: MemorySnapshot) -> Self {
         let max_lines = match cfg.max_lines {
-            LineLimit::Auto => None,
+            LineLimit::Auto => Some(DEFAULT_MAX_LINES),
             LineLimit::Fixed(n) => Some(n.max(1)),
         };
         let min_lines = cfg.min_lines.min(max_lines.unwrap_or(usize::MAX));
@@ -325,6 +330,14 @@ impl ResolvedPolicy {
         by_budget
             .min(self.max_lines.unwrap_or(usize::MAX))
             .max(self.min_lines)
+    }
+
+    /// Per-pane floor when `panes` panes share the budget: `min_lines`, yielding to the budget
+    /// (never below [`PANE_FLOOR_LINES`], nor above `min_lines`) when many panes would exceed it.
+    pub fn floor_lines(&self, cols: u16, panes: usize) -> usize {
+        let fair_bytes = self.budget_bytes / panes.max(1) as u64;
+        let fair_rows = usize::try_from(fair_bytes / row_bytes(cols)).unwrap_or(usize::MAX);
+        self.min_lines.min(fair_rows.max(PANE_FLOOR_LINES))
     }
 
     /// Capacity for a fresh pane.
@@ -364,10 +377,11 @@ pub fn plan_capacities(usages: &[PaneUsage], policy: &ResolvedPolicy) -> Vec<usi
     }
     let budget = policy.budget_bytes;
     let fair_bytes = budget / usages.len() as u64;
+    let n_panes = usages.len();
     let fair_rows = |u: &PaneUsage| {
         usize::try_from(fair_bytes / row_bytes(u.cols))
             .unwrap_or(usize::MAX)
-            .max(policy.min_lines)
+            .max(policy.floor_lines(u.cols, n_panes))
     };
     let mut used: Vec<u64> = usages.iter().map(PaneUsage::used_bytes).collect();
     let mut total: u64 = used.iter().sum();
@@ -379,7 +393,7 @@ pub fn plan_capacities(usages: &[PaneUsage], policy: &ResolvedPolicy) -> Vec<usi
         if u.used_rows > target || u.capacity > policy.pane_cap_lines(u.cols) {
             let target = target
                 .min(policy.pane_cap_lines(u.cols))
-                .max(policy.min_lines);
+                .max(policy.floor_lines(u.cols, n_panes));
             let kept = u.used_rows.min(target) as u64 * row_bytes(u.cols);
             *total = total.saturating_sub(used[i]).saturating_add(kept);
             used[i] = kept;

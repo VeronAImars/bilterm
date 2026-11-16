@@ -500,3 +500,49 @@ fn tiny_grids_clamp_to_min_dim_and_survive_soft_wrap() {
         assert_eq!(vt.size(), (rows, cols));
     }
 }
+
+#[test]
+fn pending_osc52_is_bounded_dropping_oldest() {
+    let mut vt = VtParser::new(10, 40, 100);
+    for i in 0..(bounded::MAX_PENDING_OSC52 + 20) {
+        let seq = encode_osc52_clipboard(&format!("clip-{i}"));
+        vt.process(seq.as_bytes());
+    }
+    let out = vt.take_outbound_osc52();
+    assert_eq!(out.len(), bounded::MAX_PENDING_OSC52);
+    assert_eq!(
+        out.last().unwrap(),
+        &encode_osc52_clipboard(&format!("clip-{}", bounded::MAX_PENDING_OSC52 + 19))
+    );
+    assert_eq!(vt.take_osc52_decoded().len(), bounded::MAX_PENDING_OSC52);
+}
+
+#[test]
+fn recording_auto_stops_at_byte_cap_with_notice_and_valid_cast() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cap.cast");
+    let mut vt = VtParser::new(24, 80, 100);
+    vt.set_recording_max_bytes(4096);
+    vt.start_recording(path.clone());
+    for _ in 0..100 {
+        vt.process(&[b'x'; 200]);
+    }
+    assert!(!vt.is_recording(), "recording stopped at the cap");
+    let notice = vt.take_recording_notice().expect("notice surfaced");
+    assert!(notice.contains("cap"), "{notice}");
+    assert!(vt.take_recording_notice().is_none());
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.starts_with("{\"version\":2"));
+    assert!(text.len() < 4096 + 1024, "file bounded by cap, got {}", text.len());
+}
+
+#[test]
+fn recording_config_parses_sizes_and_defaults_to_64_mib() {
+    use super::recording::{DEFAULT_RECORDING_MAX_BYTES, RecordingConfig};
+    assert_eq!(RecordingConfig::default().max_bytes(), 64 * 1024 * 1024);
+    assert_eq!(DEFAULT_RECORDING_MAX_BYTES, 64 * 1024 * 1024);
+    let c: RecordingConfig = toml::from_str("max_bytes = \"8MiB\"").unwrap();
+    assert_eq!(c.max_bytes(), 8 * 1024 * 1024);
+    let c: RecordingConfig = toml::from_str("max_bytes = 2048").unwrap();
+    assert_eq!(c.max_bytes(), 2048);
+}
