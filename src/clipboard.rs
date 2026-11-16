@@ -7,6 +7,23 @@
 
 use std::sync::Mutex;
 
+/// Total text bytes retained by the workspace clipboard/yank registry (`ClipboardRegistry`);
+/// oldest unpinned entries are evicted first once exceeded.
+pub const MAX_CLIPBOARD_TOTAL_BYTES: usize = 16 * 1024 * 1024;
+/// Most undrained clipboard / media records a pane buffers between `CLIPBOARD` window drains.
+pub const MAX_PENDING_CLIPBOARD_RECORDS: usize = 256;
+
+/// Appends `item`, dropping the oldest entries so at most `cap` remain.
+pub fn push_capped<T>(items: &mut Vec<T>, item: T, cap: usize) {
+    if items.len() >= cap {
+        items.drain(..=items.len() - cap);
+    }
+    items.push(item);
+}
+
+/// Total bytes retained by one prompt's yank history ring (`FloatingPromptState`).
+pub const MAX_YANK_HISTORY_BYTES: usize = 4 * 1024 * 1024;
+
 /// Origin of a clipboard or yank entry (`CLIP-02`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ClipboardSource {

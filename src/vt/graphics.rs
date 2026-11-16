@@ -7,6 +7,9 @@ pub const MAX_KITTY_PAYLOAD_B64_BYTES: usize =
     (MAX_GRAPHIC_DIM_PX as usize * MAX_GRAPHIC_DIM_PX as usize * 4).div_ceil(3) * 4;
 /// Most graphic placements retained per terminal; the oldest are dropped first.
 pub const MAX_GRAPHIC_PLACEMENTS: usize = 64;
+/// Total decoded RGBA bytes retained across all placements of one terminal; the oldest are
+/// dropped first (the newest placement is always kept).
+pub const MAX_GRAPHIC_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 
 /// Terminal graphics protocol family (`GFX-01`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -220,6 +220,22 @@ src/
   - `:record pane [path]` — Records only the active pane's raw PTY output stream.
   - `:record stop` — Finalizes and flushes the `.cast` file (defaulting to a `0600` file inside the per-user `0700` runtime directory).
 
+### 3.3b Memory Budgets for Untrusted/Unbounded Input (queues, clipboard, graphics)
+Every buffer that grows from child output, escape sequences or remote lines has a byte or count cap, oldest-first eviction or back-pressure, and a unit test. None of them block the UI thread.
+
+| Buffer | Cap | At the limit |
+|---|---|---|
+| `VtWorkerHandle` `WritePty`/`FeedOutput` queue (`src/vt/worker.rs`) | `MAX_QUEUED_CMD_BYTES` 8 MiB | payload dropped with a `tracing` warning; sender never blocks. Undelivered `Osc52Clipboard` events: `MAX_PENDING_EVENTS` 1024 (title/cwd/exit are never dropped) |
+| tmux control lines, transport to window manager (`src/tmux/`) | `MAX_LINE_BACKLOG_BYTES` 16 MiB (`LineBacklog`) | back-pressure: the `tmux -CC` pipe reader and `PtyLinkDriver::pump` stop reading until `poll_tmux_control` drains; nothing dropped. Channels made by `from_channels` (tests) are unbudgeted |
+| tmux command channel | already capped upstream by `OUTBOUND_CAP` in the bridge | unchanged |
+| Per-PTY input (`src/pty/writer.rs`) | `MAX_QUEUED_INPUT_BYTES` 4 MiB per pane and `MAX_GLOBAL_QUEUED_INPUT_BYTES` 32 MiB across all panes (`InputPool`) | whole write refused with an error, counted in `rejected_bytes` |
+| `ClipboardRegistry` (`src/wm/clipboard_registry.rs`) | `MAX_CLIPBOARD_ENTRIES` 200 and `MAX_CLIPBOARD_TOTAL_BYTES` 16 MiB | oldest unpinned entries evicted first (pinned only as a last resort); the newest entry is kept, truncated on a char boundary if it alone exceeds the budget |
+| Prompt yank history (`src/pane/prompt_selection.rs`) | `MAX_YANK_HISTORY` 50 and `MAX_YANK_HISTORY_BYTES` 4 MiB | oldest dropped; newest kept |
+| `Pane` pending clipboard / media records | `MAX_PENDING_CLIPBOARD_RECORDS` 256 each | oldest dropped |
+| Graphic placements per terminal (`src/vt/`) | `MAX_GRAPHIC_PLACEMENTS` 64 and `MAX_GRAPHIC_TOTAL_BYTES` 16 MiB of RGBA | oldest evicted; newest kept |
+
+The STT worker channels stay unbounded: they carry only user-paced control commands.
+
 ### 3.4 Security Boundaries (`SEC-R01..04`)
 - **Private runtime directory (`src/secure_fs.rs`)**: All temporary files (shell integration rc scripts, history exports, default `.cast` recordings, SSH `ControlPath` sockets, default headless Unix socket) live inside a verified `0700` UID-owned directory (`$XDG_RUNTIME_DIR/bilterm` or `/tmp/bilterm-<uid>`) and are created with `O_CREAT | O_EXCL | O_NOFOLLOW` mode `0600`.
 - **Authenticated RPC & Snapshot Confinement (`src/api/`)**: `--headless` defaults to a `0600` Unix socket with kernel peer-UID verification; non-loopback TCP requires `--allow-remote` + `--token-file <0600-path>` verified via constant-time `auth.login`. RPC/MCP `workspace.snapshot` `ppm_path` is confined to `$XDG_STATE_HOME/bilterm/snapshots` (or `--snapshot-dir`), rejecting path traversal and symlinks.

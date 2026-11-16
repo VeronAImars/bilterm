@@ -17,7 +17,7 @@ use crate::tmux::link::{
     LINK_SESSION_DEFAULT,
 };
 use crate::tmux::splitter::{diag_lines, ControlLineSplitter, SplitOut};
-use crate::tmux::TmuxControlSubprocess;
+use crate::tmux::{LineBacklog, TmuxControlSubprocess};
 
 /// How long later pumps keep asking for the exit code after the PTY stream ended. Nothing waits:
 /// each pump asks once (`try_wait`) and the exit is reported as soon as the code is known or this
@@ -29,6 +29,8 @@ pub struct PtyLinkDriver {
     pty: Option<PtySession>,
     splitter: ControlLineSplitter,
     line_tx: Option<UnboundedSender<String>>,
+    /// Byte budget shared with the window manager poll; the PTY is not drained while it is full.
+    backlog: Option<LineBacklog>,
     cmd_rx: Option<UnboundedReceiver<String>>,
     exit_reported: bool,
     /// The PTY stream ended at this instant; the exit code is still being collected.
@@ -47,6 +49,7 @@ impl Default for PtyLinkDriver {
             pty: None,
             splitter: ControlLineSplitter::new(),
             line_tx: None,
+            backlog: None,
             cmd_rx: None,
             exit_reported: false,
             exit_seen: None,
@@ -81,11 +84,14 @@ impl PtyLinkDriver {
         let pty = PtySession::spawn(cfg)?;
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let (line_tx, line_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let control = TmuxControlSubprocess::from_channels(name, cmd_tx, line_rx);
+        let backlog = LineBacklog::new();
+        let control =
+            TmuxControlSubprocess::from_channels_budgeted(name, cmd_tx, line_rx, backlog.clone());
         let driver = PtyLinkDriver {
             pty: Some(pty),
             splitter: ControlLineSplitter::new(),
             line_tx: Some(line_tx),
+            backlog: Some(backlog),
             cmd_rx: Some(cmd_rx),
             exit_reported: false,
             exit_seen: None,
@@ -105,6 +111,9 @@ impl PtyLinkDriver {
                 SplitOut::ControlStart => poll.control_started = true,
                 SplitOut::Line(line) => {
                     if let Some(tx) = self.line_tx.as_ref() {
+                        if let Some(b) = self.backlog.as_ref() {
+                            b.charge(line.len());
+                        }
                         let _ = tx.send(line);
                     }
                 }
@@ -169,6 +178,11 @@ impl LinkDriver for PtyLinkDriver {
         }
         if let Some(since) = self.exit_seen {
             self.report_exit_when_known(since, &mut poll);
+            return poll;
+        }
+        // Back-pressure: leave output in the PTY reader's bounded queue while the window manager
+        // is behind on control lines (the exit path above still runs).
+        if self.backlog.as_ref().is_some_and(LineBacklog::is_full) {
             return poll;
         }
         let events = match self.pty.as_mut() {

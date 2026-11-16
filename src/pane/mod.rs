@@ -47,6 +47,7 @@ use crate::pane::history_store::HistoryStore;
 use crate::pty::line_discipline::inspect_pty_fd;
 use crate::pty::line_discipline::{InputRoutingMode, LineDisciplineState};
 use crate::pty::{PtyConfig, PtyEvent, PtySession};
+use crate::clipboard::{MAX_PENDING_CLIPBOARD_RECORDS, push_capped};
 use crate::vt::VtParser;
 
 /// Unique identifier for a `CompositePane`.
@@ -942,13 +943,13 @@ impl CompositePane {
         let text = text.into();
         if !text.is_empty() {
             self.count_event(text.len());
-            self.pending_clipboard_records.push((source, text));
+            push_capped(&mut self.pending_clipboard_records, (source, text), MAX_PENDING_CLIPBOARD_RECORDS);
         }
     }
 
     pub fn record_media_passthrough(&mut self, mime: impl Into<String>, bytes_len: usize) {
         self.count_event(bytes_len);
-        self.pending_media_records.push((mime.into(), bytes_len));
+        push_capped(&mut self.pending_media_records, (mime.into(), bytes_len), MAX_PENDING_CLIPBOARD_RECORDS);
     }
 
     pub fn take_pending_clipboard_records(
@@ -967,10 +968,11 @@ impl CompositePane {
             crate::clipboard::set_system_clipboard(&decoded);
             self.prompt.push_yank_entry(&decoded);
             let _ = self.history_store.record_clipboard_entry(&decoded);
-            self.pending_clipboard_records.push((
-                crate::clipboard::ClipboardSource::Osc52,
-                decoded,
-            ));
+            push_capped(
+                &mut self.pending_clipboard_records,
+                (crate::clipboard::ClipboardSource::Osc52, decoded),
+                MAX_PENDING_CLIPBOARD_RECORDS,
+            );
         }
     }
 
