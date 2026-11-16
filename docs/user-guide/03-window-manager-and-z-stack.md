@@ -41,8 +41,8 @@ Every `CompositePane` (complete with its own PTY `OutputCanvas` and its own mova
 
 Inspired by classic **Borland Turbo Vision (Turbo C / Turbo Pascal)** overlapping windows, Bilterm maintains a **Z-Order Deck (`ZStack`)** across all open composite panes:
 - **Toggle Tiled vs. Stacked Cascade Layout**: Press `Cmd+L` / `Ctrl+Shift+L` (`<Leader> M`), use Window mode `s` / `t` (`Ctrl+X w s`), or run `:layout stack` / `:layout tile`.
-- **Shuffle Deck Top-to-Bottom (`Next Window`)**: Press `Alt+Tab`, `F6`, `<Leader> n`, or run `:deck next`. Sends the current top window to the bottom of the deck (`Z:1/N`) and promotes the next window to the top (`Z:N/N`).
-- **Shuffle Deck Bottom-to-Top (`Prev Window`)**: Press `Alt+Shift+Tab`, `<Leader> p`, or run `:deck prev`. Pulls the bottom-most window to the top of the deck.
+- **Shuffle Deck Top-to-Bottom (`Next Window`)**: Press `Ctrl+Tab` (kitty-protocol terminals and `--gui`; in any terminal use `Ctrl+Alt+X` / `Ctrl+Alt+Z` to walk every window and side window), `Alt+Tab` (`legacy` profile), `F6`, `<Leader> Tab`, `<Leader> n`, or run `:deck next`. Sends the current top window to the bottom of the deck (`Z:1/N`) and promotes the next window to the top (`Z:N/N`).
+- **Shuffle Deck Bottom-to-Top (`Prev Window`)**: Press `Ctrl+Shift+Tab`, `Alt+Shift+Tab`, `<Leader> BackTab`, or run `:deck prev`. Pulls the bottom-most window to the top of the deck.
 - **Selective Raise by Window Number**: Press `Alt+1` through `Alt+9` (`<Leader> 1..9`) or run `:focus <id>` to immediately pluck pane `#1..#9` from anywhere in the stack and raise it to the front.
 - **Selective Raise & Move by Mouse**: Click anywhere inside an occluded window to raise it to the top of the z-order stack and focus it; drag its top title bar to reposition it across the workspace.
 

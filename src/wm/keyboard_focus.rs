@@ -8,7 +8,7 @@
 //! - [`WindowManager::settle_keyboard_owner`] repairs the invariant after any action or pointer
 //!   event, so a window focused by direct state change still ends up the only owner;
 //! - [`FocusOp`] (`:focus cycle|pane|<window>`, `Ctrl+Alt+O`) walks pane -> open side windows in
-//!   visual order -> pane.
+//!   visual order -> pane; `:focus all` (`Ctrl+Alt+X`) also visits every pane.
 
 use ratatui::layout::Rect;
 
@@ -122,6 +122,11 @@ pub enum FocusOp {
     Next,
     /// `:focus cycle prev` - the same walk backwards.
     Prev,
+    /// `:focus all` (`Ctrl+Alt+X`) - every open stop in one walk: each pane in pane-number order,
+    /// then the open side windows in visual order, then wrap to the first pane.
+    NextAll,
+    /// `:focus all prev` (`Ctrl+Alt+Z`) - the same walk backwards.
+    PrevAll,
     /// `:focus pane` - hand the keyboard back to the active pane; every window stays open.
     Pane,
     /// `:focus <window>` - give an open side window the keyboard.
@@ -134,6 +139,8 @@ impl FocusOp {
         match self {
             Self::Next => ":focus cycle".to_string(),
             Self::Prev => ":focus cycle prev".to_string(),
+            Self::NextAll => ":focus all".to_string(),
+            Self::PrevAll => ":focus all prev".to_string(),
             Self::Pane | Self::Window(KeyboardOwner::Pane) => ":focus pane".to_string(),
             Self::Window(w) => format!(":focus {}", w.name()),
         }
@@ -388,9 +395,40 @@ impl WindowManager {
         ring.into_iter().map(|(_, _, o)| o).collect()
     }
 
+    /// `Ctrl+Alt+X` / `Ctrl+Alt+Z` walk: panes by number, then the side windows of [`Self::keyboard_focus_ring`].
+    fn keyboard_focus_all(&mut self, forward: bool) -> String {
+        let panes: Vec<_> = self.panes.keys().copied().collect();
+        let ring = self.keyboard_focus_ring();
+        let len = panes.len() + ring.len();
+        if len <= 1 {
+            self.release_keyboard();
+            return "Nothing else is open".to_string();
+        }
+        let owner = self.keyboard_owner();
+        let cur = match ring.iter().position(|o| *o == owner) {
+            Some(i) => panes.len() + i,
+            None => panes.iter().position(|id| *id == self.active_pane_id()).unwrap_or(0),
+        };
+        let next = if forward { (cur + 1) % len } else { (cur + len - 1) % len };
+        if next < panes.len() {
+            let id = panes[next];
+            self.focus_and_raise(id);
+            self.release_keyboard();
+            return format!("Keyboard: pane #{id}");
+        }
+        let target = ring[next - panes.len()];
+        if self.take_keyboard(target) {
+            format!("Keyboard: {} (Esc returns to the pane)", target.badge())
+        } else {
+            format!("{} is not open", target.badge())
+        }
+    }
+
     /// Applies one [`FocusOp`]; returns the status message.
     pub fn keyboard_focus_apply(&mut self, op: FocusOp) -> String {
         let target = match op {
+            FocusOp::NextAll => return self.keyboard_focus_all(true),
+            FocusOp::PrevAll => return self.keyboard_focus_all(false),
             FocusOp::Pane => KeyboardOwner::Pane,
             FocusOp::Window(w) => w,
             FocusOp::Next | FocusOp::Prev => {
