@@ -39,6 +39,7 @@ pub mod keyboard_focus;
 pub mod key_mode;
 pub mod which_key_state;
 pub mod layout_profile;
+pub mod lightcycle;
 pub mod link_cmd;
 pub mod pane_hold;
 pub mod panel_dock;
@@ -214,6 +215,8 @@ pub struct WindowManager {
     pub(crate) drawer: WorkspaceDrawer,
     /// Per-pane agent state tracker (`FLT-01`, Phase 50-03).
     pub(crate) agents: agent_state::AgentTracker,
+    /// TRON light-cycle border animation clock (`:cycles`).
+    pub(crate) lightcycle: lightcycle::LightCycleClock,
     /// In-memory agent traffic bus read by the zoom graph and snoop view (`FLT-02`, Phase 50-05).
     pub(crate) traffic: traffic::TrafficBus,
     /// Unified agent / session / command-history registry behind `:find` (Phase 50.1).
@@ -364,6 +367,7 @@ impl WindowManager {
             tmux_link: crate::tmux::link::TmuxLinkState::default(),
             drawer: WorkspaceDrawer::new(),
             agents: agent_state::AgentTracker::new(),
+            lightcycle: lightcycle::LightCycleClock::default(),
             traffic: traffic::TrafficBus::new(),
             registry: registry::RegistryState::new(),
             agents_window: agents_window::AgentsWindowState::default(),
@@ -992,6 +996,9 @@ impl WindowManager {
             changed = true;
         }
         if !self.headless_mode && self.tick_cursor_blink(Instant::now()) {
+            changed = true;
+        }
+        if !self.headless_mode && self.tick_lightcycle(Instant::now()) {
             changed = true;
         }
         self.update_drawer_telemetry();

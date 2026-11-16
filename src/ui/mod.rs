@@ -33,6 +33,7 @@ pub mod glyphs;
 pub mod graph_raster;
 pub mod hires_subcell;
 pub mod kbd_badge;
+pub mod lightcycle;
 pub mod mcp_ui;
 pub mod media_canvas_gui;
 pub mod menu_model;
@@ -600,6 +601,9 @@ impl Widget for WorkspaceWidget<'_> {
                     outer, &frame_title, is_active, chrome_style.resolve_outline(cfg),
                     chrome_style.resolve_bold(cfg), &frame_palette, &glyphs, buf,
                 );
+                if is_active && frame_palette.is_tron() && let Some(phase) = self.wm.lightcycle_phase() {
+                    lightcycle::render_lightcycles(buf, outer, phase, &frame_palette);
+                }
                 if self.wm.coord_style() != crate::wm::coordinates::CoordDisplayStyle::Off
                     && let Some(badge) = self.wm.coord_of(id).and_then(|c| c.format(self.wm.coord_style()))
                 {

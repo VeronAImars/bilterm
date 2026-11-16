@@ -86,6 +86,8 @@ pub enum Action {
     ChromeTitle(Option<crate::ui::design::TitlePolicy>),
     /// Accent border on the focused pane (non-Legacy looks).
     ChromeRing(bool),
+    /// TRON light-cycle border animation: show, on, off or set the speed (`:cycles`).
+    LightCycles(crate::ui::lightcycle::LightCycleOp),
     Cursor(CaretStyle),
     Outline {
         window: Option<OutlineStyle>,
