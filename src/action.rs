@@ -86,6 +86,8 @@ pub enum Action {
     ChromeTitle(Option<crate::ui::design::TitlePolicy>),
     /// Accent border on the focused pane (non-Legacy looks).
     ChromeRing(bool),
+    /// TRON light-cycle border animation: show, on, off or set the speed (`:cycles`).
+    LightCycles(crate::ui::lightcycle::LightCycleOp),
     Cursor(CaretStyle),
     Outline {
         window: Option<OutlineStyle>,
@@ -146,6 +148,8 @@ pub enum Action {
     BroadcastToggle(Option<bool>),
     MenuBarToggle(Option<bool>),
     VersionToggle(Option<bool>),
+    /// Opens the `:version` details window (version, build, platform).
+    VersionInfo,
     SessionSave(String),
     SessionRestore(String),
     SessionList,
@@ -498,6 +502,10 @@ impl Action {
                 format!(":drawer scale {}", if *d >= 0 { "110" } else { "90" })
             }
             Self::HelpToggle => ":help".to_string(),
+            Self::VersionInfo => ":version".to_string(),
+            Self::VersionToggle(Some(true)) => ":version on".to_string(),
+            Self::VersionToggle(Some(false)) => ":version off".to_string(),
+            Self::VersionToggle(None) => ":version toggle".to_string(),
             other => format!("{other:?}"),
         }
     }

@@ -49,7 +49,8 @@ src/
 ├── lib.rs                      # Crate root exporting public modules
 ├── main.rs                     # Binary entrypoint, CLI dispatch, tracing init, panic guard
 ├── app.rs                      # Async tokio::select! 60 FPS event & render loop
-├── launcher.rs                 # OS desktop launcher integration (.desktop / .plist / .lnk) & GUI-launch terminal auto-relaunch
+├── launcher.rs                 # OS desktop launcher integration (.desktop / .plist / .lnk), GUI-by-default decision, TUI fallback
+├── launcher_terminal.rs        # Pure host-terminal selection per OS (wt/pwsh/cmd, iTerm2/Terminal, Linux emulators) + tests
 ├── cli.rs                      # CLI flag parser (--headless, --mcp, --playbook, ctl, --man, --completions)
 ├── error.rs                    # BiltermError enum & idempotent TerminalRestoreGuard (RAII)
 ├── secure_fs.rs                # 0700 private runtime dir, 0600 O_EXCL/O_NOFOLLOW files, constant_time_eq
@@ -441,7 +442,7 @@ place that knows every focusable window: `KeyboardOwner` (routing order in `Keyb
 focus one), `release_keyboard()` (back to the pane, nothing closes) and `settle_keyboard_owner()` (run after every
 `WindowManager::apply` and every pointer event: if several windows claim the keyboard, the newly focused one wins). A new
 side window adds a `KeyboardOwner` variant and its arms there; do not write per-window blur lists.
-`FocusOp` (`Action::KeyboardFocus`) is `:focus cycle [prev]`, `:focus pane`, `:focus <window>`; the cycle chord `Ctrl+Alt+O`
+`FocusOp` (`Action::KeyboardFocus`) is `:focus cycle [prev]`, `:focus all [prev]` (`Ctrl+Alt+X` / `Ctrl+Alt+Z` in every terminal, `Ctrl+Alt+Tab` / `Ctrl+Alt+Shift+Tab` on kitty/GUI: every pane by number, then the ring), `:focus pane`, `:focus <window>`; the cycle chord `Ctrl+Alt+O`
 is a reserved global (works in raw passthrough) answered in `src/input/focus_keys.rs` before any side window sees the key.
 Conventions: `Esc` in a non-modal side window lowers to that window's `Blur` op (the `Dismiss` ops keep their
 close-unless-pinned meaning for commands and badges); a row click or `Enter` in the AGENTS list raises the pane and

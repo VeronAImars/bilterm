@@ -603,7 +603,7 @@ mod tests {
     }
 
     /// Parser arm heads that are not Tab-completion rows (short spellings kept for muscle memory).
-    const PARSER_ONLY_ALIASES: &[&str] = &["?", "a", "cb", "d", "h", "p", "sb", "sp", "vi", "vs"];
+    const PARSER_ONLY_ALIASES: &[&str] = &["?", "a", "cb", "d", "h", "lightcycles", "p", "sb", "sp", "vi", "vs"];
 
     #[test]
     fn parser_heads_are_known_best_effort() {

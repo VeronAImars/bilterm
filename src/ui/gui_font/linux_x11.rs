@@ -685,13 +685,13 @@ fn translate_x11_key_event(api: &X11Api, kev: &mut XKeyEvent) -> Option<KeyEvent
 /// Runs Bilterm in a native X11 + Xft/Fontconfig desktop GUI window on Linux/Unix (`GPU-02`).
 pub fn run_x11_gui_window(mut app: App) -> Result<()> {
     let Some(api) = X11Api::load() else {
-        let _ = crate::launcher::ensure_terminal_or_relaunch(&[])?;
-        return Ok(());
+        app.wm.end_run();
+        return Err(crate::error::BiltermError::GuiUnavailable("libX11 could not be loaded".into()));
     };
     let dpy = unsafe { (api.x_open_display)(null()) };
     if dpy.is_null() {
-        let _ = crate::launcher::ensure_terminal_or_relaunch(&[])?;
-        return Ok(());
+        app.wm.end_run();
+        return Err(crate::error::BiltermError::GuiUnavailable("cannot open the X display (DISPLAY unset or unreachable)".into()));
     }
 
     let root = unsafe { (api.x_default_root_window)(dpy) };

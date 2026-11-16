@@ -33,6 +33,7 @@ pub mod glyphs;
 pub mod graph_raster;
 pub mod hires_subcell;
 pub mod kbd_badge;
+pub mod lightcycle;
 pub mod mcp_ui;
 pub mod media_canvas_gui;
 pub mod menu_model;
@@ -82,7 +83,7 @@ use crate::ui::cursor::{
     render_spotlight_cursor,
 };
 use crate::ui::modals::{
-    render_help_modal, render_history_popup, render_inspector_modal, render_menubar_dropdown,
+    render_help_modal, render_history_popup, render_inspector_modal, render_menubar_dropdown, render_version_modal,
     render_palette_modal, render_top_menubar, render_unsafe_paste_modal,
 };
 use crate::ui::occlusion::occlude_rect;
@@ -600,6 +601,9 @@ impl Widget for WorkspaceWidget<'_> {
                     outer, &frame_title, is_active, chrome_style.resolve_outline(cfg),
                     chrome_style.resolve_bold(cfg), &frame_palette, &glyphs, buf,
                 );
+                if is_active && frame_palette.is_tron() && let Some(phase) = self.wm.lightcycle_phase() {
+                    lightcycle::render_lightcycles(buf, outer, phase, &frame_palette);
+                }
                 if self.wm.coord_style() != crate::wm::coordinates::CoordDisplayStyle::Off
                     && let Some(badge) = self.wm.coord_of(id).and_then(|c| c.format(self.wm.coord_style()))
                 {
@@ -715,6 +719,10 @@ impl Widget for WorkspaceWidget<'_> {
 
         if self.wm.is_inspector_visible() && workspace_area.width >= 24 && workspace_area.height >= 6 {
             render_inspector_modal(self.wm, workspace_area, cfg, &palette, &glyphs, buf);
+        }
+
+        if self.wm.is_version_info_visible() && workspace_area.width >= 24 && workspace_area.height >= 6 {
+            render_version_modal(self.wm, workspace_area, cfg, &palette, &glyphs, buf);
         }
 
         if self.wm.is_help_visible() && workspace_area.width >= 20 && workspace_area.height >= 6 {

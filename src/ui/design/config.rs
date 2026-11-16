@@ -186,6 +186,8 @@ pub struct AppearanceConfig {
     pub title: Option<TitlePolicy>,
     /// Accent-colored border on the focused pane (non-Legacy only).
     pub focus_ring: bool,
+    /// TRON light-cycle border animation speed in cells per second (`0` = off; `:cycles`).
+    pub lightcycle_speed: crate::ui::lightcycle::CycleSpeed,
     /// Optional bundled/UI font family for chrome text (GUI only; `None` keeps `font_family`).
     pub ui_font: Option<String>,
     /// Named user-created custom profiles (`:appearance duplicate`).
@@ -240,6 +242,7 @@ impl AppearanceConfig {
     pub fn sanitized(mut self) -> Self {
         self.opacity_pct = self.opacity_pct.map(|v| v.min(100));
         self.glow_pct = self.glow_pct.map(|v| v.min(100));
+        self.lightcycle_speed = crate::ui::lightcycle::CycleSpeed(self.lightcycle_speed.get());
         self.corner_radius_px = self.corner_radius_px.map(|v| v.min(24));
         for custom in self.custom_profiles.values_mut() {
             custom.opacity_pct = custom.opacity_pct.map(|v| v.min(100));
