@@ -14,6 +14,9 @@ use crate::wm::agents_window::NodeKey;
 /// Ticks (about 16 ms each) a Working-pane close stays armed for confirmation.
 const CLOSE_CONFIRM_TICKS: usize = 300;
 
+/// Two `Enter` presses on the same session row within this window count as a double-tap (switch).
+pub const ENTER_DOUBLE_TAP_WINDOW: std::time::Duration = std::time::Duration::from_millis(400);
+
 /// One drawer navigation operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DrawerNavOp {
@@ -30,6 +33,9 @@ pub enum DrawerNavOp {
     /// Select the highlighted row (the keyboard twin of a click): a pane, window or session row is
     /// switched to and that pane gets the keyboard; the drawer stays open.
     Activate,
+    /// `Enter`: on a session row, fold/unfold it, and a second `Enter` on the same row within
+    /// [`ENTER_DOUBLE_TAP_WINDOW`] switches to it; any other row behaves like [`Self::Activate`].
+    Enter,
     /// Raise the highlighted row's pane (or switch to its session) and keep the keyboard in the
     /// drawer, to look at it while browsing on (`Space`).
     Raise,
@@ -140,6 +146,7 @@ impl WindowManager {
                 self.drawer_jump_to_selected();
                 true
             }
+            DrawerNavOp::Enter => self.drawer_nav_enter(),
             DrawerNavOp::Raise => {
                 self.drawer_activate_selected(false);
                 true
@@ -191,6 +198,28 @@ impl WindowManager {
             DrawerNavOp::OpenComms => self.drawer_open_comms(),
             DrawerNavOp::CommsFocus(on) => self.drawer_comms_focus(on),
         }
+    }
+
+    /// `Enter`: a session row unfolds/folds, a double-tap on it switches; other rows activate.
+    fn drawer_nav_enter(&mut self) -> bool {
+        let rows = self.drawer_rows();
+        let Some(DrawerRowKind::SessionHeader(name)) = rows.get(self.drawer.selected_index).map(|r| r.kind.clone())
+        else {
+            self.drawer.last_enter = None;
+            return self.drawer_jump_to_selected();
+        };
+        let now = self.drawer.now();
+        let tapped = self.drawer.last_enter.take().is_some_and(|(n, at)| {
+            n == name && now.saturating_sub(at) <= ENTER_DOUBLE_TAP_WINDOW
+        });
+        if tapped {
+            self.drawer_jump_to_selected();
+            return true;
+        }
+        self.drawer.last_enter = Some((name, now));
+        // A session without windows cannot fold: the single tap then has nothing to toggle.
+        self.fold_selected_navigator_row();
+        true
     }
 
     /// Opens the traffic window on the selected pane row: a pairing focuses the edge and filters the

@@ -161,3 +161,112 @@ fn selection_stays_on_screen_when_the_list_is_longer_than_the_drawer() {
         }
     });
 }
+
+fn rows_len(wm: &WindowManager) -> usize {
+    wm.drawer_rows().len()
+}
+
+#[test]
+fn enter_on_a_session_row_unfolds_it_and_does_not_switch() {
+    isolated(|dir| {
+        let mut wm = fixture(dir);
+        press(&mut wm, KeyCode::Char('C'));
+        select(&mut wm, "S:other");
+        let folded = rows_len(&wm);
+        press(&mut wm, KeyCode::Enter);
+        assert_eq!(rows_len(&wm), folded + 2, "other unfolded");
+        assert_eq!(wm.config().history_session, "default", "a single Enter must not switch");
+        assert!(wm.drawer().focused, "the drawer keeps the keyboard");
+        assert_eq!(label(&wm), "S:other");
+    });
+}
+
+#[test]
+fn second_enter_within_the_window_switches() {
+    isolated(|dir| {
+        let mut wm = fixture(dir);
+        press(&mut wm, KeyCode::Char('C'));
+        select(&mut wm, "S:other");
+        press(&mut wm, KeyCode::Enter);
+        wm.drawer_mut().advance_clock(bilterm::wm::drawer::ENTER_DOUBLE_TAP_WINDOW / 2);
+        press(&mut wm, KeyCode::Enter);
+        assert_eq!(wm.config().history_session, "other", "double-tap switches");
+    });
+}
+
+#[test]
+fn second_enter_after_the_window_only_toggles_again() {
+    isolated(|dir| {
+        let mut wm = fixture(dir);
+        press(&mut wm, KeyCode::Char('C'));
+        select(&mut wm, "S:other");
+        let folded = rows_len(&wm);
+        press(&mut wm, KeyCode::Enter);
+        wm.drawer_mut().advance_clock(bilterm::wm::drawer::ENTER_DOUBLE_TAP_WINDOW * 2);
+        press(&mut wm, KeyCode::Enter);
+        assert_eq!(wm.config().history_session, "default", "slow second Enter must not switch");
+        assert_eq!(rows_len(&wm), folded, "folded again");
+    });
+}
+
+#[test]
+fn enter_on_another_session_row_does_not_pair_with_the_previous_tap() {
+    isolated(|dir| {
+        let mut wm = fixture(dir);
+        press(&mut wm, KeyCode::Char('C'));
+        select(&mut wm, "S:other");
+        press(&mut wm, KeyCode::Enter);
+        select(&mut wm, "S:default");
+        press(&mut wm, KeyCode::Enter);
+        assert_eq!(wm.config().history_session, "default");
+    });
+}
+
+#[test]
+fn colon_enter_matches_the_key_and_activate_switches_at_once() {
+    isolated(|dir| {
+        let mut wm = fixture(dir);
+        press(&mut wm, KeyCode::Char('C'));
+        select(&mut wm, "S:other");
+        let run = |wm: &mut WindowManager, l: &str| wm.apply(bilterm::colon_command::parse_colon_command(l).unwrap().unwrap()).unwrap();
+        let folded = rows_len(&wm);
+        run(&mut wm, ":drawer enter");
+        assert_eq!(rows_len(&wm), folded + 2);
+        assert_eq!(wm.config().history_session, "default");
+        run(&mut wm, ":drawer activate");
+        assert_eq!(wm.config().history_session, "other");
+    });
+}
+
+#[test]
+fn enter_on_a_window_row_still_switches_at_once() {
+    isolated(|dir| {
+        let mut wm = fixture(dir);
+        select(&mut wm, "P:2@default");
+        press(&mut wm, KeyCode::Enter);
+        assert_eq!(wm.active_pane_id(), 2);
+        assert!(!wm.drawer().focused, "window Enter hands the keyboard to the pane");
+    });
+}
+
+#[test]
+fn double_click_on_a_session_row_switches() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    isolated(|dir| {
+        let mut wm = fixture(dir);
+        press(&mut wm, KeyCode::Char('C'));
+        let ws = ShellLayout::compute(AREA, wm.config(), wm.pane_count()).workspace;
+        let rows = wm.drawer_rows();
+        let idx = rows.iter().position(|r| r.kind == DrawerRowKind::SessionHeader("other".into())).unwrap();
+        let dr = wm.drawer_rect(ws).unwrap();
+        let (x, y) = (dr.x..dr.right())
+            .flat_map(|x| (dr.y..dr.bottom()).map(move |y| (x, y)))
+            .find(|&(x, y)| navigator_row_at(&wm, ws, x, y) == Some(idx))
+            .expect("row on screen");
+        for _ in 0..2 {
+            let ev = MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: x, row: y, modifiers: KeyModifiers::NONE };
+            bilterm::input::handle_wm_mouse_event(&mut wm, ev, AREA).unwrap();
+        }
+        assert_eq!(wm.config().history_session, "other");
+    });
+}

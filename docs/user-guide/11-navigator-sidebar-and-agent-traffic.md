@@ -208,7 +208,8 @@ All of these lower to the same internal action as their key and mouse twin. `:na
 | `:drawer fold` | `e` | click fold marker | Fold / unfold the selected session |
 | `:drawer unfold` | `Right` on a session row | | Unfold the selected session, or select its first window when it is already open |
 | `:drawer fold-up` | `Left` | | Fold the open session, or select the session row of the selected window |
-| `:drawer enter` | `Enter` | click row | Switch to the selected row's pane and give it the keyboard; the drawer stays open |
+| `:drawer enter` | `Enter` | | Window row: switch to its pane and give it the keyboard. Session row: unfold/fold it; `Enter` twice within 400 ms switches to the session |
+| `:drawer activate` | | click / double-click row | Switch to the selected row at once; the drawer stays open |
 | `:drawer raise` | `Space` | | Raise the selected row's pane and keep the keyboard in the drawer (on a pane row `Space` toggles the multi-selection instead) |
 | `:drawer next` | `j`, `Down` | wheel | Select next row |
 | `:drawer prev` | `k`, `Up` | wheel | Select previous row |

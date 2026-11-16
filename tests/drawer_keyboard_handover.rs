@@ -285,8 +285,10 @@ fn selecting_another_session_row_switches_to_it_and_hands_over_the_keyboard() {
             .position(|r| matches!(&r.kind, DrawerRowKind::SessionHeader(n) if *n != created))
             .expect("the first session's row");
         wm.apply(Action::DrawerNav(DrawerNavOp::Row(idx))).unwrap();
+        // Enter on a session row unfolds it; the second Enter (double-tap) switches.
         press(&mut wm, KeyCode::Enter, NONE);
-        assert_ne!(wm.config().history_session, created, "Enter switched session");
+        press(&mut wm, KeyCode::Enter, NONE);
+        assert_ne!(wm.config().history_session, created, "double Enter switched session");
         assert_eq!(wm.keyboard_owner(), KeyboardOwner::Pane);
         assert!(wm.is_drawer_effectively_visible());
     });

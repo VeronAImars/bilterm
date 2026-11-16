@@ -409,7 +409,8 @@ The previous defaults stay available on the `legacy` profile and, for one releas
 | Key | `:drawer` twin | Effect |
 |-----|----------------|--------|
 | `j` / `Down`, `k` / `Up` | `:drawer next`, `:drawer prev` | Move the selection |
-| `Enter` | `:drawer enter` | Switch to the selected row's pane and give it the keyboard; the drawer stays open |
+| `Enter` | `:drawer enter` | Window row: switch to its pane and give it the keyboard; the drawer stays open. Session row: unfold/fold it; a second `Enter` on it within 400 ms (double-tap) switches to the session |
+| click / double-click | `:drawer activate` | Switch to the row at once (a click or double-click on a session row switches) |
 | `Space` | `:drawer raise` | Raise the selected row's pane; the keyboard stays in the drawer |
 | `!` | `:drawer attention` | Jump to the next pane needing attention |
 | `e` | `:drawer fold` | Fold or unfold the selected session (a pane row folds its session) |

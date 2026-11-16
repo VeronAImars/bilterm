@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - One "modern look" predicate (`ThemePalette::is_modern_look`) replaces six palette-name matches in the status bar, mouse strip, exit guard, pane chrome and OIA. No visual change.
 
 ### Fixed
+- **`Enter` on a session row unfolds it; double-tap switches.** In the navigator drawer `Enter` (`:drawer enter`) on a session row now folds/unfolds it instead of switching; a second `Enter` on the same row within 400 ms switches to the session. `Enter` on a window row is unchanged. A click or double-click on a row still switches at once (`:drawer activate`, new).
 - **Drawer arrows now reach the windows of a session.** A folded session lists no window rows, and nothing but `e` opened it: `Right` handed the keyboard back to the pane and `Enter` switched session and left the drawer, so the arrows could only step between session rows. In the navigator drawer `Right` on a session row now unfolds it (on an open one it steps onto its first window) and `Left` folds it or climbs from a window to its session; `:drawer unfold` and `:drawer fold-up` are the colon twins. `Enter` on a window of a background session switches to it without ending any program.
 
 ### Changed
