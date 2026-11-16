@@ -148,6 +148,8 @@ pub enum Action {
     BroadcastToggle(Option<bool>),
     MenuBarToggle(Option<bool>),
     VersionToggle(Option<bool>),
+    /// Opens the `:version` details window (version, build, platform).
+    VersionInfo,
     SessionSave(String),
     SessionRestore(String),
     SessionList,
@@ -261,6 +263,10 @@ pub enum Action {
     WindowStyle(String),
     /// `:session branch|graft|detach-subtree|tree|checkpoint ...` (`TREE-01..02`, `PERS-01..02`).
     SessionTreeCommand(String),
+    /// `:session kill|end|close [name]` (`delete: false`, saved layout kept) and
+    /// `:session delete <name>` (`delete: true`). Ending the active session moves to another one;
+    /// ending the last session quits.
+    SessionEnd { name: Option<String>, delete: bool },
     /// `:profile [list|switch|save|default|autosave|next|prev|delete ...]` / `:layout [save|load|default|autosave|next|prev ...]`.
     LayoutProfileCommand(String),
     /// `:mcp [status|tree|attach|spawn|graft|broadcast|freeze|thaw|derez|checkpoint|shutdown ...]` (`MCP-01..02`).
@@ -409,6 +415,9 @@ impl Action {
             Self::AgentsWatchdog(_) => ":agents watchdog status".to_string(),
             Self::WindowManage(_) => ":window undo".to_string(),
             Self::SessionManage(_) => ":session undo".to_string(),
+            Self::SessionEnd { name: None, .. } => ":session kill".to_string(),
+            Self::SessionEnd { name: Some(n), delete: false } => format!(":session kill {n}"),
+            Self::SessionEnd { name: Some(n), delete: true } => format!(":session delete {n}"),
             Self::DaemonSupervisor(_) | Self::Daemon(_) => ":daemon list".to_string(),
             Self::DrawerPreview(DrawerPreviewOp::On) => ":drawer preview on".to_string(),
             Self::DrawerPreview(DrawerPreviewOp::Off) => ":drawer preview off".to_string(),
@@ -488,6 +497,10 @@ impl Action {
                 format!(":drawer scale {}", if *d >= 0 { "110" } else { "90" })
             }
             Self::HelpToggle => ":help".to_string(),
+            Self::VersionInfo => ":version".to_string(),
+            Self::VersionToggle(Some(true)) => ":version on".to_string(),
+            Self::VersionToggle(Some(false)) => ":version off".to_string(),
+            Self::VersionToggle(None) => ":version toggle".to_string(),
             other => format!("{other:?}"),
         }
     }

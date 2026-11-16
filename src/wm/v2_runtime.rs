@@ -200,7 +200,13 @@ impl WindowManager {
                 false
             }
             ExitGuardChoice::DetachClient => self.detach_client(),
-            ExitGuardChoice::QuitClient | ExitGuardChoice::KillSession => true,
+            ExitGuardChoice::QuitClient => true,
+            // Ends this session only: bilterm moves to another session and quits only when this
+            // was the last one.
+            ExitGuardChoice::KillSession => matches!(
+                self.apply(crate::action::Action::SessionEnd { name: None, delete: false }),
+                Ok(crate::input::AppAction::Quit)
+            ),
             ExitGuardChoice::Cancel => {
                 self.active_pane_mut()
                     .set_status_message(Some("Exit cancelled — session preserved".to_string()));

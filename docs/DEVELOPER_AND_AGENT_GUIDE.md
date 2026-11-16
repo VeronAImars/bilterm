@@ -49,7 +49,8 @@ src/
 ├── lib.rs                      # Crate root exporting public modules
 ├── main.rs                     # Binary entrypoint, CLI dispatch, tracing init, panic guard
 ├── app.rs                      # Async tokio::select! 60 FPS event & render loop
-├── launcher.rs                 # OS desktop launcher integration (.desktop / .plist / .lnk) & GUI-launch terminal auto-relaunch
+├── launcher.rs                 # OS desktop launcher integration (.desktop / .plist / .lnk), GUI-by-default decision, TUI fallback
+├── launcher_terminal.rs        # Pure host-terminal selection per OS (wt/pwsh/cmd, iTerm2/Terminal, Linux emulators) + tests
 ├── cli.rs                      # CLI flag parser (--headless, --mcp, --playbook, ctl, --man, --completions)
 ├── error.rs                    # BiltermError enum & idempotent TerminalRestoreGuard (RAII)
 ├── secure_fs.rs                # 0700 private runtime dir, 0600 O_EXCL/O_NOFOLLOW files, constant_time_eq

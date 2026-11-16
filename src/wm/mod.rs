@@ -48,6 +48,7 @@ pub mod quick_terminal;
 pub mod registry;
 pub mod rename_dialog;
 pub mod session;
+pub mod session_end;
 pub mod session_manager;
 pub mod session_map;
 pub mod session_pack_layout;
@@ -143,6 +144,8 @@ pub enum Modal {
     None,
     /// Interactive `<F1>` Borland Turbo Vision Help modal.
     Help { scroll: usize },
+    /// `:version` build/platform details window.
+    Version { scroll: usize },
     /// Interactive `<F9>` / `:inspector` Live 3270 Terminal Inspector modal (`BEL-01`).
     Inspector { scroll: usize },
     /// Interactive Fuzzy Command Palette modal (`Ctrl+P` / `:palette`, `v0.6.0`).
@@ -742,6 +745,22 @@ impl WindowManager {
         }
     }
 
+    /// Toggles the `:version` details window.
+    pub fn toggle_version_info(&mut self) {
+        self.modal = if matches!(self.modal, Modal::Version { .. }) { Modal::None } else { Modal::Version { scroll: 0 } };
+    }
+
+    pub fn is_version_info_visible(&self) -> bool {
+        matches!(self.modal, Modal::Version { .. })
+    }
+
+    pub fn version_info_scroll(&self) -> usize {
+        match self.modal {
+            Modal::Version { scroll } => scroll,
+            _ => 0,
+        }
+    }
+
     /// Toggles the `<F9>` / `:inspector` Live 3270 Terminal Inspector modal (`BEL-01`).
     pub fn toggle_inspector(&mut self) {
         let next = !self.is_inspector_visible();
@@ -919,7 +938,7 @@ impl WindowManager {
         true
     }
 
-    /// Closes the focused pane (if more than 1 workspace pane exists).
+    /// Closes the focused pane; the last one ends the session if another session exists.
     pub fn close_focused_pane(&mut self) -> bool {
         if self.quick_terminal.visible {
             self.quick_terminal.visible = false;
@@ -928,6 +947,10 @@ impl WindowManager {
         let Some(target_id) = self.z_stack.top() else {
             return false;
         };
+        if self.panes.len() == 1 && self.panes.contains_key(&target_id) {
+            // The session's last window: closing it ends the session when another one exists.
+            return self.close_last_window_of_session();
+        }
         self.remove_pane(target_id)
     }
 
