@@ -382,6 +382,8 @@ pub enum DrawerKeyScope {
     Navigator,
     /// The comms glyph of the selected pane row has keyboard focus (most specific).
     NavigatorComms,
+    /// The selected row is a session row (tried before [`Self::Navigator`]).
+    NavigatorSession,
 }
 
 /// Declarative key table of the focused navigator drawer (`FLT-01`, `ARCH-R01.2`).
@@ -394,7 +396,7 @@ pub const NAVIGATOR_DRAWER_BINDINGS: &[(DrawerKeyScope, KeyModifiers, KeyCode, A
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Down, Action::DrawerNav(DrawerNavOp::Next)),
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Char('k'), Action::DrawerNav(DrawerNavOp::Prev)),
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Up, Action::DrawerNav(DrawerNavOp::Prev)),
-    (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Enter, Action::DrawerNav(DrawerNavOp::Activate)),
+    (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Enter, Action::DrawerNav(DrawerNavOp::Enter)),
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Char(' '), Action::DrawerNav(DrawerNavOp::Raise)),
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Char('!'), Action::DrawerNav(DrawerNavOp::NextAttention)),
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Char('e'), Action::DrawerNav(DrawerNavOp::Fold)),
@@ -422,6 +424,9 @@ pub const NAVIGATOR_DRAWER_BINDINGS: &[(DrawerKeyScope, KeyModifiers, KeyCode, A
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Char('}'), Action::DrawerNav(DrawerNavOp::Widen(2))),
     // Comms glyph (Phase 50-12). Right is claimed only on a row that shows one (guard in the handler).
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Right, Action::DrawerNav(DrawerNavOp::CommsFocus(true))),
+    // Tree walk: Right opens a session (then steps onto its first window), Left folds it or climbs to it.
+    (DrawerKeyScope::NavigatorSession, KeyModifiers::NONE, KeyCode::Right, Action::DrawerNav(DrawerNavOp::Unfold)),
+    (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Left, Action::DrawerNav(DrawerNavOp::FoldUp)),
     (DrawerKeyScope::Navigator, KeyModifiers::NONE, KeyCode::Char('o'), Action::DrawerNav(DrawerNavOp::OpenComms)),
     (DrawerKeyScope::NavigatorComms, KeyModifiers::NONE, KeyCode::Enter, Action::DrawerNav(DrawerNavOp::OpenComms)),
     (DrawerKeyScope::NavigatorComms, KeyModifiers::NONE, KeyCode::Left, Action::DrawerNav(DrawerNavOp::CommsFocus(false))),

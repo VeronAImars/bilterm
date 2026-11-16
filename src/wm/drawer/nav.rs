@@ -14,6 +14,9 @@ use crate::wm::agents_window::NodeKey;
 /// Ticks (about 16 ms each) a Working-pane close stays armed for confirmation.
 const CLOSE_CONFIRM_TICKS: usize = 300;
 
+/// Two `Enter` presses on the same session row within this window count as a double-tap (switch).
+pub const ENTER_DOUBLE_TAP_WINDOW: std::time::Duration = std::time::Duration::from_millis(400);
+
 /// One drawer navigation operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DrawerNavOp {
@@ -21,9 +24,18 @@ pub enum DrawerNavOp {
     NextAttention,
     /// Fold or unfold the selected session (a pane row folds its enclosing session).
     Fold,
+    /// Unfold the selected session; on one that is already open, step onto its first child row
+    /// (`Right`). Only a session row with children reacts.
+    Unfold,
+    /// Fold the selected open session; on a window row, or a session that cannot fold, move up to the
+    /// enclosing session row (`Left`).
+    FoldUp,
     /// Select the highlighted row (the keyboard twin of a click): a pane, window or session row is
     /// switched to and that pane gets the keyboard; the drawer stays open.
     Activate,
+    /// `Enter`: on a session row, fold/unfold it, and a second `Enter` on the same row within
+    /// [`ENTER_DOUBLE_TAP_WINDOW`] switches to it; any other row behaves like [`Self::Activate`].
+    Enter,
     /// Raise the highlighted row's pane (or switch to its session) and keep the keyboard in the
     /// drawer, to look at it while browsing on (`Space`).
     Raise,
@@ -128,10 +140,13 @@ impl WindowManager {
         match op {
             DrawerNavOp::NextAttention => self.jump_next_attention().is_some(),
             DrawerNavOp::Fold => self.fold_selected_navigator_row(),
+            DrawerNavOp::Unfold => self.unfold_selected_navigator_row(),
+            DrawerNavOp::FoldUp => self.fold_up_selected_navigator_row(),
             DrawerNavOp::Activate => {
                 self.drawer_jump_to_selected();
                 true
             }
+            DrawerNavOp::Enter => self.drawer_nav_enter(),
             DrawerNavOp::Raise => {
                 self.drawer_activate_selected(false);
                 true
@@ -183,6 +198,28 @@ impl WindowManager {
             DrawerNavOp::OpenComms => self.drawer_open_comms(),
             DrawerNavOp::CommsFocus(on) => self.drawer_comms_focus(on),
         }
+    }
+
+    /// `Enter`: a session row unfolds/folds, a double-tap on it switches; other rows activate.
+    fn drawer_nav_enter(&mut self) -> bool {
+        let rows = self.drawer_rows();
+        let Some(DrawerRowKind::SessionHeader(name)) = rows.get(self.drawer.selected_index).map(|r| r.kind.clone())
+        else {
+            self.drawer.last_enter = None;
+            return self.drawer_jump_to_selected();
+        };
+        let now = self.drawer.now();
+        let tapped = self.drawer.last_enter.take().is_some_and(|(n, at)| {
+            n == name && now.saturating_sub(at) <= ENTER_DOUBLE_TAP_WINDOW
+        });
+        if tapped {
+            self.drawer_jump_to_selected();
+            return true;
+        }
+        self.drawer.last_enter = Some((name, now));
+        // A session without windows cannot fold: the single tap then has nothing to toggle.
+        self.fold_selected_navigator_row();
+        true
     }
 
     /// Opens the traffic window on the selected pane row: a pairing focuses the edge and filters the
@@ -378,6 +415,55 @@ impl WindowManager {
         self.daemon_state.session_tree.toggle_fold(&name);
         self.drawer.selected_index = idx;
         self.clamp_drawer_selection();
+        true
+    }
+
+    /// `Right` on a session row: unfolds it, or (already open) selects its first child row.
+    fn unfold_selected_navigator_row(&mut self) -> bool {
+        let rows = self.drawer_rows();
+        let sel = self.drawer.selected_index;
+        let Some(DrawerRow { kind: DrawerRowKind::SessionHeader(name), navigator: Some(meta), .. }) = rows.get(sel) else {
+            return false;
+        };
+        if !meta.has_children {
+            return false;
+        }
+        if meta.collapsed {
+            // The active session may not have a tree node yet (it is synthesised for the row walk).
+            if self.daemon_state.session_tree.node(name).is_none() {
+                self.daemon_state.session_tree.upsert_session(name, SessionNodeKind::Independent, None);
+            }
+            self.daemon_state.session_tree.toggle_fold(name);
+            self.clamp_drawer_selection();
+            return true;
+        }
+        if rows.get(sel + 1).and_then(|r| r.navigator.as_ref()).is_some_and(|m| m.depth > meta.depth) {
+            self.drawer.selected_index = sel + 1;
+            self.on_drawer_selection_changed(true);
+            return true;
+        }
+        false
+    }
+
+    /// `Left`: folds an open session row; on a window row (or a session that cannot fold) selects the
+    /// enclosing session row.
+    fn fold_up_selected_navigator_row(&mut self) -> bool {
+        let rows = self.drawer_rows();
+        let sel = self.drawer.selected_index;
+        let Some(row) = rows.get(sel) else { return false };
+        let depth = row.navigator.as_ref().map_or(0, |m| m.depth);
+        if matches!(row.kind, DrawerRowKind::SessionHeader(_))
+            && row.navigator.as_ref().is_some_and(|m| m.has_children && !m.collapsed)
+        {
+            return self.fold_selected_navigator_row();
+        }
+        let parent = (0..sel).rev().find(|&i| {
+            matches!(rows[i].kind, DrawerRowKind::SessionHeader(_))
+                && rows[i].navigator.as_ref().is_some_and(|m| m.depth < depth)
+        });
+        let Some(idx) = parent else { return false };
+        self.drawer.selected_index = idx;
+        self.on_drawer_selection_changed(true);
         true
     }
 

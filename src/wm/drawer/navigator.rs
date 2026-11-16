@@ -134,6 +134,17 @@ impl WindowManager {
 }
 
 impl WorkspaceDrawer {
+    /// Monotonic drawer clock (time since first use plus the test skew).
+    pub(crate) fn now(&self) -> std::time::Duration {
+        static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        ORIGIN.get_or_init(std::time::Instant::now).elapsed() + self.clock_skew
+    }
+
+    /// Moves the drawer clock forward (deterministic double-tap tests; no sleeping).
+    pub fn advance_clock(&mut self, by: std::time::Duration) {
+        self.clock_skew += by;
+    }
+
     /// Animation tick used for the working spinner (deterministic in tests).
     pub fn spinner_tick(&self) -> usize {
         self.tick_counter

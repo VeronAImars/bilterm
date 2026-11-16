@@ -23,7 +23,7 @@ pub mod preview;
 mod ops;
 pub(crate) mod navigator_detail;
 pub use navigator::{CommsIndicator, DrawerStyle, NavigatorLevel, NavigatorRowMeta};
-pub use nav::DrawerNavOp;
+pub use nav::{DrawerNavOp, ENTER_DOUBLE_TAP_WINDOW};
 pub use menu::{NavigatorMenu, NavigatorMenuEntry};
 pub use preview::{DrawerPreviewState, DrawerPreviewTarget};
 
@@ -251,6 +251,11 @@ pub struct WorkspaceDrawer {
     saved_sessions: std::cell::RefCell<Option<Vec<String>>>,
     /// Pane and tick of a pending Navigator close of a Working pane (WR-06).
     close_armed: Option<(PaneId, usize)>,
+    /// Session row last unfolded by `Enter` and when (drawer clock), so a second `Enter` on it within
+    /// [`nav::ENTER_DOUBLE_TAP_WINDOW`] switches to it.
+    last_enter: Option<(String, std::time::Duration)>,
+    /// Test seam: added to the drawer clock by [`Self::advance_clock`] so double-tap tests need no sleeps.
+    clock_skew: std::time::Duration,
 }
 
 impl WorkspaceDrawer {

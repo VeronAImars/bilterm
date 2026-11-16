@@ -109,8 +109,19 @@ pub fn handle_navigator_drawer_key(wm: &mut WindowManager, key: KeyEvent) -> Opt
         return Some(AppAction::Handled);
     }
     let comms = wm.navigator_comms_focused();
-    let scopes = [DrawerKeyScope::NavigatorComms, DrawerKeyScope::Navigator];
-    let action = navigator_drawer_action(if comms { &scopes } else { &scopes[1..] }, key)?;
+    let on_session = wm
+        .drawer_rows()
+        .get(wm.drawer().selected_index)
+        .is_some_and(|r| matches!(r.kind, DrawerRowKind::SessionHeader(_)));
+    let mut scopes = Vec::with_capacity(3);
+    if comms {
+        scopes.push(DrawerKeyScope::NavigatorComms);
+    }
+    if on_session {
+        scopes.push(DrawerKeyScope::NavigatorSession);
+    }
+    scopes.push(DrawerKeyScope::Navigator);
+    let action = navigator_drawer_action(&scopes, key)?;
     // Claim guard: Right belongs to the comms glyph only on a row that shows one; elsewhere the classic
     // block keeps its Right behaviour. Reads state only.
     if action == Action::DrawerNav(DrawerNavOp::CommsFocus(true)) && !selected_row_has_comms(wm) {
