@@ -54,17 +54,69 @@ Limits are config (`[session] memory_high`, `memory_max`), default off.
 ## 6. Persistence of shells (G1)
 
 - v1: shells live as long as their **session host**; UI exit/crash no longer kills them. Host crash still kills that session's shells (acceptable; layout restored from journal).
-- v2 (optional): PTY master fd handoff via `SCM_RIGHTS` (reptyr technique) or re-exec with CLOEXEC cleared (sozu pattern) for host upgrades. Not available for ConPTY.
+- v2: live host upgrade by PTY master fd handoff (`SCM_RIGHTS`, or re-exec with CLOEXEC cleared, sozu pattern). Specified as milestone P6 in section 7.2. Not available for ConPTY.
 
 ## 7. Phased plan
 
-1. **P1 Host with PTYs:** make the daemon able to host real panes (`headless_mode=false` path), behind a flag; no client change; test via `ctl`.
+1. **P1 Host with PTYs:** make the daemon able to host real panes (`headless_mode=false` path), behind a flag; no client change; test via `ctl`. Must satisfy the handover constraints in section 7.1.
 2. **P2 Attach protocol:** snapshot + diff + input over the session socket; `bilterm attach <session>` TUI client; wire the existing `DaemonRequest` set. Resize/clipboard proxy.
 3. **P3 GUI client** on the same protocol; `--gui`/TUI default to "spawn-or-attach host" (config switch, old in-process mode kept as fallback for one release).
 4. **P4 Supervisor + limits:** registry, restart policy, per-session cgroup/job/watchdog limits, `daemon list` shows RSS.
-5. **P5 (optional)** fd handoff, per-pane helper, remote attach.
+5. **P5 (optional)** per-pane helper, remote attach.
+6. **P6 Live handover / upgrade** (after P4; section 7.2): old host(s) hand sessions, PTYs and scrollback to new-version host(s) with no shell restarts.
 
 Each phase ships behind a flag with the old path intact; gate on `scripts/verify.sh` plus new attach/reattach integration tests (kill client mid-output; kill host; lag client; resize race).
+
+### 7.1 Constraints P1 must honour (for P6)
+
+- **PTY ownership is explicit and transferable.** Each pane's PTY master (fd on Unix) and child pid live in one owner type (`PtySession` or successor) that can be `into_raw_parts()`-ed out and rebuilt from `(fd, pid, size, termios)` without respawning. `PtySession::Drop` must not kill the child when the session was handed over (explicit `release()`).
+- **All host state is serializable.** Everything a host needs to resume (layout, pane metadata, VT grid + scrollback, cursor/modes, graphics placements, clipboard registry, output-ring `seq`, session names/ids, config overlay) is reachable through one `HostSnapshot` type (extends `GridSnapshot`, `src/vt/snapshot.rs`) with `serde`. No state that exists only in closures, thread-locals, raw pointers, `Instant`s (use durations/wall-clock), or channel handles. Threads (VT worker, PTY reader) must be restartable from snapshot.
+- **Fds are CLOEXEC by default** and enumerable: the host keeps a registry of fds it owns (PTY masters, listen sockets, lock files) so handover knows exactly what to pass and nothing leaks into children.
+- **Quiesce hook:** the host can pause PTY reads and VT feeding at a message boundary and drain the VT worker queue, then resume (needed for both snapshot and rollback).
+- **Wire/snapshot versions from day one:** `HostSnapshot` and the client protocol carry `schema_version` and `min_compatible` fields even though only v1 exists.
+
+### 7.2 Milestone P6: live handover (upgrade without losing sessions)
+
+Goal: replace a running host (or all hosts) with a newer binary while shells, PTYs, panes, layout, scrollback and graphics survive; attached clients reconnect transparently.
+Non-goals: surviving a host crash; cross-architecture or cross-OS handover; downgrade guarantees beyond N-1; handing over a half-initialised host; Windows ConPTY (see platform notes).
+
+**Mechanism options**
+
+| Option | How | Pros | Cons |
+|---|---|---|---|
+| A. Side-by-side, fd passing (recommended) | New host starts, connects to old host's private handover socket (`0700` dir, peer-cred checked); old host sends snapshot + PTY master fds via `SCM_RIGHTS` | Old host stays alive until commit, so rollback is trivial; new binary validated before it owns anything; no exec of unknown state | Briefly two processes; sockets must be re-bound (see below) |
+| B. Exec-in-place | Old host serializes state to a memfd/pipe, clears CLOEXEC on PTY fds, `execve`s the new binary which adopts inherited fds | No fd passing; pid unchanged | No rollback once exec'd (a bad new binary loses everything); inherited-fd bookkeeping is fragile |
+
+Pick A. B only as a fallback where a unix socket handover is impossible. Children are not reparented: the PTY child keeps running and simply gets a new controlling-session reader; its parent pid becomes init if the old host exits (acceptable; `waitpid` is replaced by pidfd/polling of the adopted pid, so P1 must not depend on being the direct parent for liveness).
+
+**Serialized state.** `HostSnapshot { schema_version: u32, min_compatible: u32, writer_version: String, sessions: [...], panes: [{id, pid, fd_index, size, vt: GridSnapshot + scrollback, ring_seq, ...}], clipboard, config_overlay, ext: map }`. Encoding: versioned serde (CBOR or JSON), length-prefixed frames, fds carried out-of-band in the ancillary data with `fd_index` references.
+- Forward compat (new reads old): the new reader MUST accept every `schema_version >= its own min_supported`; missing fields take documented defaults; a migration function per version step.
+- Back compat (old reads new, for rollback and N-1): writers only add optional fields, never repurpose or remove; unknown fields are preserved into `ext` and ignored. If the writer's `min_compatible` exceeds the reader's `schema_version`, the reader refuses at HELLO (no partial adoption).
+- A snapshot is checksummed and round-trip tested; any mismatch aborts before fds move.
+
+**Handover protocol** (new host N, old host O)
+1. N starts with `--handover-from <socket>`, sends `HELLO {schema range, version}`; O replies `HELLO` or `REFUSE` (version skew: stop here, O unaffected).
+2. O **quiesces**: stops accepting new clients and Actions (queue them), pauses PTY reads at a message boundary, drains the VT worker.
+3. O sends `SNAPSHOT` (checksummed) then `FDS` (PTY masters via `SCM_RIGHTS`, plus the client listen socket).
+4. N validates, rebuilds panes, resumes PTY reads, and sends `ACK {ready}`. N does not yet serve clients on the public socket path.
+5. O sends `COMMIT`; N takes over serving (listen socket already passed, so no gap), O closes its copies of the fds and exits after notifying attached clients `RECONNECT`.
+6. **Rollback:** any error, timeout, or missing ACK before COMMIT => O resumes reads, replays queued Actions, discards N, stays authoritative. After COMMIT the state is N's; if N dies right after, that is an ordinary host crash. O keeps its fd copies open until N has acked a post-commit health check (short grace window) to narrow that gap.
+Bytes the child writes during quiesce stay in the kernel PTY buffer (no loss; bounded by the kernel buffer, so quiesce must be short, with a deadline that triggers rollback).
+
+**Orchestration (supervisor).** `bilterm daemon upgrade [<name>|--all]`. Supervisor spawns the new binary per host and drives steps 1-5 itself or lets hosts do it pairwise; `--all` proceeds sequentially (one host at a time, configurable concurrency) and halts on first failure, leaving remaining hosts on the old version. The supervisor itself is upgraded last, by exec-in-place (it holds only the registry, no PTYs). Registry records `version` per host; `daemon list` shows mixed versions during a rollout.
+
+**Thin-client reconnect.** On `RECONNECT` (or socket EOF) clients retry the same session socket path with backoff, re-handshake (protocol version negotiation; a too-old client is told to upgrade), then receive a fresh full snapshot per section 4 resync rules. Size-owner and subscriptions are re-established by the client. Unsent input is held briefly client-side and replayed; nothing in flight is guaranteed beyond that.
+
+**Failure modes:** version skew (REFUSE at HELLO), new binary crashes mid-adoption (rollback), snapshot too large for deadline (rollback, optionally raise deadline), fd limit hit in N, quiesce timeout, O or N killed mid-transfer (before COMMIT: O wins; after: crash semantics), client reconnect storm (jittered backoff), stale lock files (`liveness.rs` checks pid + start time).
+
+**Tests**
+- Handover integration test: spawn host O with N panes running a counter loop and scrollback; handover to N; assert same child pids, no lost or duplicated output (monotone counter), scrollback and cursor equal, attached client reconnects and gets an equal grid.
+- Rollback tests: fault injection at each step (N exits after HELLO, after SNAPSHOT, before ACK, ACK timeout) => O keeps serving, panes untouched.
+- Version-skew test: matrix of (O writer, N reader) across the supported range using stored golden snapshots from each released `schema_version`; refusal path when `min_compatible` too new; unknown-field preservation round trip.
+- Serialization property test: arbitrary host state -> snapshot -> restore -> snapshot is identical.
+- `--all` orchestration test with a deliberately failing second host: first upgraded, second rolled back, rest untouched.
+
+**Platform notes.** Linux and macOS: `SCM_RIGHTS` over `AF_UNIX` works for PTY masters; macOS has no `/proc`, so adopt pids via `kill(0)`/`proc_pidinfo`. Windows: ConPTY handles are tied to the owning `conhost`/pseudoconsole and cannot be passed like fds (`DuplicateHandle` across processes can duplicate pipe handles and the HPCON, but the pseudoconsole lifetime is not reliably transferable); treat Windows as unsupported for P6 v1 and fall back to snapshot-only upgrade that restarts child processes (layout and scrollback kept, shells lost), clearly reported by `daemon upgrade`. Verify the DuplicateHandle claim before committing to either answer.
 
 ## 8. Open questions
 
@@ -72,6 +124,7 @@ Each phase ships behind a flag with the old path intact; gate on `scripts/verify
 - Is diff encoding worth it vs. periodic snapshots at low rate for slow clients?
 - Default for new users: auto-spawn host (tmux-like) or opt-in?
 - Wire format: reuse JSON-RPC framing or a binary framing (latency)?
+- P6: CBOR vs JSON for `HostSnapshot`; how many schema versions to support (N-1 proposed); keep the old host alive past COMMIT for how long?
 - Interaction with the existing tmux integration (`src/tmux/`), which already provides persistence for tmux-backed panes.
 
 ## 9. Prior art (summary)
