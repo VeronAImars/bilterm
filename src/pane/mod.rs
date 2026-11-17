@@ -1,6 +1,7 @@
 pub mod browser_canvas;
 pub mod copy_motion;
 pub mod copy_search;
+mod host_info;
 mod output_tap;
 mod traffic_tap;
 pub mod transport;

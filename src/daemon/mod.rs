@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 pub mod types;
 pub use types::*;
 
+pub mod host;
+
 pub mod liveness;
 
 pub mod process;

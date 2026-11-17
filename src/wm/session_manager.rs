@@ -230,7 +230,7 @@ impl WindowManager {
         }
 
         let (rows, cols) = self.default_size;
-        let mut initial_pane = if self.headless_mode {
+        let mut initial_pane = if self.model_only_panes() {
             CompositePane::new_headless(1, rows, cols)
         } else {
             CompositePane::spawn(

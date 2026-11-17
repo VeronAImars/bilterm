@@ -95,6 +95,7 @@ async fn main() -> color_eyre::Result<()> {
                -T, --theme <THEME>              Set color theme preset (borland, green, amber,mono, solarized, dracula, cyberpunk)\n  \
                -m, --mcp                        Run Model Context Protocol (MCP) JSON-RPC 2.0 server over stdio\n  \
                -d, --headless, --daemon         Run headless JSON-RPC 2.0 daemon (default: private Unix socket; TCP loopback via -l 127.0.0.1:PORT -t PATH)\n  \
+                   --host-ptys                  With --headless: session host; the daemon owns real PTYs (default off; P1 of docs/plans/session-host-architecture.md)\n  \
                    --name <NAME>                With --headless: daemon name (default: 'default'); each named daemon gets its own lock and socket (daemons/daemon-<NAME>.sock) so several run side by side\n  \
                    --daemon-name <NAME>         With ctl/agent/pane/workspace/coords/daemon: talk to the named daemon (or BILTERM_DAEMON); before or after the subcommand\n  \
                -l, --listen <ADDR>              Listen address (IP:PORT, localhost:PORT, or unix:PATH); TCP requires -t/--token-file\n  \
@@ -360,6 +361,9 @@ async fn main() -> color_eyre::Result<()> {
         );
         return Ok(());
     }
+    if has_switch(&args, &["--host-ptys"]) && !has_switch(&args, &["-d", "--headless", "--daemon"]) {
+        return Err(bilterm::error::BiltermError::Config("--host-ptys requires --headless/--daemon".into()).into());
+    }
     if has_switch(&args, &["-d", "--headless", "--daemon"]) {
         let listen = switch_value(&args, &["-l", "--listen"]);
         let allow_remote = has_switch(&args, &["-r", "--allow-remote"]);
@@ -382,7 +386,16 @@ async fn main() -> color_eyre::Result<()> {
                 return Ok(());
             }
         };
-        let mut plane = AutomationControlPlane::new_headless(24, 80);
+        // Opt-in session host (P1): the daemon owns real PTYs. Default off = unchanged model-only daemon.
+        let mut plane = if has_switch(&args, &["--host-ptys"]) {
+            let wm = bilterm::wm::WindowManager::new_host(24, 80)?;
+            let state_path = bilterm::daemon::host::host_state_path_in(&runtime_dir, daemon_name)
+                .map_err(bilterm::error::BiltermError::Config)?;
+            AutomationControlPlane::new(wm, ratatui::layout::Rect::new(0, 0, 80, 24))
+                .with_host_state_file(daemon_name, state_path)
+        } else {
+            AutomationControlPlane::new_headless(24, 80)
+        };
         if let Some(sess_name) = switch_value(&args, &["-s", "--session"]) {
             let _ = plane.wm.restore_session(sess_name);
         }

@@ -17,6 +17,7 @@ pub mod agents_list;
 pub mod agents_list_cmd;
 pub mod agents_geometry;
 pub mod agents_list_geometry;
+mod host_mode;
 pub mod command_window;
 pub mod context_bus;
 pub mod context_queue_ops;
@@ -194,6 +195,8 @@ pub struct WindowManager {
     fleet: FleetRegistry,
     next_pane_id: PaneId,
     headless_mode: bool,
+    /// Session-host mode: headless but panes own real PTYs (`host_mode.rs`); default off.
+    host_ptys: bool,
     pub(crate) default_size: (u16, u16),
     /// Dynamic scrollback budget governor (`[scrollback]`).
     scrollback: ScrollbackGovernor,
@@ -353,6 +356,7 @@ impl WindowManager {
             fleet: FleetRegistry::new(),
             next_pane_id: initial_id + 1,
             headless_mode,
+            host_ptys: false,
             default_size: (screen_rows, cols),
             scrollback: if headless_mode {
                 ScrollbackGovernor::new(Box::new(FixedMemoryProbe::default()))
@@ -882,7 +886,7 @@ impl WindowManager {
         self.next_pane_id += 1;
 
         let (rows, cols) = self.default_size;
-        let mut new_pane = if self.headless_mode {
+        let mut new_pane = if self.model_only_panes() {
             CompositePane::new_headless(new_id, rows, cols)
         } else {
             CompositePane::spawn(

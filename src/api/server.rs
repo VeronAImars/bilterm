@@ -500,6 +500,8 @@ async fn serve_loop<A: RpcAcceptor>(
     let mut waiters = AgentWaiters::default();
     let mut wait_tick = tokio::time::interval(WAIT_TICK);
     wait_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut host_tick = tokio::time::interval(super::host_tick::HOST_TICK);
+    host_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
@@ -529,6 +531,7 @@ async fn serve_loop<A: RpcAcceptor>(
                 waiters.handle(&mut plane, &line, reply_tx);
             }
             _ = wait_tick.tick(), if !waiters.is_empty() => waiters.poll(&plane),
+            _ = host_tick.tick(), if plane.is_host() => { plane.host_tick(); }
         }
     }
 }

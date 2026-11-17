@@ -151,6 +151,8 @@ pub struct AutomationControlPlane {
     pub snapshot_dir: Option<PathBuf>,
     /// Per-pane output rings streamed to WebSocket clients (`WEB-FE-01`, Phase 60).
     pub output_hub: super::output_ring::OutputHub,
+    /// Session-host persistence target and last written state (`host_tick`); `None` unless hosting.
+    pub(super) host_persist: Option<super::host_tick::HostPersist>,
 }
 
 /// Execution policy determining whether snapshot exports are confined to the designated snapshot dir.
@@ -199,6 +201,7 @@ impl AutomationControlPlane {
             viewport,
             snapshot_dir: None,
             output_hub: super::output_ring::OutputHub::new(),
+            host_persist: None,
         }
     }
 
@@ -417,6 +420,7 @@ impl AutomationControlPlane {
                 "pane_count",
                 JsonValue::Number(self.wm.window_count() as i64),
             ),
+            ("host_ptys", JsonValue::Bool(self.wm.is_host())),
             ("session_empty", JsonValue::Bool(self.wm.is_session_empty())),
             (
                 "session_on_empty",

@@ -154,7 +154,7 @@ impl WindowManager {
                         let (rows, cols) = self.default_size;
                         let next_id = self.next_pane_id;
                         self.next_pane_id += 1;
-                        let mut fresh = if self.headless_mode {
+                        let mut fresh = if self.model_only_panes() {
                             CompositePane::new_headless(next_id, rows, cols)
                         } else {
                             CompositePane::spawn(
@@ -189,7 +189,7 @@ impl WindowManager {
                         let (rows, cols) = self.default_size;
                         let next_id = self.next_pane_id;
                         self.next_pane_id += 1;
-                        let mut fresh = if self.headless_mode {
+                        let mut fresh = if self.model_only_panes() {
                             CompositePane::new_headless(next_id, rows, cols)
                         } else {
                             CompositePane::spawn(
