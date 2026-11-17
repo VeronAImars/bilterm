@@ -8,6 +8,7 @@
 
 mod agent_wait;
 mod host_tick;
+mod rpc_attach;
 pub mod agents_hud_json;
 pub mod client_view;
 pub mod http;

@@ -134,10 +134,14 @@ src/
 │   ├── pane_hold.rs            # Exited remote pane hold and respawn_active_pane (Phase 51.1)
 │   ├── link_cmd.rs             # RemoteLinkOp vocabulary for :ssh-tmux sub-verbs (Phase 51.1)
 │   └── tests.rs                # Unit tests for WindowManager & ZStack
-├── attach/                     # Session-host attach wire layer (P2 T-A1): pure library, no sockets
+├── attach/                     # Session-host attach (P2): T-A1 wire layer + T-A2 listener (`--headless --host-ptys --attach`)
 │   ├── limits.rs               # Every attach cap (frame 4 MiB/64 KiB, 500x200, 8 KiB input, ...)
 │   ├── frame.rs                # BTHS header (version, msg_type, flags, len), bounded decode_one/FrameReader
-│   └── msg.rs                  # ClientMsg/HostMsg JSON payloads + field validation
+│   ├── msg.rs                  # ClientMsg/HostMsg JSON payloads + field validation
+│   ├── listener.rs             # host-<name>.attach.sock (0600), uid-checked accept loop, client cap
+│   ├── conn.rs                 # Per-connection handshake (Hello/HelloOk/Refuse, 5 s timeout) + control loop
+│   ├── handshake.rs            # Version negotiation; registry.rs: client registry (`attach.clients`)
+│   └── host.rs / view.rs       # Wiring into the headless host; `:daemon attach` / `attach.clients` read model
 ├── daemon/
 │   ├── mod.rs                  # Background Multiplexer Daemon exports, DaemonAction & DaemonHandshake
 │   ├── process.rs              # Live OS process daemonization (daemon-<session>.sock, stale cleanup, session discovery)

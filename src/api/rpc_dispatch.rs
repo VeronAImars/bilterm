@@ -505,6 +505,7 @@ impl AutomationControlPlane {
             "daemon.start" => super::rpc_daemon::handle_daemon_start(params),
             "daemon.stop" => super::rpc_daemon::handle_daemon_stop(params),
             "daemon.host_state" => self.rpc_daemon_host_state(params),
+            "attach.clients" => self.rpc_attach_clients(),
             "daemon.switch" => super::rpc_daemon::handle_daemon_switch(params),
             "drawer.preview" => self.handle_rpc_drawer_preview(params),
             "workspace.view_model" | "web.status" | "web.open" | "web.port" | "web.stop" | "web.pump" | "web.agents" | "web.agent" | "web.logs" | "web.search" | "web.input" | "web.create" | "web.kill" | "web.update" => self.dispatch_web(method, params),

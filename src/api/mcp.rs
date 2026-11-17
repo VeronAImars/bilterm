@@ -575,6 +575,7 @@ impl AutomationControlPlane {
             "stop" => Some("daemon.stop"),
             "switch" => Some("daemon.switch"),
             "host_state" => Some("daemon.host_state"),
+            "attach_clients" => Some("attach.clients"),
             _ => None,
         }
     }

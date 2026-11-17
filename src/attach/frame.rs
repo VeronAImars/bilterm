@@ -235,6 +235,12 @@ impl FrameReader {
         Self { max_payload, buf: Vec::new(), header: None, failed: false }
     }
 
+    /// Changes the payload cap for frames whose header has not been parsed yet (the handshake
+    /// starts tight and widens once `Hello` is accepted). Buffered bytes are kept.
+    pub fn set_max_payload(&mut self, max_payload: usize) {
+        self.max_payload = max_payload;
+    }
+
     /// Bytes currently buffered (always `<= HEADER_LEN + max_payload`).
     pub fn buffered(&self) -> usize {
         self.buf.len()

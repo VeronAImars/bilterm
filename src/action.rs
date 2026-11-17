@@ -379,6 +379,8 @@ pub enum DaemonSupervisorOp {
     Prune,
     /// `:daemon host [name]`: read-only view of a session host's persisted state (P1; restore is P6).
     HostState { name: Option<String> },
+    /// `:daemon attach` / `attach.clients`: read-only list of attached clients (P2).
+    AttachClients,
 }
 
 pub type DaemonOp = DaemonSupervisorOp;

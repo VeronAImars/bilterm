@@ -30,6 +30,17 @@ pub fn current_euid() -> u32 {
     }
 }
 
+/// Rejects a Unix peer whose uid differs from ours. Shared by the JSON-RPC and attach sockets.
+pub fn check_peer_uid(peer_uid: u32, my_uid: u32) -> io::Result<()> {
+    if peer_uid != my_uid {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("peer UID {peer_uid} does not match daemon UID {my_uid}"),
+        ));
+    }
+    Ok(())
+}
+
 /// Ensures `path` exists as a secure directory owned by the current process with 0700 permissions.
 ///
 /// If the directory already exists, its ownership, file type, and permissions are verified.
