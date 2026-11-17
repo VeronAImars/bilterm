@@ -1,11 +1,9 @@
-# Session Checkpoint — `bilterm`
+# Session Checkpoint (2026-11-15, night)
 
-**Updated:** 2026-11-09T20:30:00-05:00  
-**Status:** COMPLETE (`main` @ `96307c9`, CI green; `GOLDENS OK 11`)
-
-- **Release Binaries Built & Installed (`bilterm 3.2.0` from `96307c9`, sha256 `154583c4…`)**:
-  - `/home/bill/src/ai/bilterm/target/release/bilterm` (`16M`)
-  - `/home/bill/.local/bin/bilterm` (`16M`, active on `$PATH`)
-  - `/home/bill/.cargo/bin/bilterm` (`16M`)
-- **Latest merges**: PR #50 (29 failing tests + daemon fd-inheritance flakes), #49 (`[TUI]`/`[GUI]` OIA badge in live renderer, non-Classic), #51 (VTE F10 Quake startup hint).
-- **Full Details**: See [`.planning/CHECKPOINT.md`](../.planning/CHECKPOINT.md).
+See `docs/plans/session-checkpoint.md` (newest section on top) for full details.
+- **`origin/main`**: `87a2f21`. No open PRs.
+- **Merged this session** (verify PASS 206/206 at the end): #91 launcher GUI-default + TUI fallback, #92 `:version` window, #95 workspace.select keeps panes, #96 TRON light-cycle border (`:cycles`), #97 ending a session no longer quits bilterm, #98 focus chords (Ctrl+Alt+X/Z; Ctrl+Tab family as kitty/GUI aliases), #99 drawer: arrows reach windows, Enter unfolds, double-tap/double-click switches, #100 `session_on_empty end|keep`.
+- **Not done**: no rc built or installed from this batch (needs owner's word); nothing run in a real TUI/GUI; empty-session gaps (inspector/RPC view, bulk-close and move-window refill); herdr pane-boundary report awaits repro.
+- **Flaky under parallel verify load**: phase62_copy_mode_ergonomics test_02, timing tests.
+- **Cleanup**: merged worktrees under /datanapps/worktrees/bilterm-* can be removed.
+- No background agents running.
