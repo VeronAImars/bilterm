@@ -188,7 +188,7 @@ impl Serialize for WireRun {
 impl<'de> Deserialize<'de> for WireRun {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let (n, text, fg, bg, x): RunTuple = Deserialize::deserialize(de)?;
-        let uc = (x & (1 << 9) != 0).then(|| ((x >> 10) & 0xff_ffff) as u32);
+        let uc = (x & (1 << 9) != 0).then_some(((x >> 10) & 0xff_ffff) as u32);
         Ok(Self {
             n,
             text,
