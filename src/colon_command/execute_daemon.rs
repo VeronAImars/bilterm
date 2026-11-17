@@ -237,6 +237,9 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
                 "Pruned {pruned} dead daemon record(s)"
             )));
         }
+        DaemonSupervisorOp::HostState { name } => {
+            super::execute_daemon_host::execute_host_state(wm, &runtime_dir, name.as_deref());
+        }
     }
     match op {
         // Start/Stop/Switch surface the live supervisor state in the floating window.

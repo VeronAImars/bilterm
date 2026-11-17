@@ -29,6 +29,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":daemon stop", "Ctrl+X D Q", "Gracefully stop background daemon and release resources"),
     (":daemon switch <name>", "Ctrl+X D W", "Switch active client context to a named background daemon"),
     (":daemon prune", "—", "Prune dead background daemon locks and socket records"),
+    (":daemon host", "—", "Show a session host's persisted state file (live or stale; read-only)"),
     (":web status", "Ctrl+X @ / Ctrl+Alt+W", "Show Web UI server status: port, URL, active clients"),
     (":web open", "—", "Open the Web UI in the default browser"),
     (":web port <N>", "—", "Set the Web UI server port"),

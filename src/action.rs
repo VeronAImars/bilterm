@@ -376,6 +376,8 @@ pub enum DaemonSupervisorOp {
     Stop { name: Option<String>, force: bool },
     Switch { name: String },
     Prune,
+    /// `:daemon host [name]`: read-only view of a session host's persisted state (P1; restore is P6).
+    HostState { name: Option<String> },
 }
 
 pub type DaemonOp = DaemonSupervisorOp;
