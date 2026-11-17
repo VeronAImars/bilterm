@@ -3,10 +3,11 @@
 use crate::api::json::JsonValue;
 use crate::daemon::list_view::{collect_rows, rows_json};
 use crate::daemon::registry::DaemonRegistry;
+use crate::daemon::limits::MemoryLimits;
 use crate::daemon::restart_policy::RestartMode;
 use crate::daemon::supervise::last_exit_to_json;
 use crate::daemon::supervisor::{
-    daemon_lock_path_in, ensure_started_with, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
+    daemon_lock_path_in, ensure_started_limited, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
 };
 
 /// Handles `daemon.list`. Rows come from the same view model as the CLI, `:daemon list` and the
@@ -33,6 +34,7 @@ pub fn handle_daemon_status(params: &JsonValue) -> Result<JsonValue, String> {
 
     if let Some(d) = active.into_iter().find(|item| item.name == name) {
         let is_cur = d.is_current();
+        let backend = crate::daemon::list_view::row_for(&runtime_dir, &d.name).limit_backend.map_or(JsonValue::Null, |b| JsonValue::String(b.to_string()));
         return Ok(JsonValue::obj([
             ("name", JsonValue::String(d.name)),
             ("pid", JsonValue::Number(d.pid as i64)),
@@ -52,6 +54,7 @@ pub fn handle_daemon_status(params: &JsonValue) -> Result<JsonValue, String> {
             ("last_exit", d.last_exit.as_ref().map_or(JsonValue::Null, last_exit_to_json)),
             ("limit_max_bytes", d.limit_max_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
             ("limit_high_bytes", d.limit_high_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
+            ("limit_backend", backend),
         ]));
     }
 
@@ -92,7 +95,17 @@ pub fn handle_daemon_start(params: &JsonValue) -> Result<JsonValue, String> {
         None => RestartMode::Never,
     };
 
-    match ensure_started_with(&runtime_dir, name, restart) {
+    // memory_max / memory_high: "2G" strings or plain byte counts (high requires max).
+    let size = |k: &str| -> Option<String> {
+        match params.get(k) {
+            Some(JsonValue::String(s)) => Some(s.clone()),
+            Some(JsonValue::Number(n)) => Some(n.to_string()),
+            _ => None,
+        }
+    };
+    let limits = MemoryLimits::from_args(size("memory_max").as_deref(), size("memory_high").as_deref())?;
+
+    match ensure_started_limited(&runtime_dir, name, restart, limits) {
         Ok(DaemonStartResult::Started { pid, socket_path }) => Ok(JsonValue::obj([
             ("status", JsonValue::String("started".to_string())),
             ("name", JsonValue::String(name.to_string())),

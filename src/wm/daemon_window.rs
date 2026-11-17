@@ -305,7 +305,7 @@ impl WindowManager {
         let name = self.daemon_window.selected_entry().map(|e| e.name.clone());
         let op = match (button, name) {
             (DaemonWindowButton::Start, Some(name)) => {
-                Some(DaemonSupervisorOp::Start { name: Some(name), restart: None })
+                Some(DaemonSupervisorOp::Start { name: Some(name), restart: None, limits: None })
             }
             (DaemonWindowButton::Stop, Some(name)) => {
                 Some(DaemonSupervisorOp::Stop { name: Some(name), force: false })

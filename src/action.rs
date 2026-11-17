@@ -373,7 +373,8 @@ pub enum DaemonSupervisorOp {
     List,
     Status { name: Option<String> },
     /// `restart`: supervisor restart policy for a newly spawned host (`None` = `never`).
-    Start { name: Option<String>, restart: Option<crate::daemon::restart_policy::RestartMode> },
+    /// `limits`: memory limits for the host (`None` = unlimited; P4 / C2).
+    Start { name: Option<String>, restart: Option<crate::daemon::restart_policy::RestartMode>, #[serde(default)] limits: Option<crate::daemon::limits::MemoryLimits> },
     Stop { name: Option<String>, force: bool },
     Switch { name: String },
     Prune,

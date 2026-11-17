@@ -34,6 +34,7 @@ pub use registry::*;
 pub mod supervisor;
 pub use supervisor::*;
 
+pub mod limits;
 pub mod list_view;
 pub mod restart_policy;
 pub mod rss;
