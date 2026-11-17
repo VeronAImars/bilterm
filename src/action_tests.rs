@@ -167,6 +167,7 @@ fn assert_action_reachable(action: &Action) {
         Action::ArrangeGrid => Some(":arrange grid"),
         Action::ForceQuit => Some(":quit!"),
         Action::DetachClient => Some(":detach"),
+        Action::AttachResize { .. } => None, // host-side only, built from the attach wire message
         Action::ExitProtectionSet(_) => Some(":exit-guard guard"),
         Action::RespawnPaneInPlace => Some(":respawn-pane"),
         Action::ThemeCommand(_) => Some(":theme list"),
