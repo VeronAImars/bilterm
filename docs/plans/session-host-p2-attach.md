@@ -1,9 +1,9 @@
 # Plan: Session-Host P2 (Attach Protocol) and P3+ Follow-ons
 
-Status: PLAN ONLY (docs, no code). Parent: `docs/plans/session-host-architecture.md` (sections 4, 7, 7.1, 8, "P1 decisions").
+Status: PLAN ONLY (docs, no code). T-A0 spike DONE (section 12 has results); section 11 decisions OWNER-ACCEPTED. Parent: `docs/plans/session-host-architecture.md` (sections 4, 7, 7.1, 8, "P1 decisions").
 Baseline: `main` @ 9960146 (P1 merged: `bilterm --headless --host-ptys`).
 
-Conventions: claims marked **UNVERIFIED** were not confirmed by reading code or running anything and must be checked by the PR that depends on them. Everything else was read in the files cited.
+Conventions: claims marked **UNVERIFIED** were not confirmed (T-A0 has since resolved most of them; see the result table in section 12, which supersedes the inline tags) by reading code or running anything and must be checked by the PR that depends on them. Everything else was read in the files cited.
 
 ## 1. Grounding: what exists today
 
@@ -250,32 +250,54 @@ Maximum useful parallelism: after T-A1 merges, three PRs (A2, A3, A4) plus C-tra
 - Single-owner plane loop: a heavy snapshot encode blocks `host_tick`. Mitigate: encode from a cloned `GridSnapshot` off-loop where possible, cap per-iteration work (budget N panes per tick).
 - Two protocols on one socket (sniffing) vs sibling socket: regression risk to `ctl`; default to sibling socket.
 
-## 11. Open questions for the owner
+## 11. Decisions (OWNER-ACCEPTED: all recommendations accepted)
 
-- Q1 Same socket with magic sniffing, or a sibling `host-<name>.attach.sock` (recommended, safer for `ctl`/MCP/HTTP)?
-- Q2 Resize policy: latest-active-rw-client wins (doc default, abduco) vs. minimum across clients (tmux-style, matches existing `negotiate_session_viewport`)? Configurable?
-- Q3 Retire the unused `DaemonRequest`/`DaemonResponse` Attach/Detach/Resize/Handshake variants, keep them as a thin adapter, or leave them? (They duplicate the new handshake and let clients choose their own `client_id`.)
-- Q4 Focus/active pane: shared across clients (v1 proposal) or per-client?
-- Q5 Resumable attach token (reconnect keeps role/owner) or always a new client?
-- Q6 Windows: named pipes for attach in P2/P3, or Unix-only until later?
-- Q7 Which client receives proxied clipboard writes: owner, focused, or all `rw`? And should OSC 52 *read* be supported at all?
-- Q8 Default attach limits (16 clients, 1 MiB/s input, 30 s kick) acceptable? Any single-user reason to allow more?
-- Q9 JSON v1 for cell data is simple but larger; accept, pending A0 measurement, with binary as v2?
-- Q10 Should `bilterm attach` auto-spawn a missing host (parent Q "tmux-like default"), or stay strictly opt-in as P1 decided?
-- Q11 `ro` attach as a first-class feature (read-only observers/pairing) or defer?
-- Q12 Interaction with `src/tmux/` persistence: should attach refuse/ignore tmux-backed panes, or proxy them like any pane (their state is in tmux, not our VT)? UNVERIFIED how tmux-backed panes expose a `VtParser` today.
+The owner accepted every recommendation. Where the original question had no explicit recommendation, the plan's proposed default (stated in the body) is the accepted answer. These are binding for T-A1..T-A8.
 
-## 12. Index of UNVERIFIED claims
+| Q | Decision (OWNER-ACCEPTED) |
+|---|---|
+| Q1 | Sibling socket `host-<name>.attach.sock` (same dir, 0600, same uid check). No magic sniffing; JSON-RPC listener stays byte-identical. Section 3.1 "connection discrimination" is replaced by this. |
+| Q2 | Resize: latest active `rw` client wins (abduco-style, 150 ms debounce). `negotiate_session_viewport` (min-clamp) is NOT used for attach; min policy stays a possible later config switch. |
+| Q3 | Do not reuse the `DaemonRequest`/`DaemonResponse` serde shape or its client-chosen `client_id`. Leave the unused enum untouched in P2; T-A8 decides retire-vs-adapter (no consumer exists, see section 12 #2). |
+| Q4 | Focus/active pane is host-global and shared in v1. |
+| Q5 | No resumable token; every connection is a new client. |
+| Q6 | Unix-only for attach in P2/P3; Windows named pipes deferred. |
+| Q7 | Proxied clipboard writes go to the size-owner / focused `rw` client. OSC 52 read is not supported (it is dropped today, section 12 #8); stays default-deny and unimplemented unless re-opened. |
+| Q8 | Default limits accepted: 16 clients, 1 MiB/s input (256 KiB burst), 30 s kick. Values still need a paste-heavy sanity check in T-A5. |
+| Q9 | JSON v1 for cell data with row run-length encoding; binary body reserved for v2. A0 measurement supports this (section 12 #5). |
+| Q10 | `bilterm attach` never auto-spawns a host; strictly opt-in as P1 decided. |
+| Q11 | `ro` attach is a first-class role in P2. |
+| Q12 | Proxy tmux-backed panes like any other pane (every `CompositePane` has a non-optional `vt: VtParser`, `src/pane/mod.rs:85`); T-A4 adds a test for a tmux-backed pane snapshot. |
 
-1. `RowSnapshot.dirty` semantics with multiple independent consumers.
-2. `negotiate_session_viewport` exact policy.
-3. `serve_jsonrpc_connection` accepting a peeked stream (affects Q1).
-4. 25 ms tick acceptable interactive latency.
-5. Snapshot/frame size numbers and input rate limits.
-6. `Action` serde-ability.
-7. tokio `peer_cred` uid on macOS.
-8. OSC 52 read handling today; `vt/detect.rs` graphics capability coverage.
-9. Linux `--user` memory controller delegation, systemd-oomd interplay, macOS `proc_pid_rusage` availability, Windows job object behaviour with ConPTY.
-10. Supervisor RSS footprint of reusing the main binary.
-11. tmux-backed pane interaction.
-12. Extractability of the uid check into a pure function; `main.rs` line count.
+## 12. UNVERIFIED claims: T-A0 results
+
+T-A0 was executed by reading code and running throwaway tests (not committed) against `main` @ 7634a14. Status: VERIFIED / REFUTED / STILL-UNVERIFIED.
+
+| # | Claim | Status | Evidence |
+|---|---|---|---|
+| 1 | `RowSnapshot.dirty` works with multiple independent consumers | **REFUTED** (cannot be used for per-client diffs) | The default engine hard-codes `dirty: true` for every row (`src/vt/mod.rs:636`, `src/vt/backend.rs:594`, `RowSnapshot::new_blank` `src/vt/snapshot.rs:380`). Only the optional ghostty backend reads a real flag and then clears it (`src/vt/ghostty_backend.rs:325` read, `:375` `set_dirty(false)`), i.e. a single destructive consumer. The worker-level `SharedGridSnapshot.dirty` is one `AtomicBool` with a global `mark_clean` (`src/vt/worker.rs:88,152-157`). `GridSnapshot.generation` is a wrapping counter bumped on every `process()` (`src/vt/mod.rs:252`) and is the only usable change signal, and it is coarse (whole grid). **Consequence:** diffs must be computed by the attach layer: keep per-client-per-pane last-sent row hashes (or copies) and compare against the current cloned `GridSnapshot` (`read_snapshot`, `SharedGridSnapshot::read_snapshot`, `src/vt/worker.rs`, cheap clone off the lock). Ignore `RowSnapshot.dirty` on the wire. T-A4 is adjusted below. |
+| 2 | `negotiate_session_viewport` policy | **VERIFIED** (min-clamp; not what we want) | `src/daemon/mod.rs:163-176`: takes the minimum effective cols/rows over all clients after dividing by `font_scale_pct`, clamped to cols 20..500 and rows 6..200. This is tmux-style min, not latest-rw-wins. Not used (Q2). Useful constants: the 500x200 clamp is a sane upper bound for accepted `Resize`; adopt as `MAX_ATTACH_COLS/ROWS` (replaces the plan's 1000x500 example). Confirmed also that nothing consumes `DaemonRequest` outside `handle_request` in `daemon/mod.rs`. |
+| 3 | `serve_jsonrpc_connection` can take an already-peeked stream | **VERIFIED awkward, now moot** | It takes ownership of a generic `S` and wraps it in its own `BufReader` (`src/api/server.rs:557-570`); peeked bytes would need a prefix-chaining wrapper (tokio `UnixStream` has no `peek`). Sibling socket chosen (Q1). |
+| 4 | 25 ms host tick is acceptable echo latency | **VERIFIED (acceptable, bounded)** | Throwaway test: real PTY host pane (`WindowManager::new_host`), write `echo MARK\n`, poll `poll_all_ptys()` until the marker row appears in the snapshot, 20 samples, `SHELL=/bin/sh`. 1 ms poll: mean 1.7 ms, p95 1.8 ms. 25 ms poll (sleep-then-poll, i.e. worst-phase): mean 25.9 ms, p95 26.1 ms. So the tick adds 0..25 ms (avg about 12.5 ms in a free-running interval) and the PTY->VT path itself is about 2 ms. With the owner's interactive bash the end-to-end was about 100 ms at BOTH 1 ms and 25 ms ticks: the floor is shell/readline/rc latency, not bilterm. **Decision:** attach sends piggyback on `HOST_TICK`; no input-triggered flush required for v1 (keep as optional T-A6 optimisation if the attach RTT budget matters). Not measured: client-side render and socket RTT. |
+| 5 | Snapshot/frame size numbers | **VERIFIED (measured), rate limits STILL-UNVERIFIED** | Throwaway encoder (cells as `[text,fg,bg,flags]`; no serde exists on `CellSnapshot`). Naive per-cell JSON: 80x24 = 27 KB, 200x50 = 140 KB, 500x200 = 1.4 MB (2.8 MB with RGB colour on every cell). Row run-length JSON (merge adjacent cells with identical attrs): blank/default-colour 80x24 = 2.3 KB, 200x50 = 10.7 KB, 500x200 = 103 KB; worst case (random RGB fg+bg and bold on every cell) 80x24 = 50 KB, 200x50 = 260 KB, 500x200 = 2.6 MB. All fit under `MAX_ATTACH_FRAME_BYTES` = 4 MiB without graphics; the 4 MiB cap and the 500x200 resize ceiling are consistent. Graphics are the only thing that can exceed it (handled by `graphics_omitted`/`GraphicsChunk`). The input token-bucket numbers (1 MiB/s) were not measured; remain a T-A5 item. |
+| 6 | `Action` is serde-serializable | **REFUTED** | `#[derive(Clone, Debug, PartialEq, Eq)]` only (`src/action.rs:19`), about 190 variants, many carrying non-serde types (`PaneId`, `PromptMode`, `ExitProtectionPolicy`, imported at `src/action.rs:7`); only a handful of nested op enums derive serde (`WebOp`, `DrawerPreviewOp`, `AppearanceOp`, `DaemonSupervisorOp`, lines 313-371). **Decision:** do NOT derive serde for `Action`. `Act` carries a colon-command string (`{"cmd":":split h"}`) parsed by the existing colon parser then `apply`; typed Action variants added by this plan (`PaneInputBytes`, `AttachResize`, `AttachKick`) are constructed host-side from dedicated wire messages, never deserialized. T-A5 is simplified accordingly. |
+| 7 | tokio `peer_cred` yields uid on macOS | **STILL-UNVERIFIED** | Same code path as existing JSON-RPC (`src/api/server.rs:348`); not run on macOS in this spike (Mac is reachable via ssh, see memory note; do it in T-A2 verification). No new risk. |
+| 8a | OSC 52 read handling today | **VERIFIED: reads are dropped** | `src/vt/scan_osc_dcs.rs:158-170` queues only when `is_forwardable_osc52_write` holds (`src/vt/codec.rs:253-267`); that requires an alphanumeric/`+/=` base64 payload, so the query form `52;c;?` fails (`?` rejected) and the sequence is silently ignored. No reply is ever generated. So "read unsupported, default deny" (Q7) is current behaviour; P3 needs no read path. |
+| 8b | `vt/detect.rs` covers Kitty/Sixel capability detection | **REFUTED** | `src/vt/detect.rs` is URL/hint/OSC 8/search detection only (`detect_visible_urls`, `search_canvas`, ...). No graphics capability query exists. Graphics capability for a client must come from the `Hello.caps` string (client declares `graphics`), not terminal probing, in P2/P3; TUI-client terminal probing is new work in T-B3. |
+| 9 | Linux cgroup/oomd, macOS rusage, Windows job object | **STILL-UNVERIFIED** | Out of scope for this docs spike; belongs to T-C0. |
+| 10 | Supervisor RSS footprint of the main binary | **STILL-UNVERIFIED** | Not measured here; T-C0/T-C1. |
+| 11 | tmux-backed panes expose a VtParser | **VERIFIED structurally** | `CompositePane.vt: VtParser` is non-optional (`src/pane/mod.rs:85,179`) so snapshot export works for every pane kind; tmux `%output` is decoded in `src/tmux/decode.rs` into pane events. End-to-end tmux-pane snapshot not exercised; test added to T-A4. |
+| 12 | uid check extractable to a pure fn; `main.rs` line count | **VERIFIED** | The uid compare is inline in `RpcAcceptor for UnixListener::accept` (`src/api/server.rs:341-357`): `peer_uid != current_euid()`; trivially extractable as `fn check_peer_uid(peer: u32, me: u32) -> io::Result<()>`. `src/main.rs` is 718 lines, so an `attach` subcommand arg wiring fits (<= 1000 target). |
+
+### Task-breakdown adjustments from T-A0
+
+- **T-A0: DONE** (this section).
+- **T-A1:** size caps fixed: `MAX_ATTACH_COLS=500`, `MAX_ATTACH_ROWS=200` (from the existing viewport clamp); keep 4 MiB / 64 KiB frame limits (measured worst case grid 2.6 MB < 4 MiB). Wire cell format is row run-length JSON.
+- **T-A2:** sibling socket only (no sniffing, no `serve_jsonrpc_connection` change); extract `check_peer_uid`; also verify macOS `peer_cred` over ssh.
+- **T-A3:** latest-rw-wins only; do not call `negotiate_session_viewport`.
+- **T-A4:** `diff.rs` must not use `RowSnapshot.dirty`; implement per-client row-hash (or copy) comparison against a cloned `GridSnapshot`, with `generation` as the cheap "anything changed" gate. Add the tmux-backed pane test. Property test unchanged.
+- **T-A5:** `Act` = colon-command string, no `Action` serde; typed wire messages for input/resize/kick; measure input token-bucket against a large paste.
+- **T-A6:** no input-triggered flush needed for v1 (tick latency measured acceptable); keep as a follow-up knob.
+- **T-B2:** no OSC 52 read path (already dropped by the VT scanner); only write proxying.
+- **T-B3:** client graphics capability comes from `Hello.caps`; terminal probing is new work, not reuse of `vt/detect.rs`.
+- Remaining STILL-UNVERIFIED (#7, #9, #10) are carried by T-A2 and T-C0/C1 and do not block T-A1.
