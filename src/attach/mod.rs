@@ -3,9 +3,13 @@
 //! Pure library: frame codec, limits and message types. No sockets, no listener, no
 //! `WindowManager` coupling; later tasks (T-A2..T-A7) build on these types.
 
+pub mod diff;
 pub mod frame;
+pub mod layout;
 pub mod limits;
 pub mod msg;
+pub mod session;
+pub mod wire_grid;
 
 #[cfg(test)]
 mod frame_tests;
@@ -13,3 +17,5 @@ mod frame_tests;
 mod golden_tests;
 #[cfg(test)]
 mod msg_tests;
+#[cfg(test)]
+mod view_tests;
