@@ -118,7 +118,7 @@ fn dims_validated_against_cap_and_state_untouched() {
     assert_eq!(s.client_count(), 0);
     s.register(1, Role::Rw, MAX_ATTACH_COLS, MAX_ATTACH_ROWS, ms(0)).unwrap();
     assert_eq!(s.resize(1, 0, 10, ms(1000)), Err(SizeError::BadDims(LimitError::ZeroDimension)));
-    assert_eq!(s.resize(1, 10, MAX_ATTACH_ROWS + 1, ms(1000)).is_err(), true);
+    assert!(s.resize(1, 10, MAX_ATTACH_ROWS + 1, ms(1000)).is_err());
     assert_eq!(s.applied_size(), Some((MAX_ATTACH_COLS, MAX_ATTACH_ROWS)));
     assert!(s.resize(1, u16::MAX, u16::MAX, ms(1000)).is_err());
 }
