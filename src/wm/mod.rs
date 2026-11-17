@@ -3,6 +3,7 @@ pub mod agent_mail;
 pub mod resilience;
 pub mod swarm_cmd;
 mod agent_mail_apply;
+mod recording_cap;
 pub mod agent_state;
 pub mod agents_topology;
 pub mod agents_window;
@@ -566,14 +567,6 @@ impl WindowManager {
         self.agent_mail.is_enabled()
     }
 
-    /// Starts whole-workspace `.cast` compositor frame recording (`REC-02`).
-    pub fn start_workspace_recording(&mut self, path: PathBuf, private: bool) {
-        let (rows, cols) = self.default_size;
-        if let Ok(mut guard) = self.workspace_recorder.lock() {
-            *guard = Some(WorkspaceRecorder::new(path, private, cols, rows));
-        }
-    }
-
     /// Returns `true` if whole-workspace `.cast` compositor frame recording is active.
     pub fn is_workspace_recording(&self) -> bool {
         self.workspace_recorder
@@ -1020,6 +1013,7 @@ impl WindowManager {
         registry::capture::tick(self, Instant::now());
         self.sync_clipboard_records();
         self.maybe_rebalance_scrollback(Instant::now());
+        self.poll_recording_caps();
         changed |= self.resilience_tick(Instant::now());
         changed
     }

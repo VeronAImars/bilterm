@@ -522,7 +522,10 @@ impl TerminalBackend for MockTerminalBackend {
                             i += 1;
                         }
                         if crate::vt::is_forwardable_osc52_write(&osc) {
-                            self.pending_osc52.push(format!("\x1b]{osc}\x07"));
+                            crate::vt::bounded::push_osc52(
+                                &mut self.pending_osc52,
+                                format!("\x1b]{osc}\x07"),
+                            );
                         }
                     }
                     _ => i += 2,

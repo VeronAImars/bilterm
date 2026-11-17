@@ -80,8 +80,20 @@ fn auto_budget_scales_with_host_ram() {
     };
     let big = ResolvedPolicy::resolve(&cfg, snap(192 * GIB));
     let small = ResolvedPolicy::resolve(&cfg, snap(16 * GIB));
-    assert!(big.pane_cap_lines(80) > 7_000_000);
-    assert!((600_000..700_000).contains(&small.pane_cap_lines(80)));
+    assert_eq!(big.pane_cap_lines(80), DEFAULT_MAX_LINES, "auto max_lines is a hard default");
+    assert_eq!(small.pane_cap_lines(80), DEFAULT_MAX_LINES);
+    let tight = ResolvedPolicy::resolve(
+        &ScrollbackConfig {
+            memory_budget: MemoryBudget::Bytes(10 * MIB),
+            ..Default::default()
+        },
+        snap(16 * GIB),
+    );
+    assert_eq!(
+        tight.pane_cap_lines(80),
+        (10 * MIB / row_bytes(80)) as usize,
+        "budget still bounds the auto cap"
+    );
     assert_eq!(small.initial_capacity(80), DEFAULT_INITIAL_LINES);
 }
 
@@ -200,4 +212,24 @@ fn parses_proc_meminfo() {
     assert_eq!(snap.total_bytes, Some(16_384_000 * 1024));
     assert_eq!(snap.available_bytes, Some(8_192_000 * 1024));
     assert_eq!(parse_meminfo("garbage"), MemorySnapshot::default());
+}
+
+#[test]
+fn min_lines_yields_to_budget_when_many_panes() {
+    // 10 MiB budget, 80 cols: ~3_900 rows total. 100 panes -> ~39 rows each, below the floor.
+    let mut p = policy(10 * MIB, false);
+    p.min_lines = 2_000;
+    assert_eq!(p.floor_lines(80, 1), 2_000, "one pane honours min_lines");
+    assert_eq!(p.floor_lines(80, 100), PANE_FLOOR_LINES);
+
+    let usages = vec![
+        PaneUsage {
+            used_rows: 2_000,
+            capacity: 2_000,
+            cols: 80
+        };
+        100
+    ];
+    let planned = plan_capacities(&usages, &p);
+    assert!(planned.iter().all(|&c| c == PANE_FLOOR_LINES), "{planned:?}");
 }

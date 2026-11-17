@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod bounded;
 pub mod codec;
 pub mod derived;
 pub mod detect;
@@ -124,6 +125,9 @@ pub struct VtParser {
     recording_path: Option<PathBuf>,
     recording_private: bool,
     recording_events: Vec<(f64, String)>,
+    recording_bytes: usize,
+    recording_max_bytes: usize,
+    recording_notice: Option<String>,
     recent_escape_sequences: Vec<String>,
     pending_osc52: Vec<String>,
     pending_osc52_decoded: Vec<String>,
@@ -206,6 +210,9 @@ impl VtParser {
             recording_path: None,
             recording_private: false,
             recording_events: Vec::new(),
+            recording_bytes: 0,
+            recording_max_bytes: recording::DEFAULT_RECORDING_MAX_BYTES,
+            recording_notice: None,
             recent_escape_sequences: Vec::new(),
             pending_osc52: Vec::new(),
             pending_osc52_decoded: Vec::new(),
@@ -251,8 +258,7 @@ impl VtParser {
             self.utf8_carry.extend_from_slice(tail);
             if !bytes.is_empty() {
                 let elapsed = t0.elapsed().as_secs_f64();
-                self.recording_events
-                    .push((elapsed, String::from_utf8_lossy(bytes).into_owned()));
+                self.push_recording_event(elapsed, String::from_utf8_lossy(bytes).into_owned());
             }
         }
         let mut framed = std::mem::take(&mut self.framed);

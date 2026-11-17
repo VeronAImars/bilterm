@@ -142,6 +142,8 @@ pub struct BiltermConfig {
     pub coords: coords::CoordsConfig,
     /// Dynamic, memory-aware scrollback sizing (`[scrollback]`).
     pub scrollback: ScrollbackConfig,
+    /// Recording memory cap (`[recording] max_bytes`).
+    pub recording: crate::vt::recording::RecordingConfig,
     /// Default per-pane scrolling discipline (`"smooth"`, `"page"` / `"block"`, or `"instant"`, `SCRL-01..02`).
     pub scroll_mode: PaneScrollMode,
     /// Policy for accidental `exit`/`logout`/`Ctrl+D` on the final pane or root session (`"guard"`, `"respawn"`, `"detach"`, `"off"`, `SAFE-01`).
@@ -258,6 +260,7 @@ impl Default for BiltermConfig {
             traffic: traffic::TrafficConfig::default(),
             coords: coords::CoordsConfig::default(),
             scrollback: ScrollbackConfig::default(),
+            recording: Default::default(),
             scroll_mode: PaneScrollMode::Smooth,
             exit_protection: ExitProtectionPolicy::Guard,
             session_on_empty: SessionOnEmpty::default(),
