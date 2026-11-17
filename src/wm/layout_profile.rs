@@ -531,7 +531,7 @@ impl WindowManager {
             let cwd_path = PathBuf::from(if sp.cwd.trim().is_empty() { "." } else { &sp.cwd });
             let spawn_cwd = cwd_path.is_dir().then(|| cwd_path.clone());
             let mut spawned_requested = true;
-            let mut pane = if self.headless_mode {
+            let mut pane = if self.model_only_panes() {
                 CompositePane::new_headless(sp.id, rows, cols)
             } else {
                 CompositePane::spawn(

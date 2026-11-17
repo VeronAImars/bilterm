@@ -130,3 +130,12 @@ Bytes the child writes during quiesce stay in the kernel PTY buffer (no loss; bo
 ## 9. Prior art (summary)
 
 tmux: one fat server (one crash/leak kills all sessions). zellij: server per session, server-side VT state, client gets rendered ANSI + control channel. wezterm: mux server with domains, GUI renders natively. abduco/dtach: per-session raw-byte relay, no scrollback, reattach relies on app repaint. Sources and caveats in the research notes (several claims there are unverified: tmux PTY survival, macOS memory enforcement, `--user` cgroup delegation).
+
+## P1 decisions (implemented)
+
+- **Flag:** `bilterm --headless --host-ptys [--name N]`; default off, errors without `--headless`. Off = byte-for-byte the old model-only daemon. Test via `bilterm ctl` (`pane.exec`/`pane.read`; `workspace.status` reports `host_ptys`).
+- **Auto-spawn vs opt-in:** opt-in. Nothing starts a host implicitly.
+- **Wire format (decided, used for the host state record now, for attach in P2):** versioned length-prefixed frame `"BTHS" | version u16 | len u32 | JSON`, 1 MiB cap, unknown fields tolerated, unknown versions rejected (`src/daemon/host.rs`). JSON-RPC is unchanged.
+- **Graphics after reattach:** deferred to P2+; P1 has no reattach.
+- **Handover-ready state:** `HostState` (pane ids, child pids, sizes, ownership) is plain serializable data written 0600 atomically to `host-<name>.state` in the runtime dir. It holds no fds; a later live-upgrade passes master fds out-of-band (`SCM_RIGHTS`) keyed by pane id. The record is not yet read back (no handover/restore in P1).
+- **Remaining for P2+:** attach protocol, client resize/clipboard proxy, supervisor/limits.
