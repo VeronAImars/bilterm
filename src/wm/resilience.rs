@@ -28,7 +28,7 @@ const PERIODIC: Duration = Duration::from_secs(30);
 /// A daemon lifecycle operation run off the UI thread.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DaemonJob {
-    Start { name: String },
+    Start { name: String, restart: crate::daemon::restart_policy::RestartMode },
     Stop { name: String, force: bool },
 }
 
@@ -371,9 +371,9 @@ impl WindowManager {
 
 /// Executes `job` synchronously and returns the status message for it.
 pub fn run_daemon_job(runtime_dir: &Path, job: &DaemonJob) -> String {
-    use crate::daemon::supervisor::{ensure_started, stop_daemon, DaemonStartResult};
+    use crate::daemon::supervisor::{ensure_started_with, stop_daemon, DaemonStartResult};
     match job {
-        DaemonJob::Start { name } => match ensure_started(runtime_dir, name) {
+        DaemonJob::Start { name, restart } => match ensure_started_with(runtime_dir, name, *restart) {
             Ok(DaemonStartResult::Started { pid, .. }) => format!("Daemon '{name}' started (PID {pid})"),
             Ok(DaemonStartResult::AlreadyRunning { pid, .. }) => {
                 format!("Daemon '{name}' is already running (PID {pid})")

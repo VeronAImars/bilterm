@@ -6,10 +6,9 @@
 
 use std::path::Path;
 
-use crate::api::JsonValue;
-use crate::daemon::liveness::{daemon_liveness, DaemonLiveness};
-use crate::daemon::registry::DaemonRegistry;
-use crate::daemon::supervisor::{ensure_started, stop_daemon, DaemonStartResult};
+use crate::daemon::list_view::{collect_rows, row_for, rows_json, table};
+use crate::daemon::restart_policy::RestartMode;
+use crate::daemon::supervisor::{ensure_started_with, stop_daemon, DaemonStartResult};
 use crate::secure_fs::validate_safe_name;
 
 /// Switch that selects which named daemon a client command talks to.
@@ -21,7 +20,7 @@ pub const DAEMON_NAME_ENV: &str = "BILTERM_DAEMON";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DaemonCmd {
     List { json: bool },
-    Start { name: String },
+    Start { name: String, restart: RestartMode },
     Stop { name: String, force: bool },
     Status { name: String, json: bool },
 }
@@ -30,8 +29,11 @@ pub enum DaemonCmd {
 pub fn usage() -> String {
     "\
 Usage:
-  bilterm daemon list [--json]              List running (and crashed) daemons
-  bilterm daemon start [NAME]               Start daemon NAME in the background (no-op if running)
+  bilterm daemon list [--json]              List daemons: status, PID, RSS, restarts, last exit
+  bilterm daemon start [NAME] [--restart never|on-crash]
+                                            Start daemon NAME in the background (no-op if running);
+                                            on-crash respawns it with backoff (1s..60s) and stops after
+                                            5 crashes in 120s (shown as 'failed')
   bilterm daemon stop [NAME] [--force]      Stop daemon NAME (SIGTERM; --force = SIGKILL)
   bilterm daemon status [NAME] [--json]     Show one daemon (exit 0 running, 3 otherwise)
 
@@ -75,8 +77,15 @@ pub fn take_daemon_target(args: &mut Vec<String>, env_value: Option<&str>) -> Re
 pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<DaemonCmd, String> {
     let mut pos = Vec::new();
     let (mut json, mut force) = (false, false);
-    for a in args {
+    let mut restart = RestartMode::Never;
+    let mut args_it = args.iter();
+    while let Some(a) = args_it.next() {
         match a.as_str() {
+            "--restart" => {
+                let v = args_it.next().ok_or_else(|| format!("--restart needs never|on-crash\n{}", usage()))?;
+                restart = RestartMode::parse(v)?;
+            }
+            s if s.starts_with("--restart=") => restart = RestartMode::parse(&s["--restart=".len()..])?,
             "--json" => json = true,
             "--force" | "-f" => force = true,
             "-h" | "--help" | "help" => return Err(usage()),
@@ -95,7 +104,7 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
     };
     match sub {
         "list" | "ls" if pos.len() <= 1 => Ok(DaemonCmd::List { json }),
-        "start" => Ok(DaemonCmd::Start { name: name()? }),
+        "start" => Ok(DaemonCmd::Start { name: name()?, restart }),
         "stop" => Ok(DaemonCmd::Stop { name: name()?, force }),
         "status" => Ok(DaemonCmd::Status { name: name()?, json }),
         other => Err(format!("unknown daemon subcommand '{other}'\n{}", usage())),
@@ -109,102 +118,13 @@ pub fn resolve_daemon_endpoint(runtime_dir: &Path, name: &str) -> Result<String,
         .ok_or_else(|| format!("daemon '{name}' is not running (start it with `bilterm daemon start {name}`)"))
 }
 
-struct Row {
-    name: String,
-    status: &'static str,
-    pid: Option<u32>,
-    version: String,
-    socket: String,
-}
-
-impl Row {
-    fn to_json(&self) -> JsonValue {
-        let mut v = vec![
-            ("name", JsonValue::String(self.name.clone())),
-            ("status", JsonValue::String(self.status.to_string())),
-        ];
-        if let Some(pid) = self.pid {
-            v.push(("pid", JsonValue::Number(i64::from(pid))));
-            v.push(("version", JsonValue::String(self.version.clone())));
-            v.push(("socket_path", JsonValue::String(self.socket.clone())));
-        }
-        JsonValue::obj(v)
-    }
-}
-
-fn rows(runtime_dir: &Path) -> Vec<Row> {
-    let mut out: Vec<Row> = DaemonRegistry::list_active(runtime_dir)
-        .into_iter()
-        .map(|d| Row {
-            name: d.name,
-            status: "running",
-            pid: Some(d.pid),
-            version: d.version,
-            socket: d.socket_path.display().to_string(),
-        })
-        .collect();
-    for rec in DaemonRegistry::list_crashed(runtime_dir) {
-        if !out.iter().any(|r| r.name == rec.name) {
-            out.push(Row {
-                name: rec.name,
-                status: "crashed",
-                pid: Some(rec.pid),
-                version: rec.version,
-                socket: rec.socket_path.display().to_string(),
-            });
-        }
-    }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    out
-}
-
-fn row_for(runtime_dir: &Path, name: &str) -> Row {
-    if let Some(r) = rows(runtime_dir).into_iter().find(|r| r.name == name) {
-        return r;
-    }
-    // The lock is authoritative when the registry has not caught up yet.
-    match daemon_liveness(runtime_dir, name) {
-        DaemonLiveness::Running(rec) => Row {
-            name: name.to_string(),
-            status: "running",
-            pid: Some(rec.pid),
-            version: rec.version,
-            socket: rec.socket_path.display().to_string(),
-        },
-        DaemonLiveness::Crashed(rec) => Row {
-            name: name.to_string(),
-            status: "crashed",
-            pid: Some(rec.pid),
-            version: rec.version,
-            socket: rec.socket_path.display().to_string(),
-        },
-        DaemonLiveness::Stopped => {
-            Row { name: name.to_string(), status: "stopped", pid: None, version: String::new(), socket: String::new() }
-        }
-    }
-}
-
-fn table(rows: &[Row]) -> String {
-    if rows.is_empty() {
-        return "No bilterm daemons running (start one with `bilterm daemon start [NAME]`)".to_string();
-    }
-    let w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
-    let mut out = format!("{:<w$}  {:<8}  {:>8}  {:<9}  SOCKET", "NAME", "STATUS", "PID", "VERSION");
-    for r in rows {
-        let pid = r.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
-        out.push_str(&format!("\n{:<w$}  {:<8}  {:>8}  {:<9}  {}", r.name, r.status, pid, r.version, r.socket));
-    }
-    out
-}
-
 /// Runs `cmd` against `runtime_dir`, returning the text to print and the process exit code.
 pub fn run(cmd: &DaemonCmd, runtime_dir: &Path) -> (String, i32) {
     match cmd {
         DaemonCmd::List { json } => {
-            let rows = rows(runtime_dir);
+            let rows = collect_rows(runtime_dir, true);
             if *json {
-                let arr = rows.iter().map(Row::to_json).collect();
-                (JsonValue::obj([("daemons", JsonValue::Array(arr))]).to_json_string(), 0)
+                (rows_json(&rows).to_json_string(), 0)
             } else {
                 (table(&rows), 0)
             }
@@ -222,11 +142,19 @@ pub fn run(cmd: &DaemonCmd, runtime_dir: &Path) -> (String, i32) {
                 ("crashed", Some(pid)) => format!(
                     "daemon '{name}': crashed (PID {pid} exited without cleanup) — `bilterm daemon start {name}` restarts it"
                 ),
+                ("failed", _) => format!(
+                    "daemon '{name}': failed (crash loop, {} restarts, last exit {}) — `bilterm daemon start {name}` clears it",
+                    row.restart_count,
+                    row.last_exit_text()
+                ),
+                ("restarting", _) => {
+                    format!("daemon '{name}': restarting after a crash ({} restarts, last exit {})", row.restart_count, row.last_exit_text())
+                }
                 _ => format!("daemon '{name}': not running"),
             };
             (text, code)
         }
-        DaemonCmd::Start { name } => match ensure_started(runtime_dir, name) {
+        DaemonCmd::Start { name, restart } => match ensure_started_with(runtime_dir, name, *restart) {
             Ok(DaemonStartResult::Started { pid, socket_path }) => {
                 (format!("daemon '{name}' started (PID {pid}, socket {})", socket_path.display()), 0)
             }
@@ -255,8 +183,18 @@ mod tests {
     fn parses_subcommands_and_defaults() {
         assert_eq!(parse_daemon_args(&v(&[]), None), Ok(DaemonCmd::List { json: false }));
         assert_eq!(parse_daemon_args(&v(&["ls", "--json"]), None), Ok(DaemonCmd::List { json: true }));
-        assert_eq!(parse_daemon_args(&v(&["start", "alpha"]), None), Ok(DaemonCmd::Start { name: "alpha".into() }));
-        assert_eq!(parse_daemon_args(&v(&["start"]), None), Ok(DaemonCmd::Start { name: "default".into() }));
+        assert_eq!(parse_daemon_args(&v(&["start", "alpha"]), None), Ok(DaemonCmd::Start { name: "alpha".into(), restart: RestartMode::Never }));
+        assert_eq!(parse_daemon_args(&v(&["start"]), None), Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never }));
+        assert_eq!(
+            parse_daemon_args(&v(&["start", "--restart", "on-crash", "w"]), None),
+            Ok(DaemonCmd::Start { name: "w".into(), restart: RestartMode::OnCrash })
+        );
+        assert_eq!(
+            parse_daemon_args(&v(&["start", "--restart=never"]), None),
+            Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never })
+        );
+        assert!(parse_daemon_args(&v(&["start", "--restart", "always"]), None).unwrap_err().contains("invalid restart"));
+        assert!(parse_daemon_args(&v(&["start", "--restart"]), None).unwrap_err().contains("needs"));
         assert_eq!(
             parse_daemon_args(&v(&["stop", "beta", "--force"]), None),
             Ok(DaemonCmd::Stop { name: "beta".into(), force: true })

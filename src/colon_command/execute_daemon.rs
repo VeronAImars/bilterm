@@ -2,9 +2,11 @@
 
 use crate::action::DaemonSupervisorOp;
 use crate::api::json::JsonValue;
+use crate::daemon::list_view::{collect_rows, rows_json, summary};
 use crate::daemon::registry::DaemonRegistry;
+use crate::daemon::supervise::last_exit_to_json;
 use crate::daemon::supervisor::{
-    daemon_lock_path_in, ensure_started, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
+    daemon_lock_path_in, ensure_started_with, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
 };
 use crate::wm::resilience::DaemonJob;
 use crate::wm::WindowManager;
@@ -23,9 +25,10 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
     // With a UI attached, start/stop wait on a worker; the result arrives as a status message.
     if !wm.is_headless() {
         let job = match op {
-            DaemonSupervisorOp::Start { name } => {
-                Some(DaemonJob::Start { name: name.clone().unwrap_or_else(|| "default".to_string()) })
-            }
+            DaemonSupervisorOp::Start { name, restart } => Some(DaemonJob::Start {
+                name: name.clone().unwrap_or_else(|| "default".to_string()),
+                restart: restart.unwrap_or_default(),
+            }),
             DaemonSupervisorOp::Stop { name, force } => Some(DaemonJob::Stop {
                 name: name.clone().unwrap_or_else(|| "default".to_string()),
                 force: *force,
@@ -34,7 +37,7 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
         };
         if let Some(job) = job {
             let verb = if matches!(job, DaemonJob::Start { .. }) { "starting" } else { "stopping" };
-            let (DaemonJob::Start { name } | DaemonJob::Stop { name, .. }) = &job;
+            let (DaemonJob::Start { name, .. } | DaemonJob::Stop { name, .. }) = &job;
             wm.active_pane_mut().set_status_message(Some(format!("Daemon '{name}': {verb}…")));
             wm.spawn_daemon_job(&runtime_dir, job);
             wm.open_daemon_window_from(&runtime_dir);
@@ -44,45 +47,10 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
 
     match op {
         DaemonSupervisorOp::List => {
-            let active = DaemonRegistry::list_active(&runtime_dir);
-            let mut list_json = Vec::new();
-            for item in &active {
-                list_json.push(JsonValue::obj([
-                    ("id", JsonValue::String(item.id.clone())),
-                    ("name", JsonValue::String(item.name.clone())),
-                    ("pid", JsonValue::Number(item.pid as i64)),
-                    ("version", JsonValue::String(item.version.clone())),
-                    ("started_at_ms", JsonValue::Number(item.started_at_ms as i64)),
-                    (
-                        "socket_path",
-                        JsonValue::String(item.socket_path.to_string_lossy().into_owned()),
-                    ),
-                    (
-                        "sessions_count",
-                        JsonValue::Number(item.sessions_count as i64),
-                    ),
-                    ("panes_count", JsonValue::Number(item.panes_count as i64)),
-                    ("agents_count", JsonValue::Number(item.agents_count as i64)),
-                    ("is_current", JsonValue::Bool(item.is_current())),
-                ]));
-            }
-            let res_json = JsonValue::obj([("daemons", JsonValue::Array(list_json))]);
-            wm.set_command_data(res_json.to_json_string());
-
-            let summary = if active.is_empty() {
-                "No background daemons currently running".to_string()
-            } else {
-                let items: Vec<String> = active
-                    .iter()
-                    .map(|d| {
-                        format!(
-                            "{}(pid {}, {} sess, {} panes)",
-                            d.name, d.pid, d.sessions_count, d.panes_count
-                        )
-                    })
-                    .collect();
-                format!("Active daemons ({}): {}", active.len(), items.join(", "))
-            };
+            // Same rows as `bilterm daemon list`, `daemon.list` and the daemon window.
+            let rows = collect_rows(&runtime_dir, false);
+            wm.set_command_data(rows_json(&rows).to_json_string());
+            let summary = summary(&rows);
             wm.active_pane_mut().set_status_message(Some(summary));
             wm.open_daemon_window_from(&runtime_dir);
         }
@@ -112,6 +80,11 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
                     ("panes_count", JsonValue::Number(d.panes_count as i64)),
                     ("agents_count", JsonValue::Number(d.agents_count as i64)),
                     ("status", JsonValue::String("running".to_string())),
+                    ("rss_bytes", d.rss_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
+                    ("restart_count", JsonValue::Number(i64::from(d.restart_count))),
+                    ("last_exit", d.last_exit.as_ref().map_or(JsonValue::Null, last_exit_to_json)),
+                    ("limit_max_bytes", d.limit_max_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
+                    ("limit_high_bytes", d.limit_high_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
                 ]);
                 wm.set_command_data(res.to_json_string());
                 wm.active_pane_mut().set_status_message(Some(format!(
@@ -140,9 +113,9 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
             }
             wm.open_daemon_window_from(&runtime_dir);
         }
-        DaemonSupervisorOp::Start { name } => {
+        DaemonSupervisorOp::Start { name, restart } => {
             let target = name.as_deref().unwrap_or("default");
-            match ensure_started(&runtime_dir, target) {
+            match ensure_started_with(&runtime_dir, target, restart.unwrap_or_default()) {
                 Ok(DaemonStartResult::Started { pid, socket_path }) => {
                     let res = JsonValue::obj([
                         ("name", JsonValue::String(target.to_string())),

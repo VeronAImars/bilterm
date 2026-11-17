@@ -172,6 +172,7 @@ fn test_graceful_stop_and_cleanup() {
         panes_count: 1,
         agents_count: 0,
         last_heartbeat_ms: now_ms(),
+        ..Default::default()
     };
     ensure_private_dir(&runtime_dir.join("daemons")).unwrap();
     fs::write(&entry.socket_path, b"sock").unwrap();

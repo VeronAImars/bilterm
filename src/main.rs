@@ -40,8 +40,18 @@ fn switch_value<'a>(args: &'a [String], switches: &[&str]) -> Option<&'a str> {
     None
 }
 
-#[tokio::main]
-async fn main() -> color_eyre::Result<()> {
+fn main() -> color_eyre::Result<()> {
+    // `bilterm supervisor ...`: the tiny long-lived process that owns a daemon's `Child`
+    // (restart policy, exit status). Internal; spawned by `daemon start`. It is dispatched
+    // before the tokio runtime exists so it stays a single thread with no WindowManager.
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(String::as_str) == Some("supervisor") {
+        std::process::exit(bilterm::daemon::supervise::run_cli(&argv[1..]));
+    }
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(real_main())
+}
+
+async fn real_main() -> color_eyre::Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // `bilterm agents-md [--install [PATH]]`: the embedded agent guide; needs no daemon.
     if args.first().map(String::as_str) == Some("agents-md") {
@@ -70,7 +80,7 @@ async fn main() -> color_eyre::Result<()> {
                bilterm blank [SESSION] / bilterm -B\n  \
                bilterm attach [SESSION] / bilterm -a [SESSION]\n  \
                bilterm ls / bilterm sessions\n  \
-               bilterm daemon list|start [NAME]|stop [NAME] [--force]|status [NAME]   (manage named background daemons)\n  \
+               bilterm daemon list|start [NAME] [--restart never|on-crash]|stop [NAME] [--force]|status [NAME]   (manage named background daemons)\n  \
                bilterm run <PLAYBOOK.toml>\n  \
                bilterm ctl [-t|--token-file <PATH>] [--daemon-name <NAME>] [ENDPOINT] <METHOD> [JSON_PARAMS]\n  \
                bilterm agent|pane|workspace|coords <SUBCOMMAND> ...   (live control; run `bilterm agent` for usage)\n  \
@@ -443,6 +453,15 @@ async fn main() -> color_eyre::Result<()> {
             plane.wm.list_sessions().len(),
             plane.wm.panes().len(),
         )?;
+        // Heartbeat: refresh this daemon's registry record with its resident size for `daemon list`.
+        {
+            let (dir, name) = (runtime_dir.clone(), daemon_name.to_string());
+            let _ = std::thread::Builder::new().name("daemon-heartbeat".into()).spawn(move || loop {
+                let rss = bilterm::daemon::rss::current_rss_bytes();
+                let _ = bilterm::daemon::registry::DaemonRegistry::update_runtime_stats(&dir, &name, rss);
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            });
+        }
         run_headless_server_with_http(cfg, plane, http).await?;
         return Ok(());
     }

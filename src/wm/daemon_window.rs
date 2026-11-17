@@ -24,6 +24,12 @@ pub struct DaemonMenuEntry {
     pub socket_path: String,
     /// True when this is the daemon the client is currently attached to / switched to.
     pub current: bool,
+    /// Resident bytes (None = unknown).
+    pub rss_bytes: Option<u64>,
+    /// Supervisor restarts since the host was first started.
+    pub restarts: u32,
+    /// `Some("restarting")` / `Some("failed")` when the supervisor reports the host down.
+    pub supervisor_state: Option<&'static str>,
 }
 
 impl DaemonMenuEntry {
@@ -234,8 +240,21 @@ impl WindowManager {
                     sessions: d.sessions_count,
                     panes: d.panes_count,
                     socket_path: d.socket_path.to_string_lossy().into_owned(),
+                    rss_bytes: d.rss_bytes,
+                    restarts: d.restart_count,
+                    ..Default::default()
                 })
                 .collect();
+        for rec in crate::daemon::registry::DaemonRegistry::list_supervised_down(runtime_dir) {
+            if !entries.iter().any(|e| e.name == rec.name) {
+                entries.push(DaemonMenuEntry {
+                    name: rec.name,
+                    restarts: rec.restart_count,
+                    supervisor_state: Some(if rec.state == crate::daemon::supervise::SupState::Failed { "failed" } else { "restarting" }),
+                    ..Default::default()
+                });
+            }
+        }
         for rec in crate::daemon::registry::DaemonRegistry::list_crashed(runtime_dir) {
             if !entries.iter().any(|e| e.name == rec.name) {
                 entries.push(crashed_entry(rec));
@@ -286,7 +305,7 @@ impl WindowManager {
         let name = self.daemon_window.selected_entry().map(|e| e.name.clone());
         let op = match (button, name) {
             (DaemonWindowButton::Start, Some(name)) => {
-                Some(DaemonSupervisorOp::Start { name: Some(name) })
+                Some(DaemonSupervisorOp::Start { name: Some(name), restart: None })
             }
             (DaemonWindowButton::Stop, Some(name)) => {
                 Some(DaemonSupervisorOp::Stop { name: Some(name), force: false })

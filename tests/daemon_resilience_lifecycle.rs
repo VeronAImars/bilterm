@@ -28,6 +28,7 @@ fn entry(name: &str, pid: u32, dir: &std::path::Path) -> DaemonRegistryEntry {
         panes_count: 0,
         agents_count: 0,
         last_heartbeat_ms: 0,
+        ..Default::default()
     }
 }
 

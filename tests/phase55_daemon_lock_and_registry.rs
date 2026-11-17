@@ -137,6 +137,7 @@ fn test_daemon_registry_lifecycle_and_pruning() {
         panes_count: 5,
         agents_count: 1,
         last_heartbeat_ms: now_ms(),
+        ..Default::default()
     };
 
     let entry_dead = DaemonRegistryEntry {
@@ -150,6 +151,7 @@ fn test_daemon_registry_lifecycle_and_pruning() {
         panes_count: 0,
         agents_count: 0,
         last_heartbeat_ms: now_ms() - 50_000,
+        ..Default::default()
     };
 
     // Plant dead socket

@@ -174,7 +174,7 @@ pub fn resolve_daemon_subchord(key: KeyCode) -> Option<Action> {
             Some(Action::DaemonSupervisor(crate::action::DaemonSupervisorOp::Status { name: None }))
         }
         KeyCode::Char('n') | KeyCode::Char('N') => {
-            Some(Action::DaemonSupervisor(crate::action::DaemonSupervisorOp::Start { name: None }))
+            Some(Action::DaemonSupervisor(crate::action::DaemonSupervisorOp::Start { name: None, restart: None }))
         }
         KeyCode::Char('q') | KeyCode::Char('Q') => {
             Some(Action::DaemonSupervisor(crate::action::DaemonSupervisorOp::Stop {

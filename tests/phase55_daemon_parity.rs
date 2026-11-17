@@ -80,7 +80,7 @@ fn test_daemon_surface_parity() {
             KeyCode::Char('n'),
             "daemon.start",
             "start",
-            Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: None }),
+            Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: None, restart: None }),
         ),
         (
             "stop",
@@ -191,6 +191,7 @@ fn test_cross_daemon_find_indexing() {
         panes_count: 4,
         agents_count: 1,
         last_heartbeat_ms: now_ms(),
+        ..Default::default()
     };
 
     let peer_2 = DaemonRegistryEntry {
@@ -204,6 +205,7 @@ fn test_cross_daemon_find_indexing() {
         panes_count: 6,
         agents_count: 2,
         last_heartbeat_ms: now_ms(),
+        ..Default::default()
     };
 
     DaemonRegistry::register(&runtime_dir, &peer_1).unwrap();
