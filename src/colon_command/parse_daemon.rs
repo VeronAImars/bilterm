@@ -7,11 +7,12 @@
 //! - `:daemon stop [name] [--force]`
 //! - `:daemon switch <name>`
 //! - `:daemon prune`
+//! - `:daemon host [name]`
 
 use super::ColonCommand;
 use crate::action::DaemonSupervisorOp;
 
-const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] | stop [name] [--force] | switch <name> | prune]";
+const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] | stop [name] [--force] | switch <name> | prune | host [name]]";
 
 /// Parses `:daemon` command invocations into a [`ColonCommand`].
 pub(super) fn parse_daemon_colon_command(
@@ -86,6 +87,13 @@ pub(super) fn parse_daemon_colon_command(
             Some(Ok(ColonCommand::DaemonSupervisor(
                 DaemonSupervisorOp::Prune,
             )))
+        }
+        "host" => {
+            let name = parts.get(2).map(|s| s.to_string());
+            if parts.len() > 3 {
+                return Some(Err(USAGE.to_string()));
+            }
+            Some(Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::HostState { name })))
         }
         _ => Some(Err(USAGE.to_string())),
     }

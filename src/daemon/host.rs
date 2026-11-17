@@ -118,13 +118,35 @@ pub fn host_state_path_in(runtime_dir: &Path, name: &str) -> Result<PathBuf, Str
 
 /// Durably writes `state` to `path` through `secure_fs`.
 pub fn write_host_state(path: &Path, state: &HostState) -> std::io::Result<()> {
-    crate::secure_fs::write_private_file_durable(path, &encode_frame(state))
+    let frame = encode_frame(state);
+    if frame.len() - HEADER_LEN > MAX_HOST_FRAME_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("host state exceeds {MAX_HOST_FRAME_BYTES} bytes"),
+        ));
+    }
+    crate::secure_fs::write_private_file_durable(path, &frame)
 }
 
-/// Reads and decodes a host state file.
+/// Reads and decodes a host state file. The read is capped at one maximal frame, so a hostile or
+/// runaway file can never be pulled fully into memory. Never panics: every failure is a message.
 pub fn read_host_state(path: &Path) -> Result<HostState, String> {
-    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-    decode_frame(&bytes).map_err(|e| e.to_string())
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let cap = (HEADER_LEN + MAX_HOST_FRAME_BYTES) as u64;
+    let mut bytes = Vec::new();
+    file.take(cap + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    if bytes.len() as u64 > cap {
+        return Err(HostFrameError::TooLarge(bytes.len()).to_string());
+    }
+    decode_frame(&bytes).map_err(|e| format!("corrupt host state {}: {e}", path.display()))
+}
+
+/// Removes a host state file; a missing file is success. Returns whether a file was removed.
+pub fn remove_host_state(path: &Path) -> bool {
+    std::fs::remove_file(path).is_ok()
 }
 
 #[cfg(test)]
@@ -164,6 +186,28 @@ mod tests {
         let mut zero = good;
         zero[4..6].copy_from_slice(&0u16.to_be_bytes());
         assert_eq!(decode_frame(&zero), Err(HostFrameError::UnsupportedVersion(0)));
+    }
+
+    #[test]
+    fn read_rejects_oversized_and_garbage_files_without_panic() {
+        let dir = std::env::temp_dir().join(format!("bt-host-{}", crate::secure_fs::unique_suffix()));
+        crate::secure_fs::create_private_dir_all(&dir).unwrap();
+        let big = dir.join("host-big.state");
+        std::fs::write(&big, vec![b'B'; HEADER_LEN + MAX_HOST_FRAME_BYTES + 100]).unwrap();
+        assert!(read_host_state(&big).unwrap_err().contains("exceeds"));
+        let junk = dir.join("host-junk.state");
+        std::fs::write(&junk, b"not a frame at all").unwrap();
+        assert!(read_host_state(&junk).unwrap_err().contains("bad host frame magic"));
+        let bad_json = dir.join("host-bj.state");
+        let mut f = b"BTHS".to_vec();
+        f.extend_from_slice(&1u16.to_be_bytes());
+        f.extend_from_slice(&3u32.to_be_bytes());
+        f.extend_from_slice(b"{x}");
+        std::fs::write(&bad_json, f).unwrap();
+        assert!(read_host_state(&bad_json).unwrap_err().contains("invalid host frame payload"));
+        assert!(read_host_state(&dir.join("missing")).unwrap_err().contains("cannot open"));
+        assert!(remove_host_state(&junk) && !remove_host_state(&junk));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

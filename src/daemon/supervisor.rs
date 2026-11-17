@@ -572,6 +572,10 @@ pub fn stop_daemon(runtime_dir: &Path, name: &str, force: bool) -> io::Result<bo
     let lock_path = daemon_lock_path_in(runtime_dir, name)?;
     let unregister = || {
         let _ = crate::daemon::registry::DaemonRegistry::unregister(runtime_dir, name);
+        // A stopped/crashed session host leaves no valid state behind (killed hosts cannot clean up).
+        if let Ok(p) = crate::daemon::host::host_state_path_in(runtime_dir, name) {
+            crate::daemon::host::remove_host_state(&p);
+        }
     };
 
     match lock_liveness(&lock_path) {

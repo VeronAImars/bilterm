@@ -503,8 +503,15 @@ async fn serve_loop<A: RpcAcceptor>(
     let mut host_tick = tokio::time::interval(super::host_tick::HOST_TICK);
     host_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
+    // Session hosts shut down cleanly on SIGINT/SIGTERM/SIGHUP so their state file is removed.
+    let mut shutdown = Box::pin(crate::app::host_shutdown_signal());
+
     loop {
         tokio::select! {
+            _ = &mut shutdown, if plane.is_host() => {
+                plane.host_shutdown();
+                return Ok(());
+            }
             accepted = acceptor.accept() => {
                 match accepted {
                     Ok((stream, peer)) => {

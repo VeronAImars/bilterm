@@ -24,7 +24,7 @@ pub const TICK: Duration = Duration::from_millis(16);
 pub type LiveRpcPair = (crate::api::live::LiveRpcRx, crate::api::live::LiveRpcHandler);
 
 /// Resolves on SIGINT (Ctrl+C), SIGTERM or SIGHUP.
-async fn host_shutdown_signal() {
+pub(crate) async fn host_shutdown_signal() {
     #[cfg(unix)]
     let (mut sigterm, mut sighup) = {
         use tokio::signal::unix::{signal, SignalKind};

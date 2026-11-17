@@ -391,6 +391,8 @@ async fn main() -> color_eyre::Result<()> {
             let wm = bilterm::wm::WindowManager::new_host(24, 80)?;
             let state_path = bilterm::daemon::host::host_state_path_in(&runtime_dir, daemon_name)
                 .map_err(bilterm::error::BiltermError::Config)?;
+            // We hold the daemon lock, so any state file already here is a previous crash's leftover.
+            bilterm::daemon::host::remove_host_state(&state_path);
             AutomationControlPlane::new(wm, ratatui::layout::Rect::new(0, 0, 80, 24))
                 .with_host_state_file(daemon_name, state_path)
         } else {

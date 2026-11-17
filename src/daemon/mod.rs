@@ -21,6 +21,7 @@ pub mod types;
 pub use types::*;
 
 pub mod host;
+pub mod host_inspect;
 
 pub mod liveness;
 
