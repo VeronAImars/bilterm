@@ -268,7 +268,7 @@ impl VtParser {
                     "DCS Sixel id={id} {}x{}px",
                     placement.pixel_width, placement.pixel_height
                 ));
-                push_bounded(&mut self.graphic_placements, placement, MAX_GRAPHIC_PLACEMENTS);
+                self.push_graphic_placement(placement);
             }
         }
     }
@@ -360,7 +360,7 @@ impl VtParser {
                     pixel_height: h,
                     rgba_bytes: rgba,
                 };
-                push_bounded(&mut self.graphic_placements, placement, MAX_GRAPHIC_PLACEMENTS);
+                self.push_graphic_placement(placement);
                 if image_id.is_some() && quiet == 0 {
                     self.pending_query_responses
                         .push(format!("\x1b_Gi={resolved_id};OK\x1b\\").into_bytes());
@@ -375,6 +375,19 @@ impl VtParser {
 }
 
 impl VtParser {
+    /// Retains `placement`, evicting oldest placements past the count or total-byte budget.
+    fn push_graphic_placement(&mut self, placement: super::graphics::TerminalGraphicPlacement) {
+        use super::graphics::MAX_GRAPHIC_TOTAL_BYTES;
+        push_bounded(&mut self.graphic_placements, placement, MAX_GRAPHIC_PLACEMENTS);
+        let mut total: usize = self.graphic_placements.iter().map(|g| g.rgba_bytes.len()).sum();
+        let mut drop_n = 0;
+        while total > MAX_GRAPHIC_TOTAL_BYTES && drop_n + 1 < self.graphic_placements.len() {
+            total -= self.graphic_placements[drop_n].rgba_bytes.len();
+            drop_n += 1;
+        }
+        self.graphic_placements.drain(..drop_n);
+    }
+
     fn push_notification(&mut self, notification: TerminalNotification) {
         push_bounded(&mut self.notifications, notification, MAX_NOTIFICATIONS);
         self.notifications_received = self.notifications_received.wrapping_add(1);

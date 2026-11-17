@@ -1,6 +1,6 @@
 //! Visual Text Selection, Keyboard Shift-Select & Mouse Drag-Select for [`FloatingPromptState`].
 
-use crate::clipboard::set_system_clipboard;
+use crate::clipboard::{MAX_YANK_HISTORY_BYTES, set_system_clipboard};
 use crate::pane::prompt_editor::FloatingPromptState;
 
 /// Maximum number of cut/copy/yank entries retained in the per-session yank history ring.
@@ -17,6 +17,11 @@ impl FloatingPromptState {
         self.yank_history.insert(0, text.to_string());
         if self.yank_history.len() > MAX_YANK_HISTORY {
             self.yank_history.truncate(MAX_YANK_HISTORY);
+        }
+        // Byte cap: drop oldest entries (never the newest) until under budget.
+        let mut total: usize = self.yank_history.iter().map(String::len).sum();
+        while total > MAX_YANK_HISTORY_BYTES && self.yank_history.len() > 1 {
+            total -= self.yank_history.pop().map_or(0, |e| e.len());
         }
         self.yank_ring_index = 0;
     }
@@ -372,5 +377,19 @@ mod tests {
         );
         assert_eq!(p.text(), "");
         assert_eq!(p.yank_buffer, "echo hello bilterm");
+    }
+
+    #[test]
+    fn yank_history_is_byte_capped_oldest_first() {
+        use crate::clipboard::MAX_YANK_HISTORY_BYTES;
+        let mut p = FloatingPromptState::default();
+        let chunk = MAX_YANK_HISTORY_BYTES / 2 + 1;
+        for c in ['a', 'b', 'c'] {
+            p.push_yank_entry(&c.to_string().repeat(chunk));
+        }
+        let total: usize = p.yank_history.iter().map(String::len).sum();
+        assert!(total <= MAX_YANK_HISTORY_BYTES);
+        assert!(p.yank_history[0].starts_with('c'));
+        assert_eq!(p.yank_history.len(), 1);
     }
 }

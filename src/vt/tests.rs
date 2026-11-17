@@ -273,6 +273,20 @@ fn kitty_graphics_rejects_oversized_dimensions_and_payloads() {
 }
 
 #[test]
+fn graphic_placements_respect_total_byte_budget() {
+    let mut vt = VtParser::new(10, 40, 100);
+    let max = MAX_GRAPHIC_DIM_PX;
+    for i in 0..40 {
+        vt.process(format!("\x1b_Ga=T,i={},f=32,s={max},v={max},q=2;AAAA\x1b\\", i + 1).as_bytes());
+    }
+    let placements = vt.graphic_placements();
+    let total: usize = placements.iter().map(|g| g.rgba_bytes.len()).sum();
+    assert!(total <= MAX_GRAPHIC_TOTAL_BYTES, "total {total}");
+    assert!(placements.len() >= 2);
+    assert_eq!(placements.last().map(|g| g.id), Some(40));
+}
+
+#[test]
 fn graphic_placements_retain_only_the_most_recent() {
     let mut vt = VtParser::new(10, 40, 100);
     for i in 0..MAX_GRAPHIC_PLACEMENTS + 10 {

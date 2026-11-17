@@ -8,7 +8,7 @@ use crate::wm::PaneId;
 /// Maximum entries retained in the workspace-wide [`ClipboardRegistry`].
 pub const MAX_CLIPBOARD_ENTRIES: usize = 200;
 
-pub use crate::clipboard::ClipboardSource;
+pub use crate::clipboard::{ClipboardSource, MAX_CLIPBOARD_TOTAL_BYTES};
 
 /// MIME classification for a [`ClipboardEntry`] (`CLIP-02`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -163,6 +163,7 @@ pub struct ClipboardRegistry {
     entries: Vec<ClipboardEntry>,
     next_id: u64,
     max_entries: usize,
+    max_total_bytes: usize,
 }
 
 impl Default for ClipboardRegistry {
@@ -177,7 +178,19 @@ impl ClipboardRegistry {
             entries: Vec::new(),
             next_id: 1,
             max_entries: MAX_CLIPBOARD_ENTRIES,
+            max_total_bytes: MAX_CLIPBOARD_TOTAL_BYTES,
         }
+    }
+
+    /// Test/config hook: overrides the total-byte budget.
+    pub fn with_max_total_bytes(mut self, max: usize) -> Self {
+        self.max_total_bytes = max;
+        self
+    }
+
+    /// Sum of retained entry text bytes.
+    pub fn total_bytes(&self) -> usize {
+        self.entries.iter().map(|e| e.content.len()).sum()
     }
 
     pub fn entries(&self) -> &[ClipboardEntry] {
@@ -316,6 +329,27 @@ impl ClipboardRegistry {
                 self.entries.pop();
             }
         }
+        // Size-based, oldest-first (list tail is oldest); the newest entry (index 0) is kept.
+        let mut total = self.total_bytes();
+        while total > self.max_total_bytes && self.entries.len() > 1 {
+            let pos = self
+                .entries
+                .iter()
+                .rposition(|e| !e.pinned)
+                .filter(|&p| p > 0)
+                .unwrap_or(self.entries.len() - 1);
+            total -= self.entries.remove(pos).content.len();
+        }
+        // A lone entry larger than the whole budget is truncated on a char boundary.
+        if total > self.max_total_bytes
+            && let Some(e) = self.entries.first_mut()
+        {
+            let mut cut = self.max_total_bytes;
+            while !e.content.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            e.content.truncate(cut);
+        }
     }
 
     pub fn toggle_pin(&mut self, id: u64) -> Option<bool> {
@@ -451,5 +485,49 @@ impl ClipboardRegistry {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    fn rec(r: &mut ClipboardRegistry, text: &str) -> u64 {
+        r.record_text("s", Some(1), "w", ClipboardSource::ExplicitCopy, text)
+    }
+
+    #[test]
+    fn evicts_oldest_unpinned_by_total_bytes() {
+        let mut r = ClipboardRegistry::new().with_max_total_bytes(100);
+        let a = rec(&mut r, &"a".repeat(40));
+        rec(&mut r, &"b".repeat(40));
+        rec(&mut r, &"c".repeat(40));
+        assert!(r.total_bytes() <= 100);
+        assert!(r.get_by_id(a).is_none(), "oldest evicted first");
+        assert_eq!(r.len(), 2);
+    }
+
+    #[test]
+    fn pinned_entry_survives_while_unpinned_exist() {
+        let mut r = ClipboardRegistry::new().with_max_total_bytes(100);
+        let a = rec(&mut r, &"a".repeat(40));
+        r.toggle_pin(a);
+        rec(&mut r, &"b".repeat(40));
+        rec(&mut r, &"c".repeat(40));
+        assert!(r.get_by_id(a).is_some());
+        assert!(r.total_bytes() <= 100);
+    }
+
+    #[test]
+    fn lone_oversize_entry_is_truncated_on_char_boundary() {
+        let mut r = ClipboardRegistry::new().with_max_total_bytes(10);
+        rec(&mut r, &"é".repeat(20));
+        assert!(r.total_bytes() <= 10);
+        assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn default_budget_is_16_mib() {
+        assert_eq!(MAX_CLIPBOARD_TOTAL_BYTES, 16 * 1024 * 1024);
     }
 }

@@ -12,6 +12,9 @@
 //! * **At the limit**: the *whole* write is refused with an error (never a fragment, so no torn
 //!   escape or UTF-8 sequence), the caller is never blocked, and the refusal is returned to the
 //!   caller, counted in [`PtyWriter::rejected_bytes`] and logged. Nothing is dropped silently.
+//! * **Global budget**: all writers also draw on one process-wide pool of
+//!   [`MAX_GLOBAL_QUEUED_INPUT_BYTES`], so many stalled panes cannot add up to an unbounded total.
+//!   Refusal semantics are the same as for the per-pane limit (whole write, never blocks).
 //! * **Write error**: recorded once; later writes fail fast, and the session reports the PTY as
 //!   exited. The error never leaves this module as a panic.
 //! * **Shutdown**: `close()` ends the thread as soon as it is not inside a kernel write; a
@@ -19,8 +22,8 @@
 
 use std::collections::VecDeque;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -34,6 +37,44 @@ use crate::traffic::TrafficTap;
 /// framing and several pastes in flight, while a pane whose child never reads costs at most
 /// 4 MiB (50 such panes: 200 MiB) instead of growing without bound.
 pub const MAX_QUEUED_INPUT_BYTES: usize = 4 * 1024 * 1024;
+
+/// Upper bound on accepted-but-unwritten input bytes summed over every PTY in the process.
+pub const MAX_GLOBAL_QUEUED_INPUT_BYTES: usize = 32 * 1024 * 1024;
+
+/// Byte pool shared by writers; reservation is a lock-free CAS and never blocks.
+pub struct InputPool {
+    used: AtomicUsize,
+    limit: usize,
+}
+
+impl InputPool {
+    pub fn new(limit: usize) -> Self {
+        Self { used: AtomicUsize::new(0), limit }
+    }
+
+    /// The process-wide pool every default writer draws on.
+    pub fn global() -> &'static Arc<InputPool> {
+        static POOL: OnceLock<Arc<InputPool>> = OnceLock::new();
+        POOL.get_or_init(|| Arc::new(InputPool::new(MAX_GLOBAL_QUEUED_INPUT_BYTES)))
+    }
+
+    fn try_reserve(&self, n: usize) -> bool {
+        self.used
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |u| {
+                u.checked_add(n).filter(|t| *t <= self.limit)
+            })
+            .is_ok()
+    }
+
+    fn release(&self, n: usize) {
+        let _ = self.used.fetch_update(Ordering::AcqRel, Ordering::Acquire, |u| Some(u.saturating_sub(n)));
+    }
+
+    /// Bytes currently reserved.
+    pub fn used(&self) -> usize {
+        self.used.load(Ordering::Acquire)
+    }
+}
 
 #[derive(Default)]
 struct State {
@@ -52,6 +93,7 @@ struct Shared {
     drained: Condvar,
     finished: AtomicBool,
     limit: usize,
+    pool: Arc<InputPool>,
 }
 
 impl Shared {
@@ -111,9 +153,19 @@ impl PtyWriter {
 
     /// Starts the writer thread with an explicit pending-byte limit.
     pub fn spawn_with_limit(
+        sink: Box<dyn Write + Send>,
+        traffic: TrafficTap,
+        limit: usize,
+    ) -> std::io::Result<Self> {
+        Self::spawn_with_pool(sink, traffic, limit, InputPool::global().clone())
+    }
+
+    /// Starts the writer thread with explicit per-pane limit and shared byte pool.
+    pub fn spawn_with_pool(
         mut sink: Box<dyn Write + Send>,
         traffic: TrafficTap,
         limit: usize,
+        pool: Arc<InputPool>,
     ) -> std::io::Result<Self> {
         let shared = Arc::new(Shared {
             state: Mutex::new(State::default()),
@@ -121,6 +173,7 @@ impl PtyWriter {
             drained: Condvar::new(),
             finished: AtomicBool::new(false),
             limit,
+            pool,
         });
         let th = shared.clone();
         thread::Builder::new().name("bilterm-pty-writer".to_string()).spawn(move || {
@@ -145,6 +198,7 @@ impl PtyWriter {
                         // Counted when the bytes are really on the wire (`TMON-01`).
                         traffic.tx(chunk.len());
                         st.pending -= chunk.len();
+                        th.pool.release(chunk.len());
                         if st.pending == 0 {
                             th.drained.notify_all();
                         }
@@ -152,6 +206,7 @@ impl PtyWriter {
                     Err(e) => {
                         st.failed = Some(e.to_string());
                         st.queue.clear();
+                        th.pool.release(st.pending);
                         st.pending = 0;
                         drop(st);
                         th.drained.notify_all();
@@ -187,6 +242,17 @@ impl PtyWriter {
             return Err(BiltermError::Pty(format!(
                 "input not sent: {} bytes are still waiting for a program that is not reading (limit {} bytes)",
                 st.pending, self.shared.limit
+            )));
+        }
+        if !self.shared.pool.try_reserve(bytes.len()) {
+            st.rejected = st.rejected.saturating_add(bytes.len() as u64);
+            if !st.overflow_logged {
+                st.overflow_logged = true;
+                tracing::warn!(refused = bytes.len(), "global PTY input budget exhausted; write refused");
+            }
+            return Err(BiltermError::Pty(format!(
+                "input not sent: too many bytes are waiting across all panes (global limit {} bytes)",
+                self.shared.pool.limit
             )));
         }
         st.overflow_logged = false;
@@ -238,6 +304,7 @@ impl PtyWriter {
         st.closed = true;
         let discarded: usize = st.queue.drain(..).map(|c| c.len()).sum();
         st.pending -= discarded;
+        self.shared.pool.release(discarded);
         drop(st);
         self.shared.work.notify_all();
     }

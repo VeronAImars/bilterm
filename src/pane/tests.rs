@@ -181,3 +181,21 @@ fn link_raw_input_keeps_typed_bytes_out_of_the_prompt_history() {
     pane.set_link_raw_input(false);
     assert!(pane.is_prompt_visible());
 }
+
+#[test]
+fn pending_clipboard_and_media_records_are_count_capped_oldest_first() {
+    use crate::clipboard::ClipboardSource;
+    let mut pane = CompositePane::new_headless(1, 25, 80);
+    let n = crate::clipboard::MAX_PENDING_CLIPBOARD_RECORDS + 10;
+    for i in 0..n {
+        pane.record_clipboard_event(ClipboardSource::ExplicitCopy, format!("c{i}"));
+        pane.record_media_passthrough("image/png", i);
+    }
+    let clips = pane.take_pending_clipboard_records();
+    assert_eq!(clips.len(), crate::clipboard::MAX_PENDING_CLIPBOARD_RECORDS);
+    assert_eq!(clips.first().unwrap().1, "c10");
+    assert_eq!(clips.last().unwrap().1, format!("c{}", n - 1));
+    let media = pane.take_pending_media_records();
+    assert_eq!(media.len(), crate::clipboard::MAX_PENDING_CLIPBOARD_RECORDS);
+    assert_eq!(media.first().unwrap().1, 10);
+}

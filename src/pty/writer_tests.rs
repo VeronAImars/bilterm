@@ -182,3 +182,42 @@ fn wait_finished_never_misses_the_exit_notification() {
     }
     assert!(started.elapsed() < LONG, "a waiter slept through the exit notification");
 }
+
+#[test]
+fn global_pool_caps_the_sum_across_writers_and_releases_on_drain() {
+    let pool = Arc::new(InputPool::new(100));
+    let (s1, _o1, p1, e1) = gated_sink();
+    let (s2, _o2, p2, e2) = gated_sink();
+    let a = PtyWriter::spawn_with_pool(s1, counters(), 1000, pool.clone()).unwrap();
+    let b = PtyWriter::spawn_with_pool(s2, counters(), 1000, pool.clone()).unwrap();
+    a.enqueue(&[b'a'; 60]).unwrap();
+    e1.recv_timeout(LONG).unwrap();
+    // Within b's own limit but over the shared pool: refused whole.
+    let err = b.enqueue(&[b'b'; 50]).expect_err("global pool exhausted");
+    assert!(err.to_string().contains("global limit"), "{err}");
+    assert_eq!(b.pending_bytes(), 0);
+    assert_eq!(b.rejected_bytes(), 50);
+    b.enqueue(&[b'b'; 40]).unwrap();
+    e2.recv_timeout(LONG).unwrap();
+    assert_eq!(pool.used(), 100);
+    p1.send(()).unwrap();
+    assert!(a.wait_drained(LONG));
+    assert_eq!(pool.used(), 40);
+    p2.send(()).unwrap();
+    assert!(b.wait_drained(LONG));
+    assert_eq!(pool.used(), 0);
+}
+
+#[test]
+fn close_releases_unwritten_bytes_back_to_the_pool() {
+    let pool = Arc::new(InputPool::new(100));
+    let (s, _o, permit, entered) = gated_sink();
+    let w = PtyWriter::spawn_with_pool(s, counters(), 1000, pool.clone()).unwrap();
+    w.enqueue(&[b'a'; 10]).unwrap();
+    entered.recv_timeout(LONG).unwrap();
+    w.enqueue(&[b'b'; 20]).unwrap();
+    w.close();
+    permit.send(()).unwrap();
+    assert!(w.probe().wait_finished(LONG));
+    assert_eq!(pool.used(), 0);
+}

@@ -737,11 +737,46 @@ impl TmuxControlBridge {
     }
 }
 
+/// Byte budget for control lines sitting between a transport and the window manager poll.
+pub const MAX_LINE_BACKLOG_BYTES: usize = 16 * 1024 * 1024;
+
+/// Shared byte counter for undelivered control lines. Producers charge it per line and stop
+/// reading (back-pressure on the tmux/ssh pipe, nothing is dropped) while it is at the budget;
+/// the consumer (`poll_tmux_control`) releases it per delivered line. Producers only wait on the
+/// consumer, never the reverse, so it cannot deadlock.
+#[derive(Clone, Debug, Default)]
+pub struct LineBacklog(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl LineBacklog {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn charge(&self, bytes: usize) {
+        self.0.fetch_add(bytes, std::sync::atomic::Ordering::AcqRel);
+    }
+    pub fn release(&self, bytes: usize) {
+        let _ = self.0.fetch_update(
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+            |v| Some(v.saturating_sub(bytes)),
+        );
+    }
+    pub fn bytes(&self) -> usize {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+    /// True while producers should pause.
+    pub fn is_full(&self) -> bool {
+        self.bytes() >= MAX_LINE_BACKLOG_BYTES
+    }
+}
+
 /// Live asynchronous `tmux -CC` Control Mode subprocess handle (`TMUX-03`).
 pub struct TmuxControlSubprocess {
     pub session_name: String,
     pub cmd_tx: tokio::sync::mpsc::UnboundedSender<String>,
     pub line_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+    /// Byte budget shared with the line producer; `None` for unbudgeted (test) channels.
+    pub line_backlog: Option<LineBacklog>,
     /// Traffic cell of the legacy local `tmux -CC` pipes (Phase 64); `None` for channel-only handles.
     pub traffic: Option<crate::traffic::TrafficTap>,
 }
@@ -771,6 +806,8 @@ impl TmuxControlSubprocess {
         let (line_tx, line_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let traffic = crate::traffic::ChannelCounters::new();
         let (tx_cell, rx_cell) = (traffic.clone(), traffic.clone());
+        let backlog = LineBacklog::new();
+        let producer_backlog = backlog.clone();
 
         tokio::spawn(async move {
             while let Some(cmd) = cmd_rx.recv().await {
@@ -786,6 +823,11 @@ impl TmuxControlSubprocess {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 rx_cell.rx(line.len() + 1);
+                // Back-pressure: stop reading the pipe while the consumer is behind.
+                while producer_backlog.is_full() && !line_tx.is_closed() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+                producer_backlog.charge(line.len());
                 if line_tx.send(line).is_err() {
                     break;
                 }
@@ -797,6 +839,7 @@ impl TmuxControlSubprocess {
             session_name: clean_name.to_string(),
             cmd_tx,
             line_rx,
+            line_backlog: Some(backlog),
             traffic: Some(traffic),
         })
     }
@@ -811,8 +854,21 @@ impl TmuxControlSubprocess {
             session_name: session_name.into(),
             cmd_tx,
             line_rx,
+            line_backlog: None,
             traffic: None,
         }
+    }
+
+    /// Like [`Self::from_channels`], with a byte budget shared with the line producer.
+    pub fn from_channels_budgeted(
+        session_name: impl Into<String>,
+        cmd_tx: tokio::sync::mpsc::UnboundedSender<String>,
+        line_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+        backlog: LineBacklog,
+    ) -> Self {
+        let mut s = Self::from_channels(session_name, cmd_tx, line_rx);
+        s.line_backlog = Some(backlog);
+        s
     }
 }
 
@@ -849,7 +905,12 @@ impl WindowManager {
         };
         loop {
             match subproc.line_rx.try_recv() {
-                Ok(line) => lines.push(line),
+                Ok(line) => {
+                    if let Some(b) = subproc.line_backlog.as_ref() {
+                        b.release(line.len());
+                    }
+                    lines.push(line);
+                }
                 Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                     eof = true;
@@ -986,5 +1047,31 @@ mod tests {
         plain.poll_all_ptys();
         assert!(!plain.is_tmux_control_attached());
         assert!(plain.tmux_link.last_exit.is_none());
+    }
+
+    #[test]
+    fn line_backlog_charges_and_releases_through_poll() {
+        let mut wm = WindowManager::new_headless(24, 80);
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (line_tx, line_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let backlog = LineBacklog::new();
+        wm.attach_tmux_control(TmuxControlSubprocess::from_channels_budgeted(
+            "b", cmd_tx, line_rx, backlog.clone(),
+        ));
+        backlog.charge(5);
+        line_tx.send("hello".into()).unwrap();
+        assert_eq!(backlog.bytes(), 5);
+        wm.poll_tmux_control();
+        assert_eq!(backlog.bytes(), 0);
+    }
+
+    #[test]
+    fn line_backlog_full_at_budget_and_release_saturates() {
+        let b = LineBacklog::new();
+        assert!(!b.is_full());
+        b.charge(MAX_LINE_BACKLOG_BYTES);
+        assert!(b.is_full());
+        b.release(MAX_LINE_BACKLOG_BYTES + 10);
+        assert_eq!(b.bytes(), 0);
     }
 }

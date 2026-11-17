@@ -20,7 +20,7 @@
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -32,6 +32,13 @@ use crate::pty::{PtyConfig, shell_integration};
 use crate::vt::scrollback::PaneScrollMode;
 use crate::vt::snapshot::GridSnapshot;
 use crate::vt::VtParser;
+
+/// Byte budget for `WritePty`/`FeedOutput` payloads queued toward the worker thread. Payloads that
+/// would exceed it are dropped with a warning instead of growing memory without bound; the sender
+/// never blocks, so the UI thread cannot deadlock behind a stalled PTY writer.
+pub const MAX_QUEUED_CMD_BYTES: usize = 8 * 1024 * 1024;
+/// Cap on undelivered droppable (`Osc52Clipboard`) events; lifecycle events are never dropped.
+pub const MAX_PENDING_EVENTS: usize = 1024;
 
 /// Commands sent from the UI/Window layer to the dedicated terminal emulation worker thread (`ARCH-02`).
 #[derive(Clone, Debug)]
@@ -166,6 +173,8 @@ impl SharedGridSnapshot {
 /// feeds them into `libghostty-vt` (or `VtParser`), and publishes [`GridSnapshot`] frames (`ARCH-02`).
 pub struct VtWorkerHandle {
     cmd_tx: mpsc::Sender<VtWorkerCommand>,
+    queued_bytes: Arc<AtomicUsize>,
+    pending_events: Arc<AtomicUsize>,
     event_rx: Mutex<mpsc::Receiver<VtWorkerEvent>>,
     shared: Arc<SharedGridSnapshot>,
     alive: Arc<AtomicBool>,
@@ -295,6 +304,8 @@ impl VtWorkerHandle {
         let (event_tx, event_rx) = mpsc::channel::<VtWorkerEvent>();
         let (pty_tx, pty_rx) = mpsc::sync_channel::< Option<Vec<u8>> >(64);
         let traffic = crate::traffic::ChannelCounters::new();
+        let queued_bytes = Arc::new(AtomicUsize::new(0));
+        let pending_events = Arc::new(AtomicUsize::new(0));
 
         if let Some(mut pty_reader) = reader {
             let pipe_cell = traffic.clone();
@@ -323,6 +334,8 @@ impl VtWorkerHandle {
         let shared_clone = Arc::clone(&shared);
         let alive_clone = Arc::clone(&alive);
         let worker_cell = traffic.clone();
+        let queued_worker = Arc::clone(&queued_bytes);
+        let pending_worker = Arc::clone(&pending_events);
 
         thread::Builder::new()
             .name("bilterm-vt-worker".to_string())
@@ -339,6 +352,8 @@ impl VtWorkerHandle {
                     &event_tx,
                     &wake,
                     &worker_cell,
+                    &queued_worker,
+                    &pending_worker,
                 );
                 alive_clone.store(false, Ordering::Release);
                 let _ = event_tx.send(VtWorkerEvent::Exited);
@@ -349,6 +364,8 @@ impl VtWorkerHandle {
 
         Ok(Self {
             cmd_tx,
+            queued_bytes,
+            pending_events,
             event_rx: Mutex::new(event_rx),
             shared,
             alive,
@@ -363,8 +380,30 @@ impl VtWorkerHandle {
     }
 
     /// Sends a command to the worker thread.
+    ///
+    /// `WritePty`/`FeedOutput` payloads are charged against [`MAX_QUEUED_CMD_BYTES`]; an over-budget
+    /// payload is dropped (never blocks).
     pub fn send(&self, cmd: VtWorkerCommand) {
-        let _ = self.cmd_tx.send(cmd);
+        let len = match &cmd {
+            VtWorkerCommand::WritePty(b) | VtWorkerCommand::FeedOutput(b) => b.len(),
+            _ => 0,
+        };
+        if len > 0 {
+            let prev = self.queued_bytes.fetch_add(len, Ordering::AcqRel);
+            if prev.saturating_add(len) > MAX_QUEUED_CMD_BYTES {
+                self.queued_bytes.fetch_sub(len, Ordering::AcqRel);
+                tracing::warn!(bytes = len, "vt worker command queue over byte budget; dropping payload");
+                return;
+            }
+        }
+        if self.cmd_tx.send(cmd).is_err() && len > 0 {
+            self.queued_bytes.fetch_sub(len, Ordering::AcqRel);
+        }
+    }
+
+    /// Bytes currently queued toward the worker (diagnostics/tests).
+    pub fn queued_cmd_bytes(&self) -> usize {
+        self.queued_bytes.load(Ordering::Acquire)
     }
 
     /// Writes raw bytes to the child PTY input stream.
@@ -424,6 +463,7 @@ impl VtWorkerHandle {
         let mut out = Vec::new();
         if let Ok(rx) = self.event_rx.lock() {
             while let Ok(ev) = rx.try_recv() {
+                self.pending_events.fetch_sub(1, Ordering::AcqRel);
                 out.push(ev);
             }
         }
@@ -458,7 +498,18 @@ fn worker_loop(
     event_tx: &mpsc::Sender<VtWorkerEvent>,
     wake: &(dyn Fn() + Send + Sync),
     traffic: &crate::traffic::TrafficTap,
+    queued_bytes: &AtomicUsize,
+    pending_events: &AtomicUsize,
 ) {
+    let emit = |ev: VtWorkerEvent, droppable: bool| {
+        if droppable && pending_events.load(Ordering::Acquire) >= MAX_PENDING_EVENTS {
+            return;
+        }
+        pending_events.fetch_add(1, Ordering::AcqRel);
+        if event_tx.send(ev).is_err() {
+            pending_events.fetch_sub(1, Ordering::AcqRel);
+        }
+    };
     #[cfg(feature = "ghostty-vt")]
     let mut ghostty_engine =
         crate::vt::ghostty_backend::GhosttyVtEngine::new(initial_rows, initial_cols, scrollback_capacity).ok();
@@ -480,6 +531,9 @@ fn worker_loop(
 
         // 1. Drain all pending UI commands
         while let Ok(cmd) = cmd_rx.try_recv() {
+            if let VtWorkerCommand::WritePty(b) | VtWorkerCommand::FeedOutput(b) = &cmd {
+                queued_bytes.fetch_sub(b.len(), Ordering::AcqRel);
+            }
             match cmd {
                 VtWorkerCommand::WritePty(data) => {
                     let _ = writer.write_all(&data);
@@ -637,16 +691,16 @@ fn worker_loop(
             && last_title.as_ref() != Some(&title)
         {
             last_title = Some(title.clone());
-            let _ = event_tx.send(VtWorkerEvent::TitleChanged(title));
+            emit(VtWorkerEvent::TitleChanged(title), false);
         }
         if let Some(cwd) = vt.reported_cwd().map(PathBuf::from)
             && last_cwd.as_ref() != Some(&cwd)
         {
             last_cwd = Some(cwd.clone());
-            let _ = event_tx.send(VtWorkerEvent::CwdChanged(cwd));
+            emit(VtWorkerEvent::CwdChanged(cwd), false);
         }
         for osc52 in vt.take_outbound_osc52() {
-            let _ = event_tx.send(VtWorkerEvent::Osc52Clipboard(osc52));
+            emit(VtWorkerEvent::Osc52Clipboard(osc52), true);
         }
 
         // 5. Publish updated point-in-time GridSnapshot (with BlockPage MORE.../HOLDING freeze when active)
@@ -694,5 +748,32 @@ fn worker_loop(
 
         // Brief yield when idle to avoid spinning while remaining sub-millisecond responsive
         thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn over_budget_payload_is_dropped_not_queued() {
+        let h = VtWorkerHandle::spawn_headless(4, 20, 100).unwrap();
+        // Single payload above the whole budget is refused and the counter stays balanced.
+        h.feed_output(vec![b'x'; MAX_QUEUED_CMD_BYTES + 1]);
+        assert_eq!(h.queued_cmd_bytes(), 0);
+    }
+
+    #[test]
+    fn budget_drains_as_worker_consumes() {
+        let h = VtWorkerHandle::spawn_headless(4, 20, 100).unwrap();
+        h.feed_output(b"hello".to_vec());
+        h.write_pty(b"abc".to_vec());
+        for _ in 0..200 {
+            if h.queued_cmd_bytes() == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(h.queued_cmd_bytes(), 0);
     }
 }
