@@ -61,6 +61,7 @@ fn list_active_dedupes_json_and_lock() {
             panes_count: 0,
             agents_count: 0,
             last_heartbeat_ms: 1,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -127,6 +128,7 @@ fn ensure_started_uses_registry_when_lock_missing() {
             panes_count: 0,
             agents_count: 0,
             last_heartbeat_ms: 1,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -157,6 +159,7 @@ fn stop_daemon_falls_back_to_registry_and_kills_live_pid() {
             panes_count: 0,
             agents_count: 0,
             last_heartbeat_ms: 1,
+            ..Default::default()
         },
     )
     .unwrap();

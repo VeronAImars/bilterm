@@ -176,6 +176,8 @@ bilterm ctl -t ~/.bilterm.token 127.0.0.1:7370 workspace.status
 
 Named daemons listen on `daemons/daemon-<name>.sock` in the runtime directory. Pick one from the client with `bilterm ctl --daemon-name NAME <METHOD>` or `BILTERM_DAEMON=NAME`; the shell equivalents of these methods are `bilterm daemon list|start|stop|status`.
 
+`daemon.list` rows (and `bilterm daemon list --json`, `:daemon list`, MCP `bilterm_daemon` `list`) carry `status` (`running`, `crashed`, `restarting`, `failed`), `rss_bytes`, `restart_count`, `last_exit` (`{code, signal, at_ms}`), `limit_max_bytes`, `limit_high_bytes` and `next_restart_at_ms`; unknown values are `null`. `daemon.start` takes `restart` (`never` default, or `on-crash`: respawn with 1s..60s capped backoff; 5 crashes in 120s mark the host `failed` until the next `daemon start`/`daemon stop`). A deliberate `daemon stop` is never a crash. The limits are reported only; enforcement is not implemented yet.
+
 ### Detailed Method Specifications & Examples
 
 #### `auth.login`

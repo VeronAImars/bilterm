@@ -1,36 +1,19 @@
 //! JSON-RPC 2.0 Handlers for `daemon.*` Methods (`DAEM-05..08`, Phase 55).
 
 use crate::api::json::JsonValue;
+use crate::daemon::list_view::{collect_rows, rows_json};
 use crate::daemon::registry::DaemonRegistry;
+use crate::daemon::restart_policy::RestartMode;
+use crate::daemon::supervise::last_exit_to_json;
 use crate::daemon::supervisor::{
-    daemon_lock_path_in, ensure_started, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
+    daemon_lock_path_in, ensure_started_with, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
 };
 
-/// Handles `daemon.list`.
+/// Handles `daemon.list`. Rows come from the same view model as the CLI, `:daemon list` and the
+/// daemon window (RSS, restarts, last exit, limits, `restarting`/`failed` hosts).
 pub fn handle_daemon_list() -> Result<JsonValue, String> {
     let runtime_dir = resolve_runtime_dir().map_err(|e| format!("runtime directory error: {e}"))?;
-    let active = DaemonRegistry::list_active(&runtime_dir);
-
-    let mut daemons = Vec::new();
-    for d in active {
-        let is_cur = d.is_current();
-        daemons.push(JsonValue::obj([
-            ("name", JsonValue::String(d.name)),
-            ("pid", JsonValue::Number(d.pid as i64)),
-            ("version", JsonValue::String(d.version)),
-            ("started_at_ms", JsonValue::Number(d.started_at_ms as i64)),
-            (
-                "socket_path",
-                JsonValue::String(d.socket_path.to_string_lossy().into_owned()),
-            ),
-            ("sessions_count", JsonValue::Number(d.sessions_count as i64)),
-            ("panes_count", JsonValue::Number(d.panes_count as i64)),
-            ("agents_count", JsonValue::Number(d.agents_count as i64)),
-            ("is_current", JsonValue::Bool(is_cur)),
-        ]));
-    }
-
-    Ok(JsonValue::obj([("daemons", JsonValue::Array(daemons))]))
+    Ok(rows_json(&collect_rows(&runtime_dir, false)))
 }
 
 /// Handles `daemon.status`.
@@ -64,6 +47,11 @@ pub fn handle_daemon_status(params: &JsonValue) -> Result<JsonValue, String> {
             ("agents_count", JsonValue::Number(d.agents_count as i64)),
             ("status", JsonValue::String("running".to_string())),
             ("is_current", JsonValue::Bool(is_cur)),
+            ("rss_bytes", d.rss_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
+            ("restart_count", JsonValue::Number(i64::from(d.restart_count))),
+            ("last_exit", d.last_exit.as_ref().map_or(JsonValue::Null, last_exit_to_json)),
+            ("limit_max_bytes", d.limit_max_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
+            ("limit_high_bytes", d.limit_high_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
         ]));
     }
 
@@ -99,7 +87,12 @@ pub fn handle_daemon_start(params: &JsonValue) -> Result<JsonValue, String> {
         .and_then(JsonValue::as_str)
         .unwrap_or("default");
 
-    match ensure_started(&runtime_dir, name) {
+    let restart = match params.get("restart").and_then(JsonValue::as_str) {
+        Some(v) => RestartMode::parse(v)?,
+        None => RestartMode::Never,
+    };
+
+    match ensure_started_with(&runtime_dir, name, restart) {
         Ok(DaemonStartResult::Started { pid, socket_path }) => Ok(JsonValue::obj([
             ("status", JsonValue::String("started".to_string())),
             ("name", JsonValue::String(name.to_string())),

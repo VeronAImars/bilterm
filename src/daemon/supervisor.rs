@@ -22,6 +22,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::api::json::JsonValue;
+pub use crate::daemon::restart_policy::RestartMode;
 pub use crate::daemon::liveness::{clear_stale_record, daemon_liveness, lock_liveness, DaemonLiveness};
 pub use crate::daemon::types::{DaemonError, SignalablePid};
 use crate::secure_fs::{ensure_private_dir, validate_safe_name};
@@ -376,18 +377,27 @@ pub fn spawn_daemon_with_pid(name: &str) -> io::Result<(u32, PathBuf)> {
     spawn_daemon_in(&dir, name)
 }
 
-/// Spawns a detached daemon for `name` bound to `runtime_dir`, returning `(child_pid, socket_path)`.
+/// Spawns a detached supervisor (which owns the daemon `Child`) for `name`, restart policy
+/// `never`. Returns `(supervisor_pid, socket_path)`: the pid is the SUPERVISOR's, display-only;
+/// never signal it. The daemon pid comes from the lock/registry once the socket is up.
 pub fn spawn_daemon_in(runtime_dir: &Path, name: &str) -> io::Result<(u32, PathBuf)> {
+    spawn_daemon_with(&std::env::current_exe()?, runtime_dir, name, RestartMode::Never)
+}
+
+/// [`spawn_daemon_in`] with an explicit executable and restart policy.
+pub fn spawn_daemon_with(exe: &Path, runtime_dir: &Path, name: &str, mode: RestartMode) -> io::Result<(u32, PathBuf)> {
     validate_safe_name(name)
         .map_err(|e| io::Error::new(ErrorKind::InvalidInput, format!("invalid daemon name: {e}")))?;
 
     let sock_path = crate::daemon::process::session_daemon_socket_path_in(runtime_dir, name)?;
-    let exe = std::env::current_exe()?;
-    let listen_arg = format!("unix:{}", sock_path.display());
+    // A new start supersedes any earlier deliberate stop and acknowledges a tripped breaker.
+    crate::daemon::supervise::clear_stop_request(runtime_dir, name);
+    crate::daemon::supervise::clear_supervisor_record(runtime_dir, name);
 
     let mut cmd = Command::new(exe);
-    cmd.args(["--daemon", "--name", name, "-l", &listen_arg])
-        .env("BILTERM_RUNTIME_DIR", runtime_dir)
+    cmd.args(["supervisor", "--name", name, "--restart", mode.as_str()])
+        .arg("--runtime-dir")
+        .arg(runtime_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -399,9 +409,10 @@ pub fn spawn_daemon_in(runtime_dir: &Path, name: &str) -> io::Result<(u32, PathB
 
     let mut child = cmd.spawn()?;
     let pid = child.id();
-    // Reap the daemon when it exits so it never lingers as a zombie of this process.
+    // Reap the supervisor if it exits while this process lives (the daemon's own exit status is
+    // captured by the supervisor, which owns that Child and publishes it for `daemon list`).
     std::thread::Builder::new()
-        .name("daemon-reaper".to_string())
+        .name("supervisor-reaper".to_string())
         .spawn(move || {
             let _ = child.wait();
         })?;
@@ -411,6 +422,17 @@ pub fn spawn_daemon_in(runtime_dir: &Path, name: &str) -> io::Result<(u32, PathB
 /// Ensures the daemon for `name` is running. Returns `AlreadyRunning` or `Started`.
 /// The returned PID is always a real signalable PID (`> 1`), never `0`.
 pub fn ensure_started(runtime_dir: &Path, name: &str) -> io::Result<DaemonStartResult> {
+    ensure_started_with(runtime_dir, name, RestartMode::Never)
+}
+
+/// [`ensure_started`] with an explicit restart policy for a newly spawned supervisor. The policy
+/// of an already-running daemon is not changed.
+pub fn ensure_started_with(runtime_dir: &Path, name: &str, mode: RestartMode) -> io::Result<DaemonStartResult> {
+    ensure_started_exe(&std::env::current_exe()?, runtime_dir, name, mode)
+}
+
+/// [`ensure_started_with`] for an explicit executable (tests point this at the real binary).
+pub fn ensure_started_exe(exe: &Path, runtime_dir: &Path, name: &str, mode: RestartMode) -> io::Result<DaemonStartResult> {
     validate_safe_name(name)
         .map_err(|e| io::Error::new(ErrorKind::InvalidInput, format!("invalid daemon name: {e}")))?;
 
@@ -438,7 +460,17 @@ pub fn ensure_started(runtime_dir: &Path, name: &str) -> io::Result<DaemonStartR
         });
     }
 
-    let (spawned_pid, _) = spawn_daemon_in(runtime_dir, name)?;
+    // A supervisor that is between crash and respawn already owns this name: do not race it.
+    if let Some(rec) = crate::daemon::supervise::read_supervisor_record(runtime_dir, name)
+        && rec.state == crate::daemon::supervise::SupState::Backoff
+        && check_pid_alive(rec.supervisor_pid)
+    {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            format!("daemon '{name}' is restarting after a crash (supervisor PID {}); `daemon stop {name}` cancels it", rec.supervisor_pid),
+        ));
+    }
+    spawn_daemon_with(exe, runtime_dir, name, mode)?;
     let start = Instant::now();
     while start.elapsed() < Duration::from_millis(3000) {
         std::thread::sleep(Duration::from_millis(25));
@@ -455,8 +487,13 @@ pub fn ensure_started(runtime_dir: &Path, name: &str) -> io::Result<DaemonStartR
                     .find(|e| e.name == name && parse_daemon_pid(i64::from(e.pid)).is_some())
                     .map(|e| e.pid)
             })
-            .unwrap_or(spawned_pid);
-        debug_assert!(pid > 1);
+            .or_else(|| {
+                crate::daemon::supervise::read_supervisor_record(runtime_dir, name)
+                    .and_then(|r| r.daemon_pid)
+                    .filter(|p| parse_daemon_pid(i64::from(*p)).is_some())
+            });
+        // Socket answered but no verified daemon pid yet: keep waiting rather than guess one.
+        let Some(pid) = pid else { continue };
         // Make sure the registry holds a real record for this daemon.
         let registered = crate::daemon::registry::DaemonRegistry::list_active(runtime_dir)
             .iter()
@@ -475,6 +512,7 @@ pub fn ensure_started(runtime_dir: &Path, name: &str) -> io::Result<DaemonStartR
                     panes_count: 0,
                     agents_count: 0,
                     last_heartbeat_ms: now_ms(),
+                    ..Default::default()
                 },
             );
         }
@@ -524,6 +562,8 @@ pub fn register_current_daemon(
             panes_count: panes,
             agents_count: 0,
             last_heartbeat_ms: now_ms(),
+            rss_bytes: crate::daemon::rss::current_rss_bytes(),
+            ..Default::default()
         },
     )?;
     Ok(RegistrationGuard {
@@ -570,8 +610,16 @@ pub fn stop_daemon(runtime_dir: &Path, name: &str, force: bool) -> io::Result<bo
     validate_safe_name(name)
         .map_err(|e| io::Error::new(ErrorKind::InvalidInput, format!("invalid daemon name: {e}")))?;
     let lock_path = daemon_lock_path_in(runtime_dir, name)?;
+    // Tell the supervisor (if any) this exit is deliberate, even for --force/SIGKILL.
+    let _ = crate::daemon::supervise::request_stop(runtime_dir, name);
     let unregister = || {
         let _ = crate::daemon::registry::DaemonRegistry::unregister(runtime_dir, name);
+        // An operator stop acknowledges a tripped crash-loop breaker.
+        if crate::daemon::supervise::read_supervisor_record(runtime_dir, name)
+            .is_some_and(|r| r.state == crate::daemon::supervise::SupState::Failed)
+        {
+            crate::daemon::supervise::clear_supervisor_record(runtime_dir, name);
+        }
         // A stopped/crashed session host leaves no valid state behind (killed hosts cannot clean up).
         if let Ok(p) = crate::daemon::host::host_state_path_in(runtime_dir, name) {
             crate::daemon::host::remove_host_state(&p);

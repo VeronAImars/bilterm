@@ -3,7 +3,7 @@
 //! Syntax:
 //! - `:daemon` | `:daemon list`
 //! - `:daemon status [name]`
-//! - `:daemon start [name]`
+//! - `:daemon start [name] [--restart never|on-crash]`
 //! - `:daemon stop [name] [--force]`
 //! - `:daemon switch <name>`
 //! - `:daemon prune`
@@ -11,8 +11,9 @@
 
 use super::ColonCommand;
 use crate::action::DaemonSupervisorOp;
+use crate::daemon::restart_policy::RestartMode;
 
-const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] | stop [name] [--force] | switch <name> | prune | host [name]]";
+const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] | stop [name] [--force] | switch <name> | prune | host [name]]";
 
 /// Parses `:daemon` command invocations into a [`ColonCommand`].
 pub(super) fn parse_daemon_colon_command(
@@ -41,12 +42,31 @@ pub(super) fn parse_daemon_colon_command(
             )))
         }
         "start" => {
-            let name = parts.get(2).map(|s| s.to_string());
-            if parts.len() > 3 {
-                return Some(Err(USAGE.to_string()));
+            let mut name = None;
+            let mut restart = None;
+            let mut it = parts[2..].iter();
+            while let Some(&arg) = it.next() {
+                if arg == "--restart" {
+                    let Some(&v) = it.next() else {
+                        return Some(Err(USAGE.to_string()));
+                    };
+                    match RestartMode::parse(v) {
+                        Ok(m) => restart = Some(m),
+                        Err(e) => return Some(Err(e)),
+                    }
+                } else if let Some(v) = arg.strip_prefix("--restart=") {
+                    match RestartMode::parse(v) {
+                        Ok(m) => restart = Some(m),
+                        Err(e) => return Some(Err(e)),
+                    }
+                } else if name.is_none() && !arg.starts_with('-') {
+                    name = Some(arg.to_string());
+                } else {
+                    return Some(Err(USAGE.to_string()));
+                }
             }
             Some(Ok(ColonCommand::DaemonSupervisor(
-                DaemonSupervisorOp::Start { name },
+                DaemonSupervisorOp::Start { name, restart },
             )))
         }
         "stop" => {

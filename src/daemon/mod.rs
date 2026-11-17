@@ -34,6 +34,11 @@ pub use registry::*;
 pub mod supervisor;
 pub use supervisor::*;
 
+pub mod list_view;
+pub mod restart_policy;
+pub mod rss;
+pub mod supervise;
+
 use crate::secure_fs::private_runtime_dir;
 use crate::wm::journal::{
     PaneJournalRecord, SessionJournalRecord, WorkspaceJournal,

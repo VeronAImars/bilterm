@@ -315,11 +315,12 @@ impl AutomationControlPlane {
             ),
             Self::mcp_tool_schema(
                 "bilterm_daemon",
-                "Supervise and inspect Bilterm background daemons (list, status, start, stop, switch).",
+                "Supervise and inspect Bilterm background daemons (list, status, start, stop, switch). list/status report rss_bytes, restart_count, last_exit and limits.",
                 &[
                     ("action", "string", "Operation: list | status | start | stop | switch"),
                     ("name", "string", "Optional daemon name (defaults to 'default')"),
                     ("force", "boolean", "Optional flag to force stop without graceful shutdown"),
+                    ("restart", "string", "With action='start': restart policy never (default) | on-crash"),
                 ],
             ),
             Self::mcp_tool_schema(

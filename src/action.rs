@@ -372,7 +372,8 @@ pub enum AppearanceOp {
 pub enum DaemonSupervisorOp {
     List,
     Status { name: Option<String> },
-    Start { name: Option<String> },
+    /// `restart`: supervisor restart policy for a newly spawned host (`None` = `never`).
+    Start { name: Option<String>, restart: Option<crate::daemon::restart_policy::RestartMode> },
     Stop { name: Option<String>, force: bool },
     Switch { name: String },
     Prune,
