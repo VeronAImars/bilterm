@@ -160,10 +160,12 @@ impl VtParser {
             // it, so no foreign escape can ride along to the host terminal. The forwarded string
             // is rebuilt from the validated body, never copied from the stream.
             if is_forwardable_osc52_write(osc_rest) {
-                self.pending_osc52
-                    .push(format!("\x1b]{osc_rest}{}", terminator.as_str()));
+                super::bounded::push_osc52(
+                    &mut self.pending_osc52,
+                    format!("\x1b]{osc_rest}{}", terminator.as_str()),
+                );
                 if let Some(decoded) = decode_osc52_payload(osc_rest) {
-                    self.pending_osc52_decoded.push(decoded);
+                    super::bounded::push_osc52(&mut self.pending_osc52_decoded, decoded);
                 }
             }
             return;

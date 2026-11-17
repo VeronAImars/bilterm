@@ -295,12 +295,12 @@ Scrollback is sized from the host's RAM instead of a fixed line count. Every pan
 full doubles its capacity while the shared budget has room. An active pane may borrow budget
 that idle panes are not using. When total usage exceeds the budget, or available memory drops
 below `low_memory_pct` of total RAM, the largest panes shrink toward an equal share, never
-below `min_lines`. Panes on the alternate screen (`vim`, `htop`) are resized after they exit it.
+below `min_lines` (when so many panes are open that `min_lines` for each would exceed the budget, the floor drops to 200 rows per pane). Panes on the alternate screen (`vim`, `htop`) are resized after they exit it.
 
 ```toml
 [scrollback]
 memory_budget = "auto"   # 10% of RAM (min 64 MiB): ~19 GiB on 192 GiB, ~1.6 GiB on 16 GiB
-max_lines = "auto"       # or a hard per-pane cap, e.g. 1000000
+max_lines = "auto"       # hard default 100000 lines per pane; or a fixed cap, e.g. 1000000
 min_lines = 2000
 initial_lines = 10000
 low_memory_pct = 10

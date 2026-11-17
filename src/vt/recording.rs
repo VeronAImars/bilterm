@@ -8,6 +8,58 @@ use ratatui::style::{Color, Modifier, Style};
 use super::VtParser;
 use super::codec::escape_json_string;
 
+/// Default cap on buffered recording bytes (per recorder) before it auto-stops.
+pub const DEFAULT_RECORDING_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// Byte count accepted as an integer or a size string (`"64MiB"`, `"128M"`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "super::scrollback::IntOrString", into = "super::scrollback::IntOrString")]
+pub struct ByteSize(pub u64);
+
+impl TryFrom<super::scrollback::IntOrString> for ByteSize {
+    type Error = String;
+    fn try_from(v: super::scrollback::IntOrString) -> Result<Self, String> {
+        match v {
+            super::scrollback::IntOrString::Int(n) => Ok(Self(n)),
+            super::scrollback::IntOrString::Str(s) => {
+                super::scrollback::parse_byte_size(&s).map(Self)
+            }
+        }
+    }
+}
+
+impl From<ByteSize> for super::scrollback::IntOrString {
+    fn from(b: ByteSize) -> Self {
+        Self::Int(b.0)
+    }
+}
+
+/// `[recording]` configuration table.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct RecordingConfig {
+    /// Byte cap for one in-memory recording (`64MiB`, `"128M"`, or bytes). On reaching it the
+    /// recording is stopped and saved, and a notice is shown.
+    pub max_bytes: ByteSize,
+}
+
+impl Default for RecordingConfig {
+    fn default() -> Self {
+        Self {
+            max_bytes: ByteSize(DEFAULT_RECORDING_MAX_BYTES as u64),
+        }
+    }
+}
+
+impl RecordingConfig {
+    /// The cap as `usize`, never below 1 KiB.
+    pub fn max_bytes(&self) -> usize {
+        usize::try_from(self.max_bytes.0)
+            .unwrap_or(usize::MAX)
+            .max(1024)
+    }
+}
+
 /// Whole-workspace Asciicast v2 (`.cast`) compositor frame recorder (`REC-02`).
 ///
 /// Diffs rendered [`ratatui::buffer::Buffer`] frames into compact ANSI escape sequences so
@@ -22,6 +74,9 @@ pub struct WorkspaceRecorder {
     height: u16,
     prev_cells: Vec<(String, Style)>,
     events: Vec<(f64, String)>,
+    bytes: usize,
+    max_bytes: usize,
+    capped: bool,
 }
 
 impl WorkspaceRecorder {
@@ -35,7 +90,21 @@ impl WorkspaceRecorder {
             height: height.max(1),
             prev_cells: Vec::new(),
             events: Vec::new(),
+            bytes: 0,
+            max_bytes: DEFAULT_RECORDING_MAX_BYTES,
+            capped: false,
         }
+    }
+
+    /// Sets the buffered-byte cap (see [`RecordingConfig`]).
+    pub fn set_max_bytes(&mut self, max_bytes: usize) {
+        self.max_bytes = max_bytes;
+    }
+
+    /// `true` once the byte cap was reached; further frames are not captured and the owner
+    /// should call [`Self::stop`] and tell the user.
+    pub fn is_capped(&self) -> bool {
+        self.capped
     }
 
     /// Returns the target `.cast` output path.
@@ -51,7 +120,7 @@ impl WorkspaceRecorder {
     /// Diffs `buf` against the previous captured frame and records a compact ANSI frame event if any cell changed.
     pub fn capture_buffer(&mut self, buf: &Buffer) {
         let area = buf.area;
-        if area.width == 0 || area.height == 0 {
+        if self.capped || area.width == 0 || area.height == 0 {
             return;
         }
         let total = usize::from(area.width) * usize::from(area.height);
@@ -101,7 +170,11 @@ impl WorkspaceRecorder {
         if !ansi.is_empty() {
             ansi.push_str("\x1b[0m");
             let elapsed = self.started_at.elapsed().as_secs_f64();
+            self.bytes = self.bytes.saturating_add(ansi.len());
             self.events.push((elapsed, ansi));
+            if self.bytes >= self.max_bytes {
+                self.capped = true;
+            }
         }
     }
 
@@ -225,12 +298,41 @@ fn write_ansi_color(out: &mut String, color: Color, is_fg: bool) {
 }
 
 impl VtParser {
+    /// Sets the pane-level recording byte cap (see [`RecordingConfig`]).
+    pub fn set_recording_max_bytes(&mut self, max_bytes: usize) {
+        self.recording_max_bytes = max_bytes;
+    }
+
+    /// Takes the notice left by an automatic stop at the byte cap, if one happened.
+    pub fn take_recording_notice(&mut self) -> Option<String> {
+        self.recording_notice.take()
+    }
+
+    /// Buffers one output chunk; at the byte cap the recording is stopped, saved, and a notice
+    /// is queued (never a silent drop).
+    pub(super) fn push_recording_event(&mut self, elapsed: f64, chunk: String) {
+        self.recording_bytes = self.recording_bytes.saturating_add(chunk.len());
+        self.recording_events.push((elapsed, chunk));
+        if self.recording_bytes >= self.recording_max_bytes {
+            let cap = super::scrollback::format_mib(self.recording_max_bytes as u64);
+            self.recording_notice = Some(match self.stop_recording() {
+                Ok(Some(path)) => format!(
+                    "Recording stopped: reached {cap} cap; saved to {}",
+                    path.display()
+                ),
+                Ok(None) => format!("Recording stopped: reached {cap} cap"),
+                Err(e) => format!("Recording stopped at {cap} cap; save failed: {e}"),
+            });
+        }
+    }
+
     /// Starts recording terminal output to an asciinema v2 `.cast` file (`v0.7.0`).
     pub fn start_recording(&mut self, path: PathBuf) {
         self.recording_started_at = Some(Instant::now());
         self.recording_path = Some(path);
         self.recording_private = false;
         self.recording_events.clear();
+        self.recording_bytes = 0;
     }
 
     /// Starts recording terminal output to an asciinema v2 `.cast` file with private permissions (`v1.7.0`, `SEC-R03`).
@@ -239,6 +341,7 @@ impl VtParser {
         self.recording_path = Some(path);
         self.recording_private = true;
         self.recording_events.clear();
+        self.recording_bytes = 0;
     }
 
     /// Cancels any active pane-level recording without writing a file (used when `WorkspaceRecorder` writes the `.cast`).
@@ -247,6 +350,7 @@ impl VtParser {
         self.recording_path = None;
         self.recording_private = false;
         self.recording_events.clear();
+        self.recording_bytes = 0;
     }
 
     /// Returns `true` when asciinema v2 `.cast` recording is active (`v0.7.0`).
@@ -271,6 +375,7 @@ impl VtParser {
             "{{\"version\":2,\"width\":{},\"height\":{},\"timestamp\":1792550000}}\n",
             self.cols, self.rows
         );
+        self.recording_bytes = 0;
         for (elapsed, chunk) in self.recording_events.drain(..) {
             let escaped = escape_json_string(&chunk);
             out.push_str(&format!("[{elapsed:.6},\"o\",\"{escaped}\"]\n"));
