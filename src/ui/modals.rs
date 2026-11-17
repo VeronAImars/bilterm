@@ -336,7 +336,7 @@ pub(super) fn render_help_modal(
     let help_title = if cfg.is_modern() {
         concat!("● ● ●  Bilterm v", env!("BILTERM_VERSION"), " · Help · ↑↓ Scroll · Esc Close")
     } else {
-        concat!("[F1] BILTERM v", env!("BILTERM_VERSION"), " — 3270 // TURBO VISION HELP (Up/Down/PgUp/PgDn, Esc/F1=Close)")
+        concat!("[F1] BILTERM 3270 // TURBO VISION HELP (Up/Down/PgUp/PgDn, Esc/F1=Close) v", env!("BILTERM_VERSION"))
     };
     render_modal_surface_and_frame(modal, workspace_area, help_title, cfg, palette, glyphs, buf);
     let inner = inset_window_frame(modal);
