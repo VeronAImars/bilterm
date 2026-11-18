@@ -6,6 +6,7 @@
 pub mod frame;
 pub mod limits;
 pub mod msg;
+pub mod size_owner;
 
 #[cfg(test)]
 mod frame_tests;
@@ -13,3 +14,5 @@ mod frame_tests;
 mod golden_tests;
 #[cfg(test)]
 mod msg_tests;
+#[cfg(test)]
+mod size_owner_tests;

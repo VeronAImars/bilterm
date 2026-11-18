@@ -253,6 +253,12 @@ pub enum Action {
     ForceQuit,
     /// `:detach` / `:d`: Detach client while preserving background session (`SAFE-02`, `DAEM-02`).
     DetachClient,
+    /// Attach size owner resized the host (`T-A3`): resizes all panes/PTYs to `cols`x`rows`.
+    /// Constructed host-side from the attach `Resize` message, never parsed or deserialized.
+    AttachResize {
+        cols: u16,
+        rows: u16,
+    },
     /// `:exit-guard [guard|respawn|detach|off]` (`SAFE-01`).
     ExitProtectionSet(ExitProtectionPolicy),
     /// `:respawn-pane` / `:respawn`: Respawn exited shell in-place inside held pane (`SAFE-03`).
