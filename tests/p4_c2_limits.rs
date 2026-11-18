@@ -1,4 +1,4 @@
-//! P4 / C2: Linux memory limits. Surface parity for `--memory-max/--memory-high`, and live tests
+//! P4 / C2 + C3: memory limits (the watchdog test runs on Linux and macOS; scope test is Linux). Surface parity for `--memory-max/--memory-high`, and live tests
 //! that a hog host is killed under a small limit by (a) a systemd user scope and (b) the
 //! userspace RSS watchdog. The scope test skips cleanly when systemd user scopes are unavailable.
 
@@ -52,10 +52,12 @@ fn high_without_max_or_bad_sizes_are_rejected_on_every_surface() {
     assert!(tools.contains("memory_max") && tools.contains("memory_high"), "MCP bilterm_daemon schema lacks limit params");
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 mod live {
     use super::*;
-    use bilterm::daemon::limits::{self, ExitCause, LimitBackend};
+    #[cfg(target_os = "linux")]
+    use bilterm::daemon::limits;
+    use bilterm::daemon::limits::{ExitCause, LimitBackend};
     use bilterm::daemon::restart_policy::RestartConfig;
     use bilterm::daemon::supervise::{supervise, ProcessRunner, SupState};
     use std::os::unix::fs::PermissionsExt;
@@ -123,6 +125,7 @@ f.flush()
         assert_eq!(rec.last_exit_cause, Some(ExitCause::Limit));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn systemd_scope_kills_a_hog_host_under_a_small_limit() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
