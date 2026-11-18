@@ -31,6 +31,10 @@ pub struct DaemonRow {
     pub last_exit: Option<LastExit>,
     pub limit_max_bytes: Option<u64>,
     pub limit_high_bytes: Option<u64>,
+    /// How the limit is enforced: `systemd-scope` or `watchdog` (`None` = unlimited).
+    pub limit_backend: Option<&'static str>,
+    /// `limit` when the last exit was a memory-limit kill.
+    pub last_exit_cause: Option<&'static str>,
     /// Epoch ms of the next respawn while `restarting`.
     pub next_restart_at_ms: Option<u64>,
 }
@@ -54,6 +58,8 @@ impl DaemonRow {
             ("last_exit", self.last_exit.as_ref().map_or(JsonValue::Null, last_exit_to_json)),
             ("limit_max_bytes", opt(self.limit_max_bytes)),
             ("limit_high_bytes", opt(self.limit_high_bytes)),
+            ("limit_backend", self.limit_backend.map_or(JsonValue::Null, |s| JsonValue::String(s.to_string()))),
+            ("last_exit_cause", self.last_exit_cause.map_or(JsonValue::Null, |s| JsonValue::String(s.to_string()))),
             ("next_restart_at_ms", opt(self.next_restart_at_ms)),
         ])
     }
@@ -63,9 +69,18 @@ impl DaemonRow {
         format_bytes(self.rss_bytes)
     }
 
-    /// `exit 1`, `signal 9` or `-`.
+    /// Hard memory limit as `2.0G`, or `-` when unlimited.
+    pub fn limit_text(&self) -> String {
+        format_bytes(self.limit_max_bytes)
+    }
+
+    /// `exit 1`, `signal 9`, `signal 9 (limit)` or `-`.
     pub fn last_exit_text(&self) -> String {
-        self.last_exit.map_or_else(|| "-".to_string(), |e| e.describe())
+        let base = self.last_exit.map_or_else(|| "-".to_string(), |e| e.describe());
+        match self.last_exit_cause {
+            Some(c) if self.last_exit.is_some() => format!("{base} ({c})"),
+            _ => base,
+        }
     }
 }
 
@@ -94,9 +109,18 @@ pub fn collect_rows(runtime_dir: &Path, include_crashed: bool) -> Vec<DaemonRow>
             last_exit: d.last_exit,
             limit_max_bytes: d.limit_max_bytes,
             limit_high_bytes: d.limit_high_bytes,
+            limit_backend: None,
+            last_exit_cause: None,
             next_restart_at_ms: None,
         })
         .collect();
+    // Enforcement facts live in the supervisor's record, not the heartbeat.
+    for row in &mut out {
+        if let Some(rec) = crate::daemon::supervise::read_supervisor_record(runtime_dir, &row.name) {
+            row.limit_backend = rec.limit_backend.map(|b| b.as_str());
+            row.last_exit_cause = rec.last_exit_cause.map(|c| c.as_str());
+        }
+    }
     for rec in DaemonRegistry::list_supervised_down(runtime_dir) {
         if out.iter().any(|r| r.name == rec.name) {
             continue;
@@ -110,6 +134,10 @@ pub fn collect_rows(runtime_dir: &Path, include_crashed: bool) -> Vec<DaemonRow>
             socket,
             restart_count: rec.restart_count,
             last_exit: rec.last_exit,
+            limit_max_bytes: rec.limit_max_bytes,
+            limit_high_bytes: rec.limit_high_bytes,
+            limit_backend: rec.limit_backend.map(|b| b.as_str()),
+            last_exit_cause: rec.last_exit_cause.map(|c| c.as_str()),
             next_restart_at_ms: rec.next_restart_at_ms,
             ..Default::default()
         });
@@ -163,19 +191,20 @@ pub fn table(rows: &[DaemonRow]) -> String {
     }
     let w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
     let mut out = format!(
-        "{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:<10}  SOCKET",
-        "NAME", "STATUS", "PID", "VERSION", "RSS", "RESTARTS", "LAST-EXIT"
+        "{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:>7}  {:<16}  SOCKET",
+        "NAME", "STATUS", "PID", "VERSION", "RSS", "RESTARTS", "LIMIT", "LAST-EXIT"
     );
     for r in rows {
         let pid = r.pid.map_or_else(|| "-".to_string(), |p| p.to_string());
         out.push_str(&format!(
-            "\n{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:<10}  {}",
+            "\n{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:>7}  {:<16}  {}",
             r.name,
             r.status,
             pid,
             r.version,
             r.rss_text(),
             r.restart_count,
+            r.limit_text(),
             r.last_exit_text(),
             r.socket
         ));
@@ -224,7 +253,7 @@ mod tests {
         assert_eq!(j.get("restart_count").and_then(JsonValue::as_i64), Some(2));
         assert_eq!(j.get("last_exit").and_then(|e| e.get("signal")).and_then(JsonValue::as_i64), Some(9));
         let blank = DaemonRow { name: "x".into(), status: "stopped", ..Default::default() }.to_json();
-        for k in ["rss_bytes", "last_exit", "limit_max_bytes", "limit_high_bytes", "pid"] {
+        for k in ["rss_bytes", "last_exit", "limit_max_bytes", "limit_high_bytes", "limit_backend", "last_exit_cause", "pid"] {
             assert!(matches!(blank.get(k), Some(JsonValue::Null)), "{k} must be present as null");
         }
         assert_eq!(blank.get("restart_count").and_then(JsonValue::as_i64), Some(0));

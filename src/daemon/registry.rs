@@ -49,10 +49,10 @@ pub struct DaemonRegistryEntry {
     /// How the previous incarnation of this host ended (from the supervisor), if it ever did.
     #[serde(default)]
     pub last_exit: Option<LastExit>,
-    /// Hard memory limit in bytes (`None` = unlimited). Reported only; enforcement is P4/C2-C4.
+    /// Hard memory limit in bytes (`None` = unlimited); enforced by the supervisor (P4/C2), filled from its record.
     #[serde(default)]
     pub limit_max_bytes: Option<u64>,
-    /// Soft memory limit in bytes (`None` = none). Reported only; enforcement is P4/C2-C4.
+    /// Soft memory limit in bytes (`None` = none): throttle/warn only, never the sole limit.
     #[serde(default)]
     pub limit_high_bytes: Option<u64>,
 }
@@ -277,6 +277,11 @@ impl DaemonRegistry {
     fn overlay_runtime_facts(base_dir: &Path, e: &mut DaemonRegistryEntry) {
         if let Some(rec) = crate::daemon::supervise::read_supervisor_record(base_dir, &e.name) {
             e.restart_count = rec.restart_count;
+            // The supervisor owns the limits it enforces; report those (P4 / C2).
+            if rec.limit_max_bytes.is_some() {
+                e.limit_max_bytes = rec.limit_max_bytes;
+                e.limit_high_bytes = rec.limit_high_bytes;
+            }
             if rec.last_exit.is_some() {
                 e.last_exit = rec.last_exit;
             }

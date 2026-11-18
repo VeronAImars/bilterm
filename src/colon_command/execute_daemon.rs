@@ -6,7 +6,7 @@ use crate::daemon::list_view::{collect_rows, rows_json, summary};
 use crate::daemon::registry::DaemonRegistry;
 use crate::daemon::supervise::last_exit_to_json;
 use crate::daemon::supervisor::{
-    daemon_lock_path_in, ensure_started_with, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
+    daemon_lock_path_in, ensure_started_limited, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
 };
 use crate::wm::resilience::DaemonJob;
 use crate::wm::WindowManager;
@@ -25,9 +25,10 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
     // With a UI attached, start/stop wait on a worker; the result arrives as a status message.
     if !wm.is_headless() {
         let job = match op {
-            DaemonSupervisorOp::Start { name, restart } => Some(DaemonJob::Start {
+            DaemonSupervisorOp::Start { name, restart, limits } => Some(DaemonJob::Start {
                 name: name.clone().unwrap_or_else(|| "default".to_string()),
                 restart: restart.unwrap_or_default(),
+                limits: limits.unwrap_or_default(),
             }),
             DaemonSupervisorOp::Stop { name, force } => Some(DaemonJob::Stop {
                 name: name.clone().unwrap_or_else(|| "default".to_string()),
@@ -65,6 +66,7 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
                 .and_then(|s| DaemonLockRecord::from_json(&s).ok());
 
             if let Some(d) = found {
+                let backend = crate::daemon::list_view::row_for(&runtime_dir, &d.name).limit_backend.map_or(JsonValue::Null, |b| JsonValue::String(b.to_string()));
                 let res = JsonValue::obj([
                     ("name", JsonValue::String(d.name.clone())),
                     ("pid", JsonValue::Number(d.pid as i64)),
@@ -85,6 +87,7 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
                     ("last_exit", d.last_exit.as_ref().map_or(JsonValue::Null, last_exit_to_json)),
                     ("limit_max_bytes", d.limit_max_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
                     ("limit_high_bytes", d.limit_high_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
+            ("limit_backend", backend),
                 ]);
                 wm.set_command_data(res.to_json_string());
                 wm.active_pane_mut().set_status_message(Some(format!(
@@ -113,9 +116,9 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
             }
             wm.open_daemon_window_from(&runtime_dir);
         }
-        DaemonSupervisorOp::Start { name, restart } => {
+        DaemonSupervisorOp::Start { name, restart, limits } => {
             let target = name.as_deref().unwrap_or("default");
-            match ensure_started_with(&runtime_dir, target, restart.unwrap_or_default()) {
+            match ensure_started_limited(&runtime_dir, target, restart.unwrap_or_default(), limits.unwrap_or_default()) {
                 Ok(DaemonStartResult::Started { pid, socket_path }) => {
                     let res = JsonValue::obj([
                         ("name", JsonValue::String(target.to_string())),
