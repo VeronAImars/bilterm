@@ -20,4 +20,5 @@ mod golden_tests;
 mod msg_tests;
 #[cfg(test)]
 mod view_tests;
+#[cfg(test)]
 mod size_owner_tests;
