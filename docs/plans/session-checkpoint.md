@@ -1,3 +1,10 @@
+# UPDATE 2026-11-18 (later, newest): #126 T-A7 MERGED; DOS plan being revised per owner answers
+- Owner "merge 126": merged; origin/main = 705186e. T-A7 `bilterm attach <host|sock> [--ro]` (src/attach/client/): detach `Ctrl-] d`, `Ctrl-] n/p` switch pane, exit codes 0..6, 3 reconnect retries. Agent report: verify PASS 211/211; real-shell echo through real host+unix socket VERIFIED (tests/attach_a7.rs, 7 tests, none ignored); ro refused VERIFIED; host kill -9/SIGTERM VERIFIED; real binary in PTY VERIFIED. Added layer-DAG exemptions for client link.rs/tui.rs in tests/phase64_layer_dag.rs (loosens a gate; owner may want to review).
+- T-A7 UNVERIFIED: macOS/Windows, bracketed paste (sent raw), mouse/graphics/clipboard/scrollback not forwarded, pane selection client-local (no Act focus), interactive real terminal beyond PTY test.
+- Remaining attach work: T-A8 docs + smoke + decide DaemonRequest attach/detach variants.
+- DOS mode (#124, docs/plans/dos-mode.md) OWNER DECISIONS: QEMU first on Linux but must plan macOS, Windows, and BSD (FreeBSD/OpenBSD) support, possibly via feature flag; PERSISTENT C: image (not Live-only); Windows INCLUDED in v1; opt-in Cargo feature `dos`, never bundle, nominative branding. A sonnet agent is revising the plan accordingly (per-OS matrix, backend contract, persistent-install spike D0b). #124 NOT merged; owner has not said merge 124.
+- Open PRs: #123 (this checkpoint), #124 (DOS plan). Cleanup of leftover worktrees (verify-main, p2-a5/a6/a7, p4-c3, drawer-hl, wm-split, dos-mode, older) still pending owner OK. rc11 cut needs owner go-ahead.
+
 # UPDATE 2026-11-18 (newest): #119-#122 + #125 MERGED; merged-main verify PASS; T-A7 in flight
 - Merged-tree verify of main@9ee414a: PASS 210/210 (clean worktree). #125 (T-A6 streaming: attach/hub.rs, outq.rs, stream.rs; lag->resync->kick; owner broadcast; Resize->Action::AttachResize; refusal replies) merged on its own 210/210; origin/main = 049382b.
 - DO NOT run `cargo fmt` on this repo: no rustfmt config, it rewrites the whole tree. Format own files only with `rustfmt --edition 2021 <file>`.
