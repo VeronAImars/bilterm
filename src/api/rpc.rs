@@ -157,6 +157,8 @@ pub struct AutomationControlPlane {
     pub(super) host_persist: Option<super::host_tick::HostPersist>,
     /// Validated attach-client requests awaiting `host_tick` (`T-A5`); `None` without `--attach`.
     pub(super) attach_requests: Option<tokio::sync::mpsc::Receiver<crate::attach::input::HostRequest>>,
+    /// Streaming rendezvous with attach connections (`T-A6`); `None` without `--attach`.
+    pub(super) attach_hub: Option<std::sync::Arc<crate::attach::hub::AttachHub>>,
 }
 
 /// Execution policy determining whether snapshot exports are confined to the designated snapshot dir.
@@ -207,6 +209,7 @@ impl AutomationControlPlane {
             output_hub: super::output_ring::OutputHub::new(),
             host_persist: None,
             attach_requests: None,
+            attach_hub: None,
         }
     }
 

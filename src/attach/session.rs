@@ -104,6 +104,18 @@ impl ClientSession {
         }
     }
 
+    /// Frames queued for the client were dropped before reaching it (lag): treat everything sent
+    /// as acknowledged and send fresh snapshots, so flow control does not wait for lost acks.
+    pub fn discard_unsent(&mut self) {
+        self.last_layout = None;
+        for p in self.panes.values_mut() {
+            p.acked_seq = p.sent_seq;
+            p.view = None;
+            p.blocked_since = None;
+            p.resync_forced = false;
+        }
+    }
+
     pub fn on_ack(&mut self, pane: PaneId, seq: u64) -> Result<(), AckError> {
         let p = self.panes.get_mut(&pane).ok_or(AckError::UnknownPane)?;
         if seq > p.sent_seq {

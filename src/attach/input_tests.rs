@@ -65,7 +65,7 @@ async fn start(role: Option<Role>, sink: Option<RequestSink>, cfg: ConnConfig) -
     let (a, b) = duplex(1 << 16);
     let (tx, rx) = watch::channel(false);
     let slot = reg.reserve().unwrap();
-    let host = Arc::new(HostInfo { name: "h".into(), pid: 1, version: "t".into(), caps: vec![], requests: sink });
+    let host = Arc::new(HostInfo { name: "h".into(), pid: 1, version: "t".into(), caps: vec![], requests: sink, hub: None });
     let task = tokio::spawn(serve_connection(b, slot, host, rx, cfg));
     let mut t = T { s: a, fr: FrameReader::new(Direction::HostToClient), q: VecDeque::new(), task, _tx: tx };
     t.send(&ClientMsg::Hello { proto_min: 1, proto_max: 1, client_kind: ClientKind::Tui, client_name: "c".into(), caps: vec![] }).await;

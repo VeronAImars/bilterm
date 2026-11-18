@@ -16,7 +16,7 @@ use super::msg::*;
 use super::registry::SharedRegistry;
 
 fn host() -> Arc<HostInfo> {
-    Arc::new(HostInfo { name: "h".into(), pid: 7, version: "t".into(), caps: vec![], requests: None })
+    Arc::new(HostInfo { name: "h".into(), pid: 7, version: "t".into(), caps: vec![], requests: None, hub: None })
 }
 
 fn fast() -> ConnConfig {
