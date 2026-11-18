@@ -321,6 +321,8 @@ impl AutomationControlPlane {
                     ("name", "string", "Optional daemon name (defaults to 'default')"),
                     ("force", "boolean", "Optional flag to force stop without graceful shutdown"),
                     ("restart", "string", "With action='start': restart policy never (default) | on-crash"),
+                    ("memory_max", "string", "With action='start': hard memory limit for the host, e.g. 2G (systemd scope cgroup on Linux, else a userspace RSS watchdog)"),
+                    ("memory_high", "string", "With action='start': soft limit below memory_max (throttle/warn only; requires memory_max)"),
                 ],
             ),
             Self::mcp_tool_schema(

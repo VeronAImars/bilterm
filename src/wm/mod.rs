@@ -21,6 +21,7 @@ mod host_mode;
 pub mod host_view;
 #[cfg(test)]
 mod host_view_tests;
+mod attach_resize;
 pub mod command_window;
 pub mod context_bus;
 pub mod context_queue_ops;

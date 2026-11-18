@@ -3,7 +3,7 @@
 //! Syntax:
 //! - `:daemon` | `:daemon list`
 //! - `:daemon status [name]`
-//! - `:daemon start [name] [--restart never|on-crash]`
+//! - `:daemon start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE]`
 //! - `:daemon stop [name] [--force]`
 //! - `:daemon switch <name>`
 //! - `:daemon prune`
@@ -11,9 +11,10 @@
 
 use super::ColonCommand;
 use crate::action::DaemonSupervisorOp;
+use crate::daemon::limits::MemoryLimits;
 use crate::daemon::restart_policy::RestartMode;
 
-const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] | stop [name] [--force] | switch <name> | prune | host [name]]";
+const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] | stop [name] [--force] | switch <name> | prune | host [name]]";
 
 /// Parses `:daemon` command invocations into a [`ColonCommand`].
 pub(super) fn parse_daemon_colon_command(
@@ -44,6 +45,7 @@ pub(super) fn parse_daemon_colon_command(
         "start" => {
             let mut name = None;
             let mut restart = None;
+            let (mut mem_max, mut mem_high): (Option<&str>, Option<&str>) = (None, None);
             let mut it = parts[2..].iter();
             while let Some(&arg) = it.next() {
                 if arg == "--restart" {
@@ -54,6 +56,15 @@ pub(super) fn parse_daemon_colon_command(
                         Ok(m) => restart = Some(m),
                         Err(e) => return Some(Err(e)),
                     }
+                } else if arg == "--memory-max" || arg == "--memory-high" {
+                    let Some(&v) = it.next() else {
+                        return Some(Err(USAGE.to_string()));
+                    };
+                    if arg == "--memory-max" { mem_max = Some(v) } else { mem_high = Some(v) }
+                } else if let Some(v) = arg.strip_prefix("--memory-max=") {
+                    mem_max = Some(v);
+                } else if let Some(v) = arg.strip_prefix("--memory-high=") {
+                    mem_high = Some(v);
                 } else if let Some(v) = arg.strip_prefix("--restart=") {
                     match RestartMode::parse(v) {
                         Ok(m) => restart = Some(m),
@@ -65,8 +76,13 @@ pub(super) fn parse_daemon_colon_command(
                     return Some(Err(USAGE.to_string()));
                 }
             }
+            let limits = match MemoryLimits::from_args(mem_max, mem_high) {
+                Ok(l) if l.is_unlimited() => None,
+                Ok(l) => Some(l),
+                Err(e) => return Some(Err(e)),
+            };
             Some(Ok(ColonCommand::DaemonSupervisor(
-                DaemonSupervisorOp::Start { name, restart },
+                DaemonSupervisorOp::Start { name, restart, limits },
             )))
         }
         "stop" => {

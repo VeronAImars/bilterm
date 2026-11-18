@@ -16,6 +16,7 @@ use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use crate::api::json::JsonValue;
+use crate::daemon::limits::{self, ExitCause, LimitBackend, MemoryLimits, Watchdog, WdAction};
 use crate::daemon::restart_policy::{decide, Decision, LastExit, RestartConfig, RestartMode, RestartState};
 use crate::secure_fs::{ensure_private_dir, validate_safe_name, write_private_file};
 
@@ -65,6 +66,13 @@ pub struct SupervisorRecord {
     pub last_exit: Option<LastExit>,
     pub next_restart_at_ms: Option<u64>,
     pub updated_at_ms: u64,
+    /// Memory limits this supervisor enforces (`None` = unlimited).
+    pub limit_max_bytes: Option<u64>,
+    pub limit_high_bytes: Option<u64>,
+    /// How the limit is enforced; `None` when unlimited.
+    pub limit_backend: Option<LimitBackend>,
+    /// Why the last exit happened, when known (`limit`).
+    pub last_exit_cause: Option<ExitCause>,
 }
 
 impl SupervisorRecord {
@@ -80,6 +88,11 @@ impl SupervisorRecord {
         m.insert("next_restart_at_ms".into(), num(self.next_restart_at_ms.map(|v| v as i64)));
         m.insert("updated_at_ms".into(), JsonValue::Number(self.updated_at_ms as i64));
         m.insert("last_exit".into(), self.last_exit.as_ref().map_or(JsonValue::Null, last_exit_to_json));
+        m.insert("limit_max_bytes".into(), num(self.limit_max_bytes.map(|v| v as i64)));
+        m.insert("limit_high_bytes".into(), num(self.limit_high_bytes.map(|v| v as i64)));
+        let text = |v: Option<&str>| v.map_or(JsonValue::Null, |s| JsonValue::String(s.into()));
+        m.insert("limit_backend".into(), text(self.limit_backend.map(LimitBackend::as_str)));
+        m.insert("last_exit_cause".into(), text(self.last_exit_cause.map(ExitCause::as_str)));
         JsonValue::Object(m).to_json_string()
     }
 
@@ -98,6 +111,10 @@ impl SupervisorRecord {
             last_exit: v.get("last_exit").and_then(last_exit_from_json),
             next_restart_at_ms: u("next_restart_at_ms").map(|n| n as u64),
             updated_at_ms: u("updated_at_ms").unwrap_or(0) as u64,
+            limit_max_bytes: u("limit_max_bytes").map(|n| n as u64),
+            limit_high_bytes: u("limit_high_bytes").map(|n| n as u64),
+            limit_backend: v.get("limit_backend").and_then(JsonValue::as_str).and_then(LimitBackend::parse),
+            last_exit_cause: v.get("last_exit_cause").and_then(JsonValue::as_str).and_then(ExitCause::parse),
         })
     }
 }
@@ -179,12 +196,21 @@ pub trait HostRunner {
     fn stop_requested(&mut self) -> bool;
     /// Publishes the current record (best effort).
     fn publish(&mut self, rec: &SupervisorRecord);
+    /// Memory limits and backend this host runs under (default: none).
+    fn limits(&self) -> (MemoryLimits, Option<LimitBackend>) {
+        (MemoryLimits::default(), None)
+    }
+    /// Cause of the exit `wait` just returned, when the runner can tell (default: unknown).
+    fn last_exit_cause(&mut self) -> Option<ExitCause> {
+        None
+    }
 }
 
 /// Runs the spawn / wait / decide loop until the host is deliberately or finally down. Returns
 /// the final record (also published).
 pub fn supervise(cfg: &RestartConfig, name: &str, supervisor_pid: u32, env: &mut impl HostRunner) -> SupervisorRecord {
     let mut state = RestartState::default();
+    let (limits, backend) = env.limits();
     let mut rec = SupervisorRecord {
         name: name.to_string(),
         supervisor_pid,
@@ -195,6 +221,10 @@ pub fn supervise(cfg: &RestartConfig, name: &str, supervisor_pid: u32, env: &mut
         last_exit: None,
         next_restart_at_ms: None,
         updated_at_ms: env.now_ms(),
+        limit_max_bytes: limits.max_bytes,
+        limit_high_bytes: limits.high_bytes,
+        limit_backend: backend.filter(|_| limits.max_bytes.is_some()),
+        last_exit_cause: None,
     };
     loop {
         let exit = match env.spawn() {
@@ -210,6 +240,7 @@ pub fn supervise(cfg: &RestartConfig, name: &str, supervisor_pid: u32, env: &mut
             Err(_) => LastExit { code: Some(-1), signal: None, at_ms: env.now_ms() },
         };
         rec.last_exit = Some(exit);
+        rec.last_exit_cause = env.last_exit_cause();
         rec.daemon_pid = None;
         let stop = env.stop_requested();
         rec.updated_at_ms = exit.at_ms;
@@ -249,12 +280,98 @@ pub struct ProcessRunner {
     name: String,
     exe: PathBuf,
     child: Option<std::process::Child>,
+    limits: MemoryLimits,
+    backend: LimitBackend,
+    /// Systemd scope unit counter (unit names must be unique per spawn).
+    spawns: u32,
+    poll_ms: u64,
+    grace_ms: u64,
+    cause: Option<ExitCause>,
 }
 
 impl ProcessRunner {
     pub fn new(runtime_dir: &Path, name: &str, exe: PathBuf) -> Self {
-        Self { runtime_dir: runtime_dir.to_path_buf(), name: name.to_string(), exe, child: None }
+        let env_ms = |k: &str, d: u64| std::env::var(k).ok().and_then(|v| v.parse().ok()).filter(|n| *n > 0).unwrap_or(d);
+        Self {
+            runtime_dir: runtime_dir.to_path_buf(),
+            name: name.to_string(),
+            exe,
+            child: None,
+            limits: MemoryLimits::default(),
+            backend: LimitBackend::Watchdog,
+            spawns: 0,
+            poll_ms: env_ms("BILTERM_LIMIT_POLL_MS", limits::DEFAULT_POLL_MS),
+            grace_ms: env_ms("BILTERM_LIMIT_GRACE_MS", limits::DEFAULT_GRACE_MS),
+            cause: None,
+        }
     }
+
+    /// Enforces `limits` through `backend` (ignored when `limits` sets no max).
+    pub fn with_limits(mut self, limits: MemoryLimits, backend: LimitBackend) -> Self {
+        self.limits = limits;
+        self.backend = backend;
+        self
+    }
+
+    /// Lock-verified: the daemon lock is held and names exactly this child's pid.
+    fn pid_is_lock_verified(&self, pid: u32) -> bool {
+        matches!(
+            crate::daemon::liveness::daemon_liveness(&self.runtime_dir, &self.name),
+            crate::daemon::liveness::DaemonLiveness::Running(rec) if rec.pid == pid
+        )
+    }
+
+    /// Polls the child, sampling RSS. The watchdog backend escalates SIGTERM -> SIGKILL; the
+    /// systemd backend only tracks the peak (the kernel enforces). Returns the exit and whether
+    /// the watchdog signaled the host.
+    fn wait_limited(&mut self, child: &mut std::process::Child, max: u64) -> io::Result<(std::process::ExitStatus, Option<i32>, u64)> {
+        let pid = child.id();
+        let mut dog = Watchdog::new(max, self.limits.high_bytes, self.grace_ms);
+        let t0 = std::time::Instant::now();
+        let mut next_sample = 0u64;
+        let (mut peak, mut sent) = (0u64, None);
+        loop {
+            if let Some(st) = child.try_wait()? {
+                return Ok((st, sent, peak));
+            }
+            let now = t0.elapsed().as_millis() as u64;
+            if now >= next_sample {
+                next_sample = now + self.poll_ms;
+                let rss = limits::group_rss_bytes(pid);
+                peak = peak.max(rss.unwrap_or(0));
+                if self.backend == LimitBackend::Watchdog {
+                    let signalable = self.pid_is_lock_verified(pid);
+                    match dog.observe(now, rss, signalable) {
+                        WdAction::Term => {
+                            tracing::warn!(daemon = %self.name, pid, rss = ?rss, max, "memory limit exceeded: SIGTERM");
+                            sent = Some(send_signal(pid, 15));
+                        }
+                        WdAction::Kill => {
+                            tracing::warn!(daemon = %self.name, pid, "still alive after grace: SIGKILL");
+                            sent = Some(send_signal(pid, 9));
+                        }
+                        WdAction::WarnHigh => tracing::warn!(daemon = %self.name, pid, rss = ?rss, "memory-high crossed"),
+                        WdAction::None => {}
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50.min(self.poll_ms)));
+        }
+    }
+}
+
+/// Sends `sig` to exactly `pid` (callers have lock-verified it); returns `sig`.
+fn send_signal(pid: u32, sig: i32) -> i32 {
+    #[cfg(unix)]
+    if pid > 1 && pid <= i32::MAX as u32 {
+        // SAFETY: plain kill(2) on a pid the caller verified against the daemon lock.
+        unsafe {
+            libc::kill(pid as libc::pid_t, sig);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+    sig
 }
 
 impl HostRunner for ProcessRunner {
@@ -264,9 +381,21 @@ impl HostRunner for ProcessRunner {
         // The previous host (if any) is dead: a leftover socket file must not block the new bind.
         let _ = crate::daemon::process::probe_or_cleanup_stale_socket(&sock);
         let listen = format!("unix:{}", sock.display());
-        let mut cmd = Command::new(&self.exe);
-        cmd.args(["--daemon", "--name", &self.name, "-l", &listen])
-            .env("BILTERM_RUNTIME_DIR", &self.runtime_dir)
+        let host_args = ["--daemon".to_string(), "--name".to_string(), self.name.clone(), "-l".to_string(), listen];
+        let limited = self.limits.max_bytes.is_some();
+        let mut cmd = if limited && self.backend == LimitBackend::SystemdScope {
+            self.spawns += 1;
+            let unit = format!("bilterm-{}-{}-{}", self.name, std::process::id(), self.spawns);
+            let argv = limits::scope_command(&unit, &self.limits, &self.exe.to_string_lossy(), &host_args);
+            let mut c = Command::new(&argv[0]);
+            c.args(&argv[1..]);
+            c
+        } else {
+            let mut c = Command::new(&self.exe);
+            c.args(&host_args);
+            c
+        };
+        cmd.env("BILTERM_RUNTIME_DIR", &self.runtime_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -277,6 +406,10 @@ impl HostRunner for ProcessRunner {
         }
         let child = cmd.spawn()?;
         let pid = child.id();
+        if limited {
+            limits::bias_oom_score(pid);
+        }
+        self.cause = None;
         self.child = Some(child);
         Ok(pid)
     }
@@ -285,12 +418,31 @@ impl HostRunner for ProcessRunner {
         let Some(mut child) = self.child.take() else {
             return Err(io::Error::other("no child"));
         };
-        let status = child.wait()?;
+        let (status, wd_signal, peak) = match self.limits.max_bytes {
+            Some(max) => self.wait_limited(&mut child, max)?,
+            None => (child.wait()?, None, 0),
+        };
         #[cfg(unix)]
-        let signal = std::os::unix::process::ExitStatusExt::signal(&status);
+        let mut signal = std::os::unix::process::ExitStatusExt::signal(&status);
         #[cfg(not(unix))]
-        let signal = None;
-        Ok(LastExit { code: status.code(), signal, at_ms: crate::daemon::supervisor::now_ms() })
+        let mut signal = None;
+        let mut code = status.code();
+        self.cause = limits::classify_exit(signal, &self.limits, peak, wd_signal.is_some());
+        // A host that exits cleanly after our SIGTERM was still killed by the limit: it is a
+        // crash for the restart policy, never a clean exit.
+        if let Some(sig) = wd_signal.filter(|_| code == Some(0) || signal.is_none()) {
+            code = None;
+            signal = Some(sig);
+        }
+        Ok(LastExit { code, signal, at_ms: crate::daemon::supervisor::now_ms() })
+    }
+
+    fn limits(&self) -> (MemoryLimits, Option<LimitBackend>) {
+        (self.limits, self.limits.max_bytes.map(|_| self.backend))
+    }
+
+    fn last_exit_cause(&mut self) -> Option<ExitCause> {
+        self.cause.take()
     }
 
     fn now_ms(&self) -> u64 {
@@ -317,11 +469,13 @@ impl HostRunner for ProcessRunner {
     }
 }
 
-/// `bilterm supervisor --name N [--runtime-dir D] [--restart never|on-crash]`; returns the exit code.
+/// `bilterm supervisor --name N [--runtime-dir D] [--restart never|on-crash] [--memory-max BYTES]
+/// [--memory-high BYTES]`; returns the exit code.
 pub fn run_cli(args: &[String]) -> i32 {
     let mut name = "default".to_string();
     let mut dir: Option<PathBuf> = None;
     let mut mode = RestartMode::Never;
+    let (mut mem_max, mut mem_high) = (None, None);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let v = |it: &mut std::slice::Iter<String>| it.next().cloned();
@@ -333,6 +487,8 @@ pub fn run_cli(args: &[String]) -> i32 {
                 Some(Err(e)) => return fail(&e),
                 None => return fail("--restart needs a value"),
             },
+            "--memory-max" => mem_max = v(&mut it),
+            "--memory-high" => mem_high = v(&mut it),
             other => return fail(&format!("unknown supervisor option '{other}'")),
         }
     }
@@ -347,7 +503,16 @@ pub fn run_cli(args: &[String]) -> i32 {
         Ok(e) => e,
         Err(e) => return fail(&format!("current_exe: {e}")),
     };
+    let mem = match MemoryLimits::from_args(mem_max.as_deref(), mem_high.as_deref()) {
+        Ok(l) => l,
+        Err(e) => return fail(&e),
+    };
     let mut runner = ProcessRunner::new(&runtime_dir, &name, exe);
+    if !mem.is_unlimited() {
+        let sel = limits::select_backend_for_host();
+        tracing::info!(daemon = %name, backend = sel.backend.as_str(), note = %sel.note, "memory limits");
+        runner = runner.with_limits(mem, sel.backend);
+    }
     let cfg = RestartConfig::with_mode(mode);
     let rec = supervise(&cfg, &name, std::process::id(), &mut runner);
     i32::from(rec.state == SupState::Failed)
@@ -491,6 +656,38 @@ mod tests {
     }
 
     #[test]
+    fn old_record_without_limit_fields_parses() {
+        let old = r#"{"name":"w","supervisor_pid":4,"daemon_pid":null,"state":"stopped","mode":"never","restart_count":0,"next_restart_at_ms":null,"updated_at_ms":1,"last_exit":null}"#;
+        let r = SupervisorRecord::from_json(old).unwrap();
+        assert_eq!((r.limit_max_bytes, r.limit_backend, r.last_exit_cause), (None, None, None));
+    }
+
+    /// A limit kill (cause reported by the runner) is an ordinary crash for the restart policy.
+    #[test]
+    fn limit_kill_restarts_like_any_crash_and_records_cause() {
+        struct Limited(Fake);
+        impl HostRunner for Limited {
+            fn spawn(&mut self) -> io::Result<u32> { self.0.spawn() }
+            fn wait(&mut self) -> io::Result<LastExit> { self.0.wait() }
+            fn now_ms(&self) -> u64 { self.0.now_ms() }
+            fn sleep_or_stop(&mut self, ms: u64) -> bool { self.0.sleep_or_stop(ms) }
+            fn stop_requested(&mut self) -> bool { self.0.stop_requested() }
+            fn publish(&mut self, rec: &SupervisorRecord) { self.0.publish(rec) }
+            fn limits(&self) -> (MemoryLimits, Option<LimitBackend>) {
+                (MemoryLimits { max_bytes: Some(1 << 28), high_bytes: None }, Some(LimitBackend::Watchdog))
+            }
+            fn last_exit_cause(&mut self) -> Option<ExitCause> { Some(ExitCause::Limit) }
+        }
+        let mut f = Limited(Fake::new(vec![killed(), code(0)]));
+        let rec = supervise(&on_crash(), "w", 7, &mut f);
+        assert_eq!(f.0.spawns, 2);
+        assert_eq!(rec.restart_count, 1);
+        assert_eq!((rec.limit_max_bytes, rec.limit_backend), (Some(1 << 28), Some(LimitBackend::Watchdog)));
+        let b = f.0.published.iter().find(|r| r.state == SupState::Backoff).unwrap();
+        assert_eq!(b.last_exit_cause, Some(ExitCause::Limit));
+    }
+
+    #[test]
     fn record_json_roundtrip_and_files() {
         let rec = SupervisorRecord {
             name: "w".into(),
@@ -502,6 +699,10 @@ mod tests {
             last_exit: Some(LastExit { code: None, signal: Some(9), at_ms: 77 }),
             next_restart_at_ms: Some(99),
             updated_at_ms: 80,
+            limit_max_bytes: Some(1 << 30),
+            limit_high_bytes: Some(1 << 29),
+            limit_backend: Some(LimitBackend::SystemdScope),
+            last_exit_cause: Some(ExitCause::Limit),
         };
         assert_eq!(SupervisorRecord::from_json(&rec.to_json()), Ok(rec.clone()));
         let dir = tempfile::tempdir().unwrap();

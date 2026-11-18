@@ -10,6 +10,7 @@ pub mod limits;
 pub mod msg;
 pub mod session;
 pub mod wire_grid;
+pub mod size_owner;
 
 #[cfg(test)]
 mod frame_tests;
@@ -19,3 +20,4 @@ mod golden_tests;
 mod msg_tests;
 #[cfg(test)]
 mod view_tests;
+mod size_owner_tests;
