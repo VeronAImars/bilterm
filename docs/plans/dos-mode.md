@@ -1,6 +1,6 @@
 # Plan: DOS Mode (FreeDOS in a bilterm pane)
 
-Status: PLAN ONLY (docs, no code). Research date: 2026-11-17; revised 2026-11-18 with owner decisions (section 0), cross-OS research (4.2-4.4), persistent C: (5.1), Windows (5.2). Not legal advice; the owner should confirm the verdicts in section 2 before any bundling.
+Status: PLAN ONLY (docs, no code). Research date: 2026-11-17; revised 2026-11-18 with owner decisions (sections 0 and 0.1), cross-OS research (4.2-4.4), persistent C: (5.1), Windows (5.2). Not legal advice; the owner should confirm the verdicts in section 2 before any bundling.
 Baseline: `main` (bilterm 3.3.1, `Cargo.toml` license `Apache-2.0`, repo `LICENSE` is Apache License 2.0).
 
 Conventions: **VERIFIED** = observed first-hand on 2026-11-17 (command run or primary source fetched; source named). **UNVERIFIED** = not confirmed; the PR that depends on it must check. Nothing here is asserted from memory.
@@ -13,6 +13,14 @@ Answers to the former section 11 (all now ANSWERED; remaining questions are in s
 2. **Persistence**: a persistent C: image, NOT Live-only. Unattended build recipe proven in spike D0b (5.1).
 3. **Windows**: IN v1 scope (5.2). Graphics-mode programs: text-only for v1; the screendump route (4.4) can later feed bilterm's image protocols.
 4. **Packaging/legal**: opt-in Cargo feature `dos` (off by default), NEVER bundle, download on demand with pinned SHA256, nominative branding ("DOS mode -- runs FreeDOS"). Counsel review is not required while nothing is bundled (revisit if that changes).
+
+## 0.1 Owner decisions 2026-11-18 (2)
+
+1. **Test machines exist for every OS; no "is there a VM" question.** Windows x64: `win-devvm` on the Linux dev box (`/home/bill/src/infra/win-devvm`, libvirt KVM, `./vm.sh start|wait|status|ssh|push|pull`). Windows ARM64: `win-devvm` under Parallels on `ssh bill@bigmac.local` (`~/src/tools/win-devvm`; non-interactive PATH needs `/usr/local/bin:/opt/homebrew/bin`; throwaway worktrees under `~/worktrees`). macOS arm64 and Intel x86_64: bigmac (both rust targets installed; Rosetta running). Repo has `scripts/build-windows-vm.sh` and `scripts/windows-smoke-test.ps1`. Every OS gets concrete spikes/tests (4.2, 9, 10); results are VERIFIED or UNVERIFIED by running, with the exact command for anything not yet run.
+2. **Image defaults accepted**: 128 MiB, 2 GiB cap, sparse raw. **Package set (decided here)**: default image = FreeDOS BASE only (kernel, FreeCom, core utils; fits 128 MiB, fast and deterministic setup). `setup --full` opt-in installs the full Live package set into a larger image (default 512 MiB, UNVERIFIED size; needs `mcopy`/pure-Rust unzip of each pinned package). Rationale: size, setup time, and licence hygiene: the Live ISO contains packages under mixed terms (some freeware-only, not OSI); those are fetched at download time from the pinned ISO on the user's machine and never bundled or redistributed by bilterm, and BASE-only keeps the default path to GPL/permissive core packages.
+3. **macOS Intel and Windows ARM64: SUPPORTED** (not best-effort); each has a verification task in section 10.
+4. **Pure-Rust FAT writer** (`fatfs`-style) under the `dos` feature is accepted; fall back to shelling out to mtools on Unix if the crate disappoints in D0c.
+5. **Emulator version policy**: manifest has a `min_version` floor for system-installed emulators (we only check `-version`), and an exact pinned version plus SHA256 for anything bilterm downloads. Versions found working 2026-11-18: QEMU 10.2.1 (Linux), 10.2.0 and 11.1.3 (macOS Homebrew), 11.1.0 (Windows x64 via winget). **Floor: QEMU >= 10.2.0** (lowest version verified; every verified OS is at or above it). **Pin for downloads** (Windows portable/installer path): `qemu-w64-setup-20260811.exe` (QEMU 11.1.0, 206615928 bytes), SHA256 `f98a8aeb5f7faea9765b6dee28316c266cd179d80354a2fed8e50176f9a2e59f` (hashed by us from https://qemu.weilnetz.de/w64/2026/qemu-w64-setup-20260811.exe; winget also verified its manifest hash). Raise the floor only after re-running the per-OS spikes.
 
 ## 1. Summary and recommendation
 
@@ -128,21 +136,25 @@ Evidence (fetched/run 2026-11-18):
 | Linux (Ubuntu qemu 10.2.1): curses display works (4.1) | first-hand |
 | FreeBSD port `emulators/qemu` 11.1.3_1: ncurses is a mandatory choice of three options (NCURSES_BASE / NCURSES_DEFAULT / NCURSES_PORT), so curses is compiled in | https://www.freshports.org/emulators/qemu/ (2026-11-18). Package build not run: UNVERIFIED |
 | OpenBSD port `emulators/qemu` 11.1.3p0; ncurses not listed as a dependency (base curses); readme examples use `qemu-system-i386`; arch restriction list reads aarch64, amd64, powerpc64, riscv64, sparc64 (amd64 OK). Whether `-display curses` is compiled in is UNVERIFIED | https://openports.pl/path/emulators/qemu (2026-11-18) |
+| **Windows x64 (win-devvm, Windows 11 10.0.26300): `winget install -e --id SoftwareFreedomConservancy.QEMU` installed QEMU 11.1.0 (hash verified); `qemu-system-i386 -display help` lists `gtk, sdl, egl-headless, curses, spice-app, dbus`, so curses IS compiled into the Weil build. VERIFIED** | first-hand 2026-11-18 |
+| **Windows x64: text-buffer path VERIFIED.** `-display none -qmp tcp:127.0.0.1:4555`, QMP `pmemsave` of 0xB8000 (4000 bytes) from PowerShell, every second byte decoded: SeaBIOS/iPXE banner text. `-display curses` under a real ConPTY not yet run: UNVERIFIED | first-hand 2026-11-18 |
+| **macOS arm64 (bigmac): QMP `pmemsave` over loopback TCP VERIFIED (SeaBIOS banner decoded); `-display curses` under a Python pty (100x30) printed the SeaBIOS banner. VERIFIED.** Homebrew has qemu 10.2.0 and 11.1.3 | first-hand 2026-11-18 |
 | Windows: QEMU's own site says Stefan Weil provides 32/64-bit Windows binaries and installers (https://qemu.weilnetz.de); MSYS2 packages `mingw-w64-x86_64-qemu` / `mingw-w64-ucrt-x86_64-qemu`; 32-bit Windows not supported | https://www.qemu.org/download/ (2026-11-18) |
-| QEMU `meson.build` can build curses on Windows via `ncurses`/`ncursesw` pkg-config or library `pdcurses`; so support exists in source, but whether shipped Windows builds enable it is UNVERIFIED | https://gitlab.com/qemu-project/qemu/-/raw/master/meson.build (2026-11-18) |
-| winget: no confirmed QEMU package id found (search page showed no result) | UNVERIFIED |
+| QEMU `meson.build` can build curses on Windows via `ncurses`/`ncursesw` pkg-config or library `pdcurses`; and the shipped Weil Windows build does list curses (row above) | https://gitlab.com/qemu-project/qemu/-/raw/master/meson.build (2026-11-18) |
+| winget package id `SoftwareFreedomConservancy.QEMU` (v11.1.0, downloads qemu.weilnetz.de) exists and installs. **VERIFIED** | first-hand |
 | Bochs configure has `--with-term` (text-only curses GUI; "almost certainly won't work right with the debugger or the textconfig interface"); default GUI on Win32/MinGW is `--with-win32`; the docs do not say term works on Windows or which distro builds enable it | https://bochs.sourceforge.io/doc/docbook/user/compiling.html (2026-11-18) |
 | QMP has `screendump` (Remote desktop section) and `pmemsave`/`memsave` (Machines section); detailed arg semantics not read | https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html (2026-11-18, truncated); `pmemsave` itself **VERIFIED** (4.4) |
 
 **Support matrix (v1):**
 
-| OS | Level | Backend order | Notes |
+| OS | Level | Backend order | Status / verification |
 |---|---|---|---|
-| Linux (x86_64, aarch64) | **Supported** | qemu-curses, qemu-textbuf, bochs-term | qemu curses VERIFIED |
-| macOS (arm64; Intel best-effort) | **Supported** | qemu-curses, qemu-textbuf | curses display VERIFIED; TCG emulation of i386 on arm64, speed UNVERIFIED |
-| Windows 10/11 x86_64 | **Supported (UNVERIFIED, no Windows machine)** | qemu-textbuf (no curses needed), qemu-curses if present | ConPTY bridge, 5.2; Windows ARM64: best-effort |
-| FreeBSD | **Best-effort** | qemu-curses, qemu-textbuf, bochs-term | port has ncurses; not run |
-| OpenBSD | **Best-effort** | qemu-textbuf first, qemu-curses if `-display help` lists it | not run |
+| Linux (x86_64, aarch64) | **Supported** | qemu-curses, qemu-textbuf, bochs-term | curses VERIFIED (QEMU 10.2.1); aarch64: UNVERIFIED, no host here (qemu TCG, same path) |
+| macOS arm64 | **Supported** | qemu-curses, qemu-textbuf | curses + pmemsave VERIFIED on bigmac (QEMU 11.1.3); image recipe UNVERIFIED (mtools/sfdisk absent; pure-Rust builder D0c) |
+| macOS Intel x86_64 | **Supported** | qemu-curses, qemu-textbuf | bigmac builds/tests the `x86_64-apple-darwin` bilterm binary under Rosetta; native Intel QEMU not available on bigmac (no `/usr/local` brew): UNVERIFIED, task D7b |
+| Windows 10/11 x86_64 | **Supported** | qemu-textbuf, qemu-curses | QEMU install via winget, curses listed, TCP QMP pmemsave VERIFIED on win-devvm; ConPTY run, image build, bilterm `dos run` UNVERIFIED (D6) |
+| Windows 11 ARM64 | **Supported** | qemu-textbuf, qemu-curses | win-devvm on bigmac Parallels; x64 QEMU runs under Windows' x64 emulation: UNVERIFIED, task D6b |
+| FreeBSD / OpenBSD | **Best-effort** (no guest) | FreeBSD: curses, textbuf, bochs-term; OpenBSD: textbuf first | no BSD VM exists; task D2d proposes adding a FreeBSD and OpenBSD guest to win-devvm/libvirt; until then ports analysis only, not run |
 | other (NetBSD, illumos, ...) | **Unsupported** | `dos doctor` explains and exits non-zero | no promises |
 
 Alternatives considered, not selected for v1: serial console (FreeDOS has no serial console by default; COM port only), DOSBox-X/Staging (SDL window, no tty front end known: UNVERIFIED), dosemu2 `-t` (Linux/BSD only, not run), v86 (JS), 86Box (GUI, ROMs). They remain possible third-party backends behind the trait.
@@ -211,7 +223,7 @@ Decision: `bilterm dos setup` produces a persistent per-user `c.img`; Live Envir
 
 So the only scripted-UI step is the single `sys c:` command; no installer dialog is driven. Installing the full package set (editors, tools) is then `mcopy`/`unzip` of pinned `.zip` packages from the 1.4 BASE/Live ISO into the FAT image (not yet done; UNVERIFIED), plus a generated `FDCONFIG.SYS`/`AUTOEXEC.BAT` (not yet done). Other options kept as fallbacks: FreeDOS installer answer file (UNVERIFIED that one exists), or full keystroke-driven installer via the same QMP driver (more fragile).
 
-Not verified: persistence across a guest write+reboot (expected), FAT32/larger sizes, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this recipe (mtools/sfdisk are Linux tools: in Rust, implement steps 2-5 with a small pure-Rust FAT writer such as the `fatfs` crate plus a hand-built MBR, so Windows needs no mtools; crate choice UNVERIFIED, evaluate in D0c).
+Not verified: persistence across a guest write+reboot (expected), FAT32/larger sizes, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this recipe (mtools/sfdisk are Linux tools, and absent on bigmac and win-devvm: in Rust, implement steps 2-5 with a small pure-Rust FAT writer such as the `fatfs` crate plus a hand-built MBR, so Windows needs no mtools; crate choice UNVERIFIED, evaluate in D0c; dependency under `dos` accepted, section 0.1 item 4).
 
 - **Location and size**: `<data>/bilterm/dos/c/<name>.img` via `secure_fs::ensure_private_dir` (0700) and atomic 0600 writes (`write_private_file_atomic`: build as `.part`, fsync, rename); `validate_safe_name` on `<name>`. Default 128 MiB raw (sparse), configurable up to a cap (default 2 GiB); sparse-file support checked by `doctor`.
 - **Lifecycle**: `bilterm dos reset [--name N]` (delete and rebuild from the pinned base, confirm), `snapshot [--name N] [--tag T]` (reflink/plain copy to `snapshots/<name>/<tag>.img`, guest must be stopped or use QMP `stop` + copy + `cont`), `restore --tag T`, `snapshot list|rm`. Per-session overlay mode: `-drive ...,snapshot=on` for throwaway runs.
@@ -219,14 +231,14 @@ Not verified: persistence across a guest write+reboot (expected), FAT32/larger s
 
 ### 5.2 Windows (in v1 scope)
 
-Requirements, each UNVERIFIED (no Windows machine; the Mac covers only macOS):
+Test machines: win-devvm x64 (this Linux box) and win-devvm ARM64 (bigmac Parallels). Spike results so far are in 4.2 (install, curses listed, pmemsave over TCP: VERIFIED on x64). Remaining requirements, each UNVERIFIED until the D6/D6b task runs:
 - **Pane bridge**: bilterm already uses `portable-pty` (ConPTY on Windows); a `Pty{argv}` plan with curses output is possible only if the QEMU build has curses. Default Windows path is `Bridge` with `qemu-textbuf` (4.4): QMP over a TCP loopback socket (`-qmp tcp:127.0.0.1:<port>,server=on,wait=off`, bind loopback only, random port) since Unix sockets are awkward from std on older Windows; token-less so restrict by loopback + per-session random port + process ownership.
-- **Emulator install**: detect `qemu-system-i386.exe` on PATH and in `%ProgramFiles%\qemu`; guidance in `dos doctor`: `winget install` (id UNVERIFIED), `choco install qemu` (UNVERIFIED), the Stefan Weil installer, or MSYS2 pacman. `setup` never installs system software silently; with consent it can download the pinned portable archive/installer (SHA256 pinned) and run only extraction into the private data dir.
+- **Emulator install**: detect `qemu-system-i386.exe` on PATH and in `%ProgramFiles%\qemu`; guidance in `dos doctor`: `winget install -e --id SoftwareFreedomConservancy.QEMU` (VERIFIED 2026-11-18), `choco install qemu` (UNVERIFIED), the Stefan Weil installer, or MSYS2 pacman. `setup` never installs system software silently; with consent it can download the pinned installer `qemu-w64-setup-20260811.exe` (SHA256 in 0.1 item 5) and run only extraction into the private data dir.
 - **Downloads without bash**: all fetch/verify/extract is Rust (rustls HTTPS, sha2, zip crate) inside `src/dos/`; no `scripts/*.sh` involvement on Windows. Keyboard: Windows Terminal passes VT input; map to QMP key names.
 - **Paths**: `%LOCALAPPDATA%\bilterm\dos\` via the existing data-dir helper; `secure_fs` 0700/0600 semantics map to NTFS ACL inheritance (check what `secure_fs.rs` already does on Windows before D6; UNVERIFIED).
 - **Image build** without mtools/sfdisk: the pure-Rust writer from 5.1.
-- Windows ARM64 and 32-bit: ARM64 best-effort (x64 emulation), 32-bit unsupported (QEMU states it).
-- Validation plan: CI-free; manual run on a Windows host owned by the owner or a VM (D6 exit criterion). Until then Windows is labelled "supported, unverified" in `--help`/docs.
+- Windows ARM64: SUPPORTED, verified on win-devvm ARM64 (D6b); QEMU is the x64 build under Windows x64 emulation unless a native ARM64 build is found. 32-bit unsupported (QEMU states it).
+- Validation plan (local, CI-free): x64: `cd /home/bill/src/infra/win-devvm && ./vm.sh start && ./vm.sh wait`, then `WIN_DEVVM_DIR=... scripts/build-windows-vm.sh <tag> --arch x64 --test` plus a `dos` smoke added to `scripts/windows-smoke-test.ps1` (qemu present, `-display help`, QMP pmemsave decode, image boot to FreeCom). ARM64: same with `--arch arm64` over `ssh bill@bigmac.local` (PATH `/usr/local/bin:/opt/homebrew/bin`). Remaining spike to run: `-display curses` under a real ConPTY (portable-pty) on both guests.
 
 ## 6. Uniform surface (every capability, every surface)
 
@@ -279,7 +291,7 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 - **Ignored real smoke** (`#[ignore]`, `BILTERM_DOS_SMOKE=1`): requires installed QEMU and cached floppy edition; boots, waits for "FreeCom" in the grid, sends a command, asserts echo. Mirrors the D0 spike. Never in `scripts/verify.sh` by default.
 - **Backend conformance**: one suite runs against the `mock` backend always, and each real backend under `#[ignore]` + `BILTERM_DOS_SMOKE=1`; includes the text-buffer decoder (golden 4000-byte VGA fixtures from the D0b spike, CP437 and attribute mapping, graphics-mode detection) and QMP framing fuzz/limits.
 - **Persistent image**: build recipe test with the pure-Rust writer (FAT/MBR structure assertions, no emulator), plus ignored smoke that boots the built `c.img` to the FreeCom prompt; snapshot/restore/reset round-trips; dirty-marker and corruption fixtures; lock contention.
-- **Per-OS**: matrix table test for `detect()` ordering using fake `HostEnv` per OS; `doctor` output snapshots for unsupported OS; Windows path/ACL tests run on the Windows host manually (D6) and through `cfg(windows)` unit tests.
+- **Per-OS (all real machines, local)**: Linux dev box; Windows x64 `win-devvm` (`./vm.sh`); Windows ARM64 `win-devvm` and macOS arm64 + Intel on `ssh bill@bigmac.local` (`x86_64-apple-darwin` via `cargo test --target x86_64-apple-darwin` under Rosetta); BSD only if a guest is added (D2d). Each runs the ignored smoke plus image-build test. Also: matrix table test for `detect()` ordering using fake `HostEnv` per OS; `doctor` output snapshots for unsupported OS; Windows path/ACL tests run on the Windows host manually (D6) and through `cfg(windows)` unit tests.
 - **Feature flag**: `cargo check` with and without `--features dos`; default build must not reference `src/dos`.
 - Local CI only (owner preference); no hosted-CI downloads of 24-300 MB images.
 
@@ -288,7 +300,7 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 | PR | Scope | Exit criteria |
 |---|---|---|
 | D0 | Spike script (not wired in): QEMU curses boot and key injection. DONE for Linux (4.1) and macOS `-display help` (4.2) | results in this doc |
-| D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; remaining: add packages + AUTOEXEC, reboot-persistence check, run on macOS over ssh (throwaway worktree under ~/worktrees) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
+| D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; remaining: add packages + AUTOEXEC, reboot-persistence check. macOS run: `ssh bill@bigmac.local 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; brew install mtools && cd ~/worktrees/<wt> && scripts/dos-spike-install.sh'` (sfdisk absent on macOS: use the D0c Rust builder or `fdisk -e`) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
 | D0c | Pure-Rust image builder spike (`fatfs` or equivalent + embedded MBR) producing the same image; Bochs `term` and QEMU textbuf poll runs | image boots; Windows-viable (no mtools); crate decision recorded |
 | D1 | `dos` feature flag, `src/dos/{manifest,download,verify,paths}.rs`, `manifest.toml`, mock downloader, `bilterm dos setup/remove/doctor` (CLI) | unit tests; `cargo check --features dos`; real setup on Linux |
 | D1b | `DosBackend` trait, `HostEnv`, per-OS `detect()`, mock backend, conformance suite | suite green on mock |
@@ -296,21 +308,23 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 | D2a | `qemu-curses` backend + `dos run` + pane spawn via `WindowManager::apply`, min size, `-nic none` | headless fixture + ignored smoke (Linux, macOS) |
 | D2b | `qemu-textbuf` backend: QMP client, text decoder, `Bridge` pane source, graphics-mode notice | golden-fixture tests; smoke on Linux |
 | D2c | `bochs-term` backend (Linux/BSD; optional) | smoke or documented skip |
-| D2d | BSD best-effort: FreeBSD/OpenBSD detection rows, doctor messages; manual run on a BSD VM if available | matrix rows verified or marked unverified |
+| D2d | BSD best-effort: FreeBSD/OpenBSD detection rows, doctor messages; first add a FreeBSD and an OpenBSD guest to win-devvm/libvirt (small infra task, separate repo) and run `dos doctor` + smoke there | rows verified, else stay best-effort |
 | D3 | `Action::Dos*`, `:dos ...`, RPC `dos.*`, MCP tools, status line, parity table test | parity test green, `ctl` e2e |
-| D6 | **Windows**: ConPTY/Bridge wiring, loopback QMP, installer guidance and consented portable download, path/ACL handling, pure-Rust builder in use, no-bash setup | manual run on a Windows host; until then labelled unverified |
+| D6 | **Windows x64**: ConPTY/Bridge wiring, loopback QMP (spike VERIFIED), winget guidance and consented pinned installer download, path/ACL handling, pure-Rust builder, no-bash setup | `build-windows-vm.sh --arch x64 --test` + dos smoke green on win-devvm x64; `-display curses` under ConPTY result recorded |
+| D6b | **Windows ARM64**: same suite via bigmac Parallels win-devvm (x64 QEMU under emulation; speed measured) | `--arch arm64 --test` + dos smoke green |
+| D7a | **macOS arm64**: `dos run`/image build/smoke on bigmac (throwaway worktree) | ignored smoke green |
+| D7b | **macOS Intel**: `x86_64-apple-darwin` build + tests under Rosetta on bigmac; native Intel QEMU unavailable, so record that gap explicitly or add an Intel Homebrew under `/usr/local` (Rosetta) | tests green; gap documented or closed |
 | D4 | Fun features (7.1 to 7.8); graphics via `screendump` -> image protocols is a post-v1 item here | per-feature tests |
 | D5 | docs: `docs/DEVELOPER_AND_AGENT_GUIDE.md`, `AGENTS.md` pointer, third-party notices, `--help` text, matrix | `keeping-docs-in-sync` check |
 
-Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6 -> D2c/D2d, D4, D5.
+Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6, D6b, D7a, D7b (parallel, per-OS verification) -> D2c/D2d, D4, D5.
 
 ## 11. Open questions (remaining)
 
-1. Windows validation: is there a Windows machine/VM the owner can lend for D6, and is "supported, unverified" acceptable for the first release if not?
-2. Disk image defaults: 128 MiB, cap 2 GiB, sparse raw: OK? Should `setup` install the full FreeDOS package set (larger image) or BASE only?
-3. macOS Intel and Windows ARM64 targets: best-effort only, or drop?
-4. Pure-Rust FAT writer (`fatfs`-style dependency under the `dos` feature only) vs shelling out to mtools on Unix: accept the extra optional dependency?
-5. Emulator minimum versions in the manifest (security floor): choose after D0b, e.g. QEMU >= 10.0?
+Former questions 1-5 are answered (section 0.1). Genuinely open:
+
+1. BSD: add FreeBSD/OpenBSD guests to win-devvm/libvirt (D2d), or keep BSD documented best-effort indefinitely?
+2. `setup --full` default image size (512 MiB proposed) and the exact package list: decide after D0b measures the Live package sizes.
 
 ## Sources (fetched 2026-11-17 and 2026-11-18)
 
@@ -322,4 +336,4 @@ Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6 -> D2c/D2d,
 - https://www.freshports.org/emulators/qemu/ , https://openports.pl/path/emulators/qemu
 - GitHub API repo metadata for dosbox-x, dosbox-staging, dosemu2, 86Box, v86, qemu, Bochs; `brew info` for bochs, qemu, dosbox-x, dosbox-staging
 - https://sunsite2.icm.edu.pl/packages/freedos/distributions/1.1/errata.txt , SeaBIOS licensing threads at mail.coreboot.org (search results only)
-- First-hand: D0 and D0b spikes (Linux QEMU 10.2.1), macOS `qemu-system-i386 -display help` on bigmac.local (QEMU 11.1.3)
+- First-hand: D0 and D0b spikes (Linux QEMU 10.2.1), macOS `qemu-system-i386 -display help` on bigmac.local (QEMU 11.1.3); 2026-11-18 (2): winget QEMU install + `-display help` + TCP QMP pmemsave on win-devvm x64 (QEMU 11.1.0), pmemsave and curses-in-pty on bigmac macOS arm64
