@@ -1,9 +1,18 @@
 # Plan: DOS Mode (FreeDOS in a bilterm pane)
 
-Status: PLAN ONLY (docs, no code). Research date: 2026-11-17. Not legal advice; the owner should confirm the verdicts in section 2 before any bundling.
+Status: PLAN ONLY (docs, no code). Research date: 2026-11-17; revised 2026-11-18 with owner decisions (section 0), cross-OS research (4.2-4.4), persistent C: (5.1), Windows (5.2). Not legal advice; the owner should confirm the verdicts in section 2 before any bundling.
 Baseline: `main` (bilterm 3.3.1, `Cargo.toml` license `Apache-2.0`, repo `LICENSE` is Apache License 2.0).
 
 Conventions: **VERIFIED** = observed first-hand on 2026-11-17 (command run or primary source fetched; source named). **UNVERIFIED** = not confirmed; the PR that depends on it must check. Nothing here is asserted from memory.
+
+## 0. Owner decisions 2026-11-18
+
+Answers to the former section 11 (all now ANSWERED; remaining questions are in section 11):
+
+1. **Backend**: QEMU first on Linux, but with a real cross-platform answer: a `DosBackend` trait (4.3) with per-OS support matrix (4.2), so QEMU, Bochs and a text-buffer screendump renderer are interchangeable. Bochs/other backends are sub-features.
+2. **Persistence**: a persistent C: image, NOT Live-only. Unattended build recipe proven in spike D0b (5.1).
+3. **Windows**: IN v1 scope (5.2). Graphics-mode programs: text-only for v1; the screendump route (4.4) can later feed bilterm's image protocols.
+4. **Packaging/legal**: opt-in Cargo feature `dos` (off by default), NEVER bundle, download on demand with pinned SHA256, nominative branding ("DOS mode -- runs FreeDOS"). Counsel review is not required while nothing is bundled (revisit if that changes).
 
 ## 1. Summary and recommendation
 
@@ -11,9 +20,9 @@ Goal: `:dos` opens a pane running FreeDOS (a "retro PC in a pane"), using an emu
 
 Headlines:
 1. **Licensing verdict: do not bundle by default; download on demand.** FreeDOS 1.4 is a *mix* of licenses, mostly GPL but including freeware-only packages (VERIFIED, section 2.1). Redistribution of the whole ISO inside bilterm releases would make bilterm responsible for per-package notices and source offers. Downloading at runtime from the official host and launching a separate process creates no combination with bilterm's Apache-2.0 code.
-2. **Recommended emulator: QEMU (`qemu-system-i386 -display curses`)**. VERIFIED on this machine: FreeDOS 1.4 boots, text appears in a PTY, and keystrokes injected through the PTY reach DOS (section 4.1). Packaged by apt/brew/winget (apt/brew VERIFIED; winget UNVERIFIED).
+2. **Recommended emulator: QEMU (`qemu-system-i386`)**, with `-display curses` where compiled in and a VGA text-buffer reader (QMP `pmemsave` of 0xB8000, VERIFIED 2026-11-18) where it is not. VERIFIED on this machine: FreeDOS 1.4 boots, text appears in a PTY, and keystrokes injected through the PTY reach DOS (section 4.1). Packaged by apt/brew (VERIFIED), FreeBSD ports and OpenBSD ports (primary-source pages read, 4.2), MSYS2/Stefan Weil installers on Windows.
 3. **Fallback: Bochs `display_library: term`** (LGPL-2.1, text-only ncurses front end, documented) for a lighter, easier-to-license option; **dosemu2 `-t`** on Linux only; **DOSBox-X / Staging** for games, as a separate window (no text-mode pane bridge known).
-4. **Biggest risk:** the bridge is only text mode. Any graphics-mode program (most games, Windows 3.1) shows nothing useful in a curses pane. Second risk: Windows hosts (curses displays are likely absent from Windows emulator builds; UNVERIFIED).
+4. **Biggest risk:** the bridge is only text mode in v1. Any graphics-mode program (most games, Windows 3.1) shows nothing useful in a curses pane. Second risk: Windows (QEMU's build system can link pdcurses on Windows, but whether the shipped builds include it is UNVERIFIED), mitigated by the text-buffer renderer that needs no curses at all.
 5. **Plumbing is cheap:** a pinned manifest (URL + SHA256 + size) plus `bilterm dos setup|run|doctor|update|remove`; FreeDOS publishes SHA256 sums, and we verified two zips against them.
 
 ## 2. Licensing
@@ -75,7 +84,7 @@ Images: the LiveCD zip contains `FD14LIVE.iso` (bootable El Torito/ISOLINUX; its
 
 | Emulator | License | Text-mode bridge into a PTY | Keyboard in | Platforms / packaging | Health (2026-11-17) |
 |---|---|---|---|---|---|
-| **QEMU** `-display curses` | GPL-2.0 | **VERIFIED**: VGA text rendered as curses output on the PTY; boxes and block chars arrive as UTF-8 | **VERIFIED**: bytes written to the PTY reached DOS (echoed `N` at the installer prompt) | Linux apt (10.2.1 installed here), brew 11.1.3; winget UNVERIFIED; curses display on Windows/macOS builds UNVERIFIED | very active (pushed today) |
+| **QEMU** `-display curses` | GPL-2.0 | **VERIFIED**: VGA text rendered as curses output on the PTY; boxes and block chars arrive as UTF-8 | **VERIFIED**: bytes written to the PTY reached DOS (echoed `N` at the installer prompt) | Linux apt (10.2.1 installed here), brew 11.1.3; curses display on macOS VERIFIED (4.2); Windows builds UNVERIFIED | very active (pushed today) |
 | **Bochs** `display_library: term` | LGPL-2.1 | Documented as "text only, uses curses/ncurses, cross platform" (https://bochs.sourceforge.io/doc/docbook/user/bochsrc.html, 2026-11-17). Not run here: UNVERIFIED. Distro builds may omit `term` | via ncurses, same mechanism | apt 2.8, brew 3.1; Win32 builds exist (term on Windows UNVERIFIED) | active (3.1 final 2026-08-23) |
 | **dosemu2** `-t` | GPL-2.0 | `-t` terminal mode is the upstream design for text-mode DOS in a tty; not run: UNVERIFIED | tty | Linux only; no apt candidate on this host | active, small (last push 2026-10-25) |
 | **DOSBox-X** | GPL-2.0 | No tty/curses front end known: UNVERIFIED. SDL window only | window | apt 2026.01.02 (candidate), brew 2026.10.01 | very active |
@@ -108,31 +117,122 @@ Setup: downloaded `FD14-FloppyEdition.zip` and `FD14-LiveCD.zip` into `/datanapp
 - `-cdrom FD14LIVE.iso -boot d`: ISOLINUX menu with box drawing rendered; default entry is Live Environment after a 50 s countdown (the spike ended before DOS loaded; so the Live-mode-to-prompt path is UNVERIFIED).
 - Not tested: macOS, Windows, Bochs, dosemu2, `file=fat:` host-folder mount, resize, mouse, long runs, CPU use while idle.
 
+### 4.2 Cross-platform findings and support matrix
+
+Evidence (fetched/run 2026-11-18):
+
+| Fact | Source |
+|---|---|
+| macOS arm64 (Homebrew qemu 11.1.3): `qemu-system-i386 -display help` lists `none, curses, cocoa, dbus`. **VERIFIED** by running over ssh on bigmac.local | first-hand |
+| Homebrew qemu formula has runtime dependency `ncurses` | https://formulae.brew.sh/api/formula/qemu.json (2026-11-18) |
+| Linux (Ubuntu qemu 10.2.1): curses display works (4.1) | first-hand |
+| FreeBSD port `emulators/qemu` 11.1.3_1: ncurses is a mandatory choice of three options (NCURSES_BASE / NCURSES_DEFAULT / NCURSES_PORT), so curses is compiled in | https://www.freshports.org/emulators/qemu/ (2026-11-18). Package build not run: UNVERIFIED |
+| OpenBSD port `emulators/qemu` 11.1.3p0; ncurses not listed as a dependency (base curses); readme examples use `qemu-system-i386`; arch restriction list reads aarch64, amd64, powerpc64, riscv64, sparc64 (amd64 OK). Whether `-display curses` is compiled in is UNVERIFIED | https://openports.pl/path/emulators/qemu (2026-11-18) |
+| Windows: QEMU's own site says Stefan Weil provides 32/64-bit Windows binaries and installers (https://qemu.weilnetz.de); MSYS2 packages `mingw-w64-x86_64-qemu` / `mingw-w64-ucrt-x86_64-qemu`; 32-bit Windows not supported | https://www.qemu.org/download/ (2026-11-18) |
+| QEMU `meson.build` can build curses on Windows via `ncurses`/`ncursesw` pkg-config or library `pdcurses`; so support exists in source, but whether shipped Windows builds enable it is UNVERIFIED | https://gitlab.com/qemu-project/qemu/-/raw/master/meson.build (2026-11-18) |
+| winget: no confirmed QEMU package id found (search page showed no result) | UNVERIFIED |
+| Bochs configure has `--with-term` (text-only curses GUI; "almost certainly won't work right with the debugger or the textconfig interface"); default GUI on Win32/MinGW is `--with-win32`; the docs do not say term works on Windows or which distro builds enable it | https://bochs.sourceforge.io/doc/docbook/user/compiling.html (2026-11-18) |
+| QMP has `screendump` (Remote desktop section) and `pmemsave`/`memsave` (Machines section); detailed arg semantics not read | https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html (2026-11-18, truncated); `pmemsave` itself **VERIFIED** (4.4) |
+
+**Support matrix (v1):**
+
+| OS | Level | Backend order | Notes |
+|---|---|---|---|
+| Linux (x86_64, aarch64) | **Supported** | qemu-curses, qemu-textbuf, bochs-term | qemu curses VERIFIED |
+| macOS (arm64; Intel best-effort) | **Supported** | qemu-curses, qemu-textbuf | curses display VERIFIED; TCG emulation of i386 on arm64, speed UNVERIFIED |
+| Windows 10/11 x86_64 | **Supported (UNVERIFIED, no Windows machine)** | qemu-textbuf (no curses needed), qemu-curses if present | ConPTY bridge, 5.2; Windows ARM64: best-effort |
+| FreeBSD | **Best-effort** | qemu-curses, qemu-textbuf, bochs-term | port has ncurses; not run |
+| OpenBSD | **Best-effort** | qemu-textbuf first, qemu-curses if `-display help` lists it | not run |
+| other (NetBSD, illumos, ...) | **Unsupported** | `dos doctor` explains and exits non-zero | no promises |
+
+Alternatives considered, not selected for v1: serial console (FreeDOS has no serial console by default; COM port only), DOSBox-X/Staging (SDL window, no tty front end known: UNVERIFIED), dosemu2 `-t` (Linux/BSD only, not run), v86 (JS), 86Box (GUI, ROMs). They remain possible third-party backends behind the trait.
+
+### 4.3 Backend contract (`designing-plugin-contracts`)
+
+Hosts depend only on a trait; backends are interchangeable and selected by detection (`--backend` overrides).
+
+```rust
+pub trait DosBackend: Send {
+    fn id(&self) -> &'static str;                       // "qemu-curses" | "qemu-textbuf" | "bochs-term" | "mock"
+    fn probe(&self, env: &dyn HostEnv) -> Probe;         // found? version? capabilities; no side effects
+    fn caps(&self) -> BackendCaps;                       // text_pane_native, textbuf, graphics_dump, snapshots, host_folder
+    fn plan(&self, spec: &SessionSpec) -> Result<LaunchPlan>; // argv vector, env, control endpoints; no process spawned
+    // textbuf backends additionally implement TextSource: fn read_text(&mut self) -> Result<TextScreen /* 80x25 cells+attrs, cursor */>
+    //                                                     fn send_key(&mut self, KeyEvent) -> Result<()>
+}
+```
+
+- `SessionSpec { c_image, extra_drives, mem_mb, size_cols, size_rows, readonly_media }` is backend-neutral. `LaunchPlan` is either `Pty{argv}` (curses-style: the pane is an ordinary PTY pane) or `Bridge{argv, control}` (textbuf-style: bilterm owns a `TextScreen` -> pane-grid renderer and injects keys via QMP `send-key`/`sendkey`).
+- Conformance suite: one table-driven test module runs every backend against the **mock backend** (offline; prints a canned 80x25 screen, echoes keys, supports snapshot fakes), then the same assertions run against real backends in `#[ignore]` smoke tests. A new backend = one file + one row in the matrix; the host (`launch.rs`, pane code, Actions) does not change.
+- Selection: `detect()` walks the per-OS order from 4.2 using only `probe()` results.
+
+### 4.4 Text-buffer (screendump) renderer -- the no-curses path
+
+Spike result, VERIFIED 2026-11-18: with `-display none` and `-qmp unix:...`, QMP `pmemsave val=0xB8000 size=4000` writes the VGA text buffer; taking every second byte and decoding as CP437 yielded the exact FreeDOS installer screen (box drawing intact), polled via a Python client while keys went in through the monitor command `sendkey`. So a pure-Rust Windows/BSD path needs no curses: poll `pmemsave` (or `pmemread`-style via a temp file; on Windows a named temp file under the private data dir) at ~10-20 Hz when dirty, convert 80x25 (char, attribute) cells to the bilterm grid with the 16-color CGA palette, map cursor from the BIOS data area (0x40:0x50, UNVERIFIED). Cost: polling, no true cursor-shape/blink fidelity. Limits: text modes only (0x3/0x7); in graphics modes the buffer at 0xB8000 is not text, so detect mode (BDA 0x449) and show a "graphics mode" notice. Later (post-v1): QMP `screendump` (PPM/PNG) -> existing Kitty/Sixel path (`src/vt/graphics.rs`) to render graphics modes; caps (64 placements, 512 px) UNVERIFIED for 640x480.
+
+## 4.5 Cargo features
+
+- `dos` (opt-in, off by default; not in `default`, not in release-default builds): compiles `src/dos/` and the Action/RPC/MCP/colon surface. Without it, `bilterm dos ...` and `:dos` print "built without the `dos` feature" and exit non-zero.
+- Sub-features (all imply `dos`): `dos-qemu` (default inside `dos`), `dos-bochs`, `dos-mock` (mock backend; always compiled under `cfg(test)`). Backend sub-features only gate code, never bundle binaries. Download/extract crates (zip, sha2) are pulled in only by `dos`, keeping the default dependency tree unchanged.
+- `scripts/verify.sh` stays on default features; add one extra `cargo check --features dos` stage in D1.
+
 ## 5. Installer / config plumbing
 
 Commands (all behind `src/dos/`, each lowering to an `Action`, section 6):
 
 | Command | Behavior |
 |---|---|
-| `bilterm dos setup [--backend qemu\|bochs] [--yes]` | detect emulator (`doctor`), print licence notice and ask consent, download manifest entries, verify, unpack, create the data dir |
+| `bilterm dos setup [--backend qemu-curses\|qemu-textbuf\|bochs-term] [--yes]` | detect emulator (`doctor`), print licence notice and ask consent, download manifest entries, verify, unpack, create the data dir |
 | `bilterm dos run [--drive-c DIR] [--image FILE] [--name N]` | spawn a DOS pane (or print the argv with `--print-argv`) |
-| `bilterm dos doctor` | emulator found and version, `-display curses` supported (`qemu-system-i386 -display help`), image hashes, free disk, pane size, which backends |
+| `bilterm dos doctor` | on unsupported OSes (or a build without the `dos` feature) prints the matrix row, why, and exits non-zero without touching the network; otherwise: emulator found and version, `-display curses` supported (`qemu-system-i386 -display help`), image hashes, free disk, pane size, which backends |
 | `bilterm dos update` | re-read the pinned manifest shipped with this bilterm, fetch only changed entries |
 | `bilterm dos remove [--all]` | delete downloaded images and per-session disks (confirm) |
 
-- **Data dir**: `<data>/bilterm/dos/` created with `secure_fs::ensure_private_dir` (0700); files via `write_private_file_atomic` (0600); names through `validate_safe_name`. Layout: `images/FD14LIVE.iso`, `downloads/*.part`, `sessions/<name>/disk.img`, `manifest.lock.toml`.
-- **Manifest** `src/dos/manifest.toml`, embedded with `include_str!`: per entry `id, version, url, sha256, bytes, license_note, source_url`. Pinned to FreeDOS 1.4 (sha256 above). Never "latest". An entry is the zip; we verify the zip, then extract only `FD14LIVE.iso` (or chosen member).
+- **Data dir** (all platforms; Windows under `%LOCALAPPDATA%`): `<data>/bilterm/dos/` created with `secure_fs::ensure_private_dir` (0700); files via `write_private_file_atomic` (0600); names through `validate_safe_name`. Layout: `images/FD14LIVE.iso`, `images/FD14BOOT.img`, `downloads/*.part`, `c/<name>.img`, `snapshots/<name>/<tag>.img`, `sessions/<name>/` (scratch), `manifest.lock.toml`.
+- **Manifest** `src/dos/manifest.toml`, embedded with `include_str!`: per entry `id, version, url, sha256, bytes, license_note, source_url`. Pinned to FreeDOS 1.4 (sha256 above); also pins `FD14BOOT.img` member hash, and per-OS emulator archive entries where we offer a portable download (Windows). Never "latest". An entry is the zip; we verify the zip, then extract only `FD14LIVE.iso` (or chosen member).
 - **Download**: HTTPS only (rustls), host allowlist (`download.freedos.org`), size cap = manifest bytes + 1%, resume via HTTP `Range` into `.part` then rename, SHA256 over the final file before it is visible. No network after setup: `run` fails clearly if images are missing rather than fetching.
 - **Archive safety**: extract by explicit member name (not whole-tree unzip); reject absolute paths, `..`, symlinks; cap uncompressed size.
 - **Testable seams** (`designing-testable-seams`): `trait Downloader { fn fetch(&self, url, range) -> Result<Stream> }`, `trait EmulatorProbe` (find binary, run `-version`/`-display help`), `trait Spawner` (build `CommandSpec`, no process in tests). Mock mode `BILTERM_DOS_OFFLINE_FIXTURE=<dir>` makes setup read files from a directory and `run` spawn `cat` or a script that prints a fake 80x25 screen, so headless WM tests (`WindowManager::new_headless`) can assert pane content without QEMU.
 - **Resources**: reuse the P4 limits plan (`docs/plans/session-host-p4-limits.md`): emulator memory `-m 32` default, cap in config, `RLIMIT_AS`/cgroup where P4 provides it, CPU niceness; one emulator per pane, max N panes (default 4).
 - **Safety defaults**: never run as root (refuse if euid 0); `-nic none` (no network), no USB, no host audio, no `-snapshot` write-through to the downloaded ISO (images opened read-only; guest disk is a per-session copy-on-write overlay or `-snapshot`).
 
+### 5.1 Persistent C: image
+
+Decision: `bilterm dos setup` produces a persistent per-user `c.img`; Live Environment stays an optional `--live` mode only.
+
+**Recipe PROVEN by spike D0b (2026-11-18, Linux, no sudo, QEMU 10.2.1, files under /datanapps/dos-spike/d0b)**, no FreeDOS installer UI needed:
+1. `qemu-img create -f raw c.img 128M`
+2. `sfdisk c.img` with `label: dos` / `start=2048, type=6, bootable` (one FAT16 partition at 1 MiB)
+3. `mformat -i c.img@@1048576 -F -t 250 -h 16 -s 63 ::` (mtools formats the partition in place; offset syntax `@@`)
+4. `mcopy -i c.img@@1048576 KERNEL.SYS COMMAND.COM ::/` (both taken from the pinned `FD14LIVE.iso`/BASE content)
+5. `dd if=mbr.bin of=c.img bs=440 count=1 conv=notrunc` (MBR boot code is required: sfdisk writes the table only and SeaBIOS hangs at "Booting from Hard Disk..." without it; the syslinux `mbr.bin` worked; for a no-syslinux path, embed a ~440-byte public-domain MBR or use FreeDOS `FDISK /MBR`)
+6. Boot once from the pinned `FD14BOOT.img` floppy with `c.img` attached (`format=raw` explicitly), wait for the FreeCom prompt, inject `sys c:` + Enter via QMP `sendkey` (screen read via `pmemsave`), see "System transferred."
+7. Boot from `c.img` alone: SeaBIOS -> FreeDOS kernel 2043 banner -> `C: HD1, Pri[1] ... size=127 MB` -> FreeCom 0.86 prompt. **VERIFIED.**
+
+So the only scripted-UI step is the single `sys c:` command; no installer dialog is driven. Installing the full package set (editors, tools) is then `mcopy`/`unzip` of pinned `.zip` packages from the 1.4 BASE/Live ISO into the FAT image (not yet done; UNVERIFIED), plus a generated `FDCONFIG.SYS`/`AUTOEXEC.BAT` (not yet done). Other options kept as fallbacks: FreeDOS installer answer file (UNVERIFIED that one exists), or full keystroke-driven installer via the same QMP driver (more fragile).
+
+Not verified: persistence across a guest write+reboot (expected), FAT32/larger sizes, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this recipe (mtools/sfdisk are Linux tools: in Rust, implement steps 2-5 with a small pure-Rust FAT writer such as the `fatfs` crate plus a hand-built MBR, so Windows needs no mtools; crate choice UNVERIFIED, evaluate in D0c).
+
+- **Location and size**: `<data>/bilterm/dos/c/<name>.img` via `secure_fs::ensure_private_dir` (0700) and atomic 0600 writes (`write_private_file_atomic`: build as `.part`, fsync, rename); `validate_safe_name` on `<name>`. Default 128 MiB raw (sparse), configurable up to a cap (default 2 GiB); sparse-file support checked by `doctor`.
+- **Lifecycle**: `bilterm dos reset [--name N]` (delete and rebuild from the pinned base, confirm), `snapshot [--name N] [--tag T]` (reflink/plain copy to `snapshots/<name>/<tag>.img`, guest must be stopped or use QMP `stop` + copy + `cont`), `restore --tag T`, `snapshot list|rm`. Per-session overlay mode: `-drive ...,snapshot=on` for throwaway runs.
+- **Corruption handling**: single writer (lock file in the dir, `controlling-processes-safely` rules: pid+start-time check); a `.dirty` marker set at run and cleared on clean exit; on a dirty start run a read-only FAT check (`fsck.fat -n` where present, or built-in boot-sector/FAT sanity) and offer restore from the latest snapshot; keep one automatic `pre-run` snapshot rotation (N=2, cap by size).
+
+### 5.2 Windows (in v1 scope)
+
+Requirements, each UNVERIFIED (no Windows machine; the Mac covers only macOS):
+- **Pane bridge**: bilterm already uses `portable-pty` (ConPTY on Windows); a `Pty{argv}` plan with curses output is possible only if the QEMU build has curses. Default Windows path is `Bridge` with `qemu-textbuf` (4.4): QMP over a TCP loopback socket (`-qmp tcp:127.0.0.1:<port>,server=on,wait=off`, bind loopback only, random port) since Unix sockets are awkward from std on older Windows; token-less so restrict by loopback + per-session random port + process ownership.
+- **Emulator install**: detect `qemu-system-i386.exe` on PATH and in `%ProgramFiles%\qemu`; guidance in `dos doctor`: `winget install` (id UNVERIFIED), `choco install qemu` (UNVERIFIED), the Stefan Weil installer, or MSYS2 pacman. `setup` never installs system software silently; with consent it can download the pinned portable archive/installer (SHA256 pinned) and run only extraction into the private data dir.
+- **Downloads without bash**: all fetch/verify/extract is Rust (rustls HTTPS, sha2, zip crate) inside `src/dos/`; no `scripts/*.sh` involvement on Windows. Keyboard: Windows Terminal passes VT input; map to QMP key names.
+- **Paths**: `%LOCALAPPDATA%\bilterm\dos\` via the existing data-dir helper; `secure_fs` 0700/0600 semantics map to NTFS ACL inheritance (check what `secure_fs.rs` already does on Windows before D6; UNVERIFIED).
+- **Image build** without mtools/sfdisk: the pure-Rust writer from 5.1.
+- Windows ARM64 and 32-bit: ARM64 best-effort (x64 emulation), 32-bit unsupported (QEMU states it).
+- Validation plan: CI-free; manual run on a Windows host owned by the owner or a VM (D6 exit criterion). Until then Windows is labelled "supported, unverified" in `--help`/docs.
+
 ## 6. Uniform surface (every capability, every surface)
 
 Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action` and runs through `WindowManager::apply` (`src/colon_command/execute_wm.rs`).
 
-- New actions: `Action::DosRun{name, drive_c, image, backend}`, `DosSetup{..}`, `DosDoctor`, `DosRemove{..}`, `DosStatus`. `DosSetup` is long-running, so it is an async job whose progress is a status line plus RPC events, not a blocking `apply`.
+- New actions: `Action::DosRun{name, drive_c, image, backend}`, `DosSetup{..}`, `DosDoctor`, `DosRemove{..}`, `DosStatus`, `DosReset`, `DosSnapshot`, `DosRestore`. `DosSetup` is long-running, so it is an async job whose progress is a status line plus RPC events, not a blocking `apply`.
 - Parity matrix (all UNVERIFIED until D3 builds them):
 
 | Capability | Colon | CLI | RPC `ctl` | MCP | Key |
@@ -142,6 +242,7 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 | doctor | `:dos doctor` | `bilterm dos doctor` | `dos.doctor` | `dos_doctor` | n/a |
 | remove | `:dos remove` | `bilterm dos remove` | `dos.remove` | `dos_remove` | n/a |
 | status | `:dos status` | `bilterm dos status` | `dos.status` | `dos_status` | status bar |
+| reset/snapshot/restore | `:dos reset\|snapshot\|restore` | `bilterm dos reset\|snapshot\|restore` | `dos.reset`, `dos.snapshot`, `dos.restore` | `dos_reset`, `dos_snapshot`, `dos_restore` | n/a |
 | type into DOS | n/a | `ctl pane.send_keys` | existing `pane.send_keys` | existing | pane focus |
 
 - CLI-only commands run without a WM (setup/doctor/remove touch only the data dir) but call the same `src/dos/` core functions the Action handlers call; no logic in thin wrappers.
@@ -165,6 +266,10 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 - Process: no root, no network (`-nic none`), no USB passthrough, argv built as a vector (no shell), data dir 0700, `0600` files, environment scrubbed except `TERM`/`LANG`.
 - Guest is untrusted: emulator escapes are the emulator's problem, so require users to keep it updated via their package manager, and `doctor` warns on old versions (min version table in manifest).
 - Resource limits: reuse P4 memory/CPU caps; the guest screen is bounded by 80x25 text, so existing VT limits apply. Host-folder mount is explicit opt-in; reject `/`, `$HOME`, and `..` mounts without `--force`.
+- Persistence: images are untrusted input on reload (a shared/imported or corrupted `c.img` is guest-controlled data): never mount it on the host except via our bounded FAT reader; validate size against the cap and MBR signature; snapshots/restore use `validate_safe_name` and stay inside the private dir (no symlink following).
+- QMP/control endpoints: Unix socket under the 0700 dir (0600), or on Windows a loopback-only random port; closed when the session ends; no monitor on stdio; never exposed over bilterm RPC beyond the fixed key/text/snapshot verbs.
+- Windows: no shell invocation, argv vectors only; installer launches (winget/choco/msi) only on explicit per-run consent and never elevated by bilterm.
+- Backend probing runs `<emulator> -version`/`-display help` only; output is parsed with length caps.
 - Untrusted text from the guest passes through the normal `VtParser` (OSC 52 and graphics caps already bounded).
 
 ## 9. Testing plan
@@ -172,34 +277,49 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 - **Unit** (no network, no emulator): manifest parse and schema; hash verification (good, bad, truncated); resume logic with a mock `Downloader`; zip member extraction with traversal and symlink fixtures; argv builder snapshot tests (`insta`) for each backend; `doctor` against a fake probe; refusal as root; path validation.
 - **Headless WM**: `WindowManager::new_headless` + offline-fixture spawner printing a canned 80x25 screen; assert grid text, `pane.read`, `send_keys` echo, Action/colon/RPC parity (a table-driven test that every row of section 6 exists).
 - **Ignored real smoke** (`#[ignore]`, `BILTERM_DOS_SMOKE=1`): requires installed QEMU and cached floppy edition; boots, waits for "FreeCom" in the grid, sends a command, asserts echo. Mirrors the D0 spike. Never in `scripts/verify.sh` by default.
+- **Backend conformance**: one suite runs against the `mock` backend always, and each real backend under `#[ignore]` + `BILTERM_DOS_SMOKE=1`; includes the text-buffer decoder (golden 4000-byte VGA fixtures from the D0b spike, CP437 and attribute mapping, graphics-mode detection) and QMP framing fuzz/limits.
+- **Persistent image**: build recipe test with the pure-Rust writer (FAT/MBR structure assertions, no emulator), plus ignored smoke that boots the built `c.img` to the FreeCom prompt; snapshot/restore/reset round-trips; dirty-marker and corruption fixtures; lock contention.
+- **Per-OS**: matrix table test for `detect()` ordering using fake `HostEnv` per OS; `doctor` output snapshots for unsupported OS; Windows path/ACL tests run on the Windows host manually (D6) and through `cfg(windows)` unit tests.
+- **Feature flag**: `cargo check` with and without `--features dos`; default build must not reference `src/dos`.
 - Local CI only (owner preference); no hosted-CI downloads of 24-300 MB images.
 
 ## 10. PR breakdown
 
 | PR | Scope | Exit criteria |
 |---|---|---|
-| D0 | Spike script `scripts/dos-spike.sh` (not wired into the build): QEMU curses boot, key injection; add Bochs `term` and dosemu2 `-t` runs; record results in this doc. Already done for QEMU on Linux (4.1). Remaining: Bochs, dosemu2, macOS (`ssh bill@bigmac.local`), Windows ARM64 | Results table filled; backend choice confirmed |
-| D1 | `src/dos/{manifest,download,verify,paths}.rs`, `manifest.toml`, mock downloader, `bilterm dos setup/remove/doctor` (CLI) | unit tests pass; real setup verified manually on Linux |
-| D2 | `src/dos/launch.rs`, `bilterm dos run`, DOS pane spawn through `WindowManager::apply`, min-size check, `-nic none` defaults | headless fixture test + ignored real smoke |
+| D0 | Spike script (not wired in): QEMU curses boot and key injection. DONE for Linux (4.1) and macOS `-display help` (4.2) | results in this doc |
+| D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; remaining: add packages + AUTOEXEC, reboot-persistence check, run on macOS over ssh (throwaway worktree under ~/worktrees) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
+| D0c | Pure-Rust image builder spike (`fatfs` or equivalent + embedded MBR) producing the same image; Bochs `term` and QEMU textbuf poll runs | image boots; Windows-viable (no mtools); crate decision recorded |
+| D1 | `dos` feature flag, `src/dos/{manifest,download,verify,paths}.rs`, `manifest.toml`, mock downloader, `bilterm dos setup/remove/doctor` (CLI) | unit tests; `cargo check --features dos`; real setup on Linux |
+| D1b | `DosBackend` trait, `HostEnv`, per-OS `detect()`, mock backend, conformance suite | suite green on mock |
+| D1c | Persistent image: builder, `reset/snapshot/restore`, lock, dirty marker, corruption path | image tests green; ignored smoke boots |
+| D2a | `qemu-curses` backend + `dos run` + pane spawn via `WindowManager::apply`, min size, `-nic none` | headless fixture + ignored smoke (Linux, macOS) |
+| D2b | `qemu-textbuf` backend: QMP client, text decoder, `Bridge` pane source, graphics-mode notice | golden-fixture tests; smoke on Linux |
+| D2c | `bochs-term` backend (Linux/BSD; optional) | smoke or documented skip |
+| D2d | BSD best-effort: FreeBSD/OpenBSD detection rows, doctor messages; manual run on a BSD VM if available | matrix rows verified or marked unverified |
 | D3 | `Action::Dos*`, `:dos ...`, RPC `dos.*`, MCP tools, status line, parity table test | parity test green, `ctl` e2e |
-| D4 | Fun features (7.1 to 7.8), each its own sub-PR | per-feature tests |
-| D5 | docs: `docs/DEVELOPER_AND_AGENT_GUIDE.md` section, `AGENTS.md` pointer, third-party notices page, `--help` text | `keeping-docs-in-sync` check |
+| D6 | **Windows**: ConPTY/Bridge wiring, loopback QMP, installer guidance and consented portable download, path/ACL handling, pure-Rust builder in use, no-bash setup | manual run on a Windows host; until then labelled unverified |
+| D4 | Fun features (7.1 to 7.8); graphics via `screendump` -> image protocols is a post-v1 item here | per-feature tests |
+| D5 | docs: `docs/DEVELOPER_AND_AGENT_GUIDE.md`, `AGENTS.md` pointer, third-party notices, `--help` text, matrix | `keeping-docs-in-sync` check |
 
-## 11. Open questions for the owner
+Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6 -> D2c/D2d, D4, D5.
 
-1. Primary backend: QEMU (verified, GPL, heavy ~ tens of MB package) vs Bochs (LGPL, light, owner's suggestion, text bridge unverified). Accept QEMU-first with Bochs as `--backend`?
-2. Is the Live Environment (no install, RAM-based) enough, or should `setup` also drive the FreeDOS installer to a persistent C: image (needs unattended install research, UNVERIFIED)?
-3. Windows scope: ship DOS mode on Windows at all in v1, given curses displays there are unverified?
-4. Are graphics-mode programs in scope (window hand-off to DOSBox-X, or Sixel/Kitty screendump), or text-only for v1?
-5. Do you want a counsel review before any bundled artifact is ever considered (current recommendation: never bundle)?
-6. Should the feature be a Cargo feature (`dos`), default-on or off, to keep `bilterm` lean?
-7. Branding: ok to call it "DOS mode" and say "runs FreeDOS" (nominative use of Jim Hall's trademark)?
+## 11. Open questions (remaining)
 
-## Sources (fetched 2026-11-17)
+1. Windows validation: is there a Windows machine/VM the owner can lend for D6, and is "supported, unverified" acceptable for the first release if not?
+2. Disk image defaults: 128 MiB, cap 2 GiB, sparse raw: OK? Should `setup` install the full FreeDOS package set (larger image) or BASE only?
+3. macOS Intel and Windows ARM64 targets: best-effort only, or drop?
+4. Pure-Rust FAT writer (`fatfs`-style dependency under the `dos` feature only) vs shelling out to mtools on Unix: accept the extra optional dependency?
+5. Emulator minimum versions in the manifest (security floor): choose after D0b, e.g. QEMU >= 10.0?
+
+## Sources (fetched 2026-11-17 and 2026-11-18)
 
 - https://www.freedos.org/download/ , https://www.freedos.org/about/ , https://freedos.org/download/announce.html
 - https://download.freedos.org/1.4/verify.txt , https://download.freedos.org/1.4/readme.txt (inside zips)
-- https://bochs.sourceforge.io/doc/docbook/user/bochsrc.html , https://raw.githubusercontent.com/bochs-emu/Bochs/master/bochs/LICENSE
+- https://bochs.sourceforge.io/doc/docbook/user/bochsrc.html , https://bochs.sourceforge.io/doc/docbook/user/compiling.html , https://raw.githubusercontent.com/bochs-emu/Bochs/master/bochs/LICENSE
 - https://raw.githubusercontent.com/dosbox-staging/dosbox-staging/main/LICENSE
+- https://www.qemu.org/download/ , https://gitlab.com/qemu-project/qemu/-/raw/master/meson.build , https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html , https://formulae.brew.sh/api/formula/qemu.json
+- https://www.freshports.org/emulators/qemu/ , https://openports.pl/path/emulators/qemu
 - GitHub API repo metadata for dosbox-x, dosbox-staging, dosemu2, 86Box, v86, qemu, Bochs; `brew info` for bochs, qemu, dosbox-x, dosbox-staging
 - https://sunsite2.icm.edu.pl/packages/freedos/distributions/1.1/errata.txt , SeaBIOS licensing threads at mail.coreboot.org (search results only)
+- First-hand: D0 and D0b spikes (Linux QEMU 10.2.1), macOS `qemu-system-i386 -display help` on bigmac.local (QEMU 11.1.3)
