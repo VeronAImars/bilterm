@@ -57,3 +57,7 @@ impl HostView<'_> {
         HostFrames { layout, panes }
     }
 }
+
+#[cfg(test)]
+#[path = "host_view_tests.rs"]
+mod host_view_tests;

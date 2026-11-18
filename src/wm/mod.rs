@@ -19,8 +19,6 @@ pub mod agents_geometry;
 pub mod agents_list_geometry;
 mod host_mode;
 pub mod host_view;
-#[cfg(test)]
-mod host_view_tests;
 mod attach_resize;
 pub mod command_window;
 pub mod context_bus;
