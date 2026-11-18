@@ -79,6 +79,7 @@ async fn real_main() -> color_eyre::Result<()> {
                bilterm new [SESSION] / bilterm -n [SESSION]\n  \
                bilterm blank [SESSION] / bilterm -B\n  \
                bilterm attach [SESSION] / bilterm -a [SESSION]\n  \
+               bilterm attach <HOST|SOCKET> [--ro]   (TUI client of a session host started with --headless --host-ptys --attach; detach: Ctrl-] d)\n  \
                bilterm ls / bilterm sessions\n  \
                bilterm daemon list|start [NAME] [--restart never|on-crash]|stop [NAME] [--force]|status [NAME]   (manage named background daemons)\n  \
                bilterm run <PLAYBOOK.toml>\n  \
@@ -171,6 +172,15 @@ async fn real_main() -> color_eyre::Result<()> {
     if let Err(msg) = bilterm::cli::leading_opts::normalize_leading_options(&mut args) {
         eprintln!("{msg}");
         std::process::exit(2);
+    }
+    // `bilterm attach <host|socket> [--ro]` / `attach-host`: TUI client of a session host's attach
+    // socket (T-A7). Plain `bilterm attach [SESSION]` keeps its layout re-attach meaning below.
+    if bilterm::attach::client::is_host_attach(&args)
+        || (args.first().map(String::as_str) == Some("attach")
+            && bilterm::daemon::supervisor::resolve_runtime_dir()
+                .is_ok_and(|d| bilterm::attach::client::is_host_attach_in(&args, &d)))
+    {
+        std::process::exit(bilterm::attach::client::run_cli(&args[1..]).await);
     }
     // Client commands may target one named daemon (`--daemon-name NAME` / `BILTERM_DAEMON`).
     let is_client_cmd = args.first().is_some_and(|a| a == "ctl" || a == "daemon")

@@ -4,6 +4,7 @@
 //! socket, accept loop), `conn` (handshake + control loop), `registry`, `handshake`, `host`
 //! (wiring). No screen data yet; later tasks (T-A3..T-A7) build on these.
 
+pub mod client;
 pub mod conn;
 pub mod frame;
 pub mod handshake;
