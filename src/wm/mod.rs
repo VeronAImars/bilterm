@@ -20,6 +20,8 @@ pub mod agents_list_geometry;
 mod host_mode;
 pub mod host_view;
 mod attach_resize;
+mod wm_accessors;
+mod wm_toggles;
 pub mod command_window;
 pub mod context_bus;
 pub mod context_queue_ops;
@@ -113,11 +115,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
 
-use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde::{Deserialize, Serialize};
 
-use crate::action::{Action, KeysOp};
+use crate::action::Action;
 use crate::colon_command::execute_wm_colon_command;
 use crate::config::BiltermConfig;
 use crate::error::Result;
@@ -471,149 +472,6 @@ impl WindowManager {
         res.map_err(|e| e.to_string())
     }
 
-    /// Marks subsequent actions as API-originated (used while `pane.send_keys` drives the prompt).
-    pub fn set_api_origin(&mut self, on: bool) {
-        self.api_origin = on;
-    }
-
-    /// Stores the structured JSON payload of the last query command.
-    pub fn set_command_data(&mut self, s: String) {
-        self.command_data = Some(s);
-    }
-
-    /// Takes the structured JSON payload of the last query command, if any.
-    pub fn take_command_data(&mut self) -> Option<String> {
-        self.command_data.take()
-    }
-
-    /// Why `action` must be refused for an API-originated caller (config write gate, `[api]`).
-    /// Returns `None` when the action is allowed. Local (non-API) callers are never gated.
-    pub fn config_write_denied(&self, action: &Action) -> Option<String> {
-        // Phase 63: key-profile switches and keyboard-mode changes are mutations too (`keys.profile`,
-        // `keys.window_mode`, `menu.open` RPC and the same colon forms over `wm.command`).
-        if matches!(action, Action::Keys(KeysOp::Profile(Some(_))) | Action::WindowMode(_) | Action::MenuOpen { .. }) {
-            return (!self.config.api.allow_config_write)
-                .then(|| "key and mode changes over the API are disabled; set [api] allow_config_write = true in config.toml".to_string());
-        }
-        let writes = matches!(action, Action::ConfigSet(..) | Action::ConfigSave | Action::AppearanceSave);
-        if !writes {
-            return None;
-        }
-        if let Action::ConfigSet(key, _) = action
-            && (key.trim() == "api" || key.trim().starts_with("api."))
-        {
-            return Some("the [api] section cannot be changed over the API".to_string());
-        }
-        if !self.config.api.allow_config_write {
-            return Some("config writes over the API are disabled; set [api] allow_config_write = true in config.toml".to_string());
-        }
-        None
-    }
-
-    /// `true` while an API-originated action is executing.
-    pub fn is_api_origin(&self) -> bool {
-        self.api_origin
-    }
-
-    /// Directory the running automation action is confined to, if any.
-    pub fn automation_confine_dir(&self) -> Option<&Path> {
-        self.automation_confine_dir.as_deref()
-    }
-
-    /// Records the first error of the running automation action (surfaced by [`Self::apply_automation`]).
-    pub fn record_automation_error(&mut self, err: String) {
-        self.automation_error.get_or_insert(err);
-    }
-
-    /// Swarm / Mission Control HUD / replay engine state (UNI-R01, Phases 69/70).
-    pub fn swarm_surface(&self) -> &swarm_surface::SwarmSurface {
-        &self.swarm_surface
-    }
-
-    /// Mutable swarm / HUD / replay engine state.
-    pub fn swarm_surface_mut(&mut self) -> &mut swarm_surface::SwarmSurface {
-        &mut self.swarm_surface
-    }
-
-    /// Context bus handle (cheap clone shares the store).
-    pub fn context_bus(&self) -> &context_bus::ContextBus {
-        &self.context_bus
-    }
-
-    /// Context bus handle (interior-mutable; same store as [`Self::context_bus`]).
-    pub fn context_bus_mut(&mut self) -> &mut context_bus::ContextBus {
-        &mut self.context_bus
-    }
-
-    /// Per-pane prompt queues.
-    pub fn prompt_queue(&self) -> &prompt_queue::PromptQueue {
-        &self.prompt_queue
-    }
-
-    /// Mutable per-pane prompt queues.
-    pub fn prompt_queue_mut(&mut self) -> &mut prompt_queue::PromptQueue {
-        &mut self.prompt_queue
-    }
-
-    /// Agent-to-agent messaging registry (`AGT-01..03`, Phase 52).
-    pub fn agent_mail(&self) -> &agent_mail::AgentMailRegistry {
-        &self.agent_mail
-    }
-
-    /// Mutable agent-to-agent messaging registry (`AGT-01..03`, Phase 52).
-    pub fn agent_mail_mut(&mut self) -> &mut agent_mail::AgentMailRegistry {
-        &mut self.agent_mail
-    }
-
-    /// Sets whether agent messaging is permitted (`[api] allow_agent_messaging` / `:agent enable`).
-    pub fn set_agent_messaging_enabled(&mut self, enabled: bool) {
-        self.agent_mail.set_enabled(enabled);
-        self.config.api.allow_agent_messaging = enabled;
-    }
-
-    /// Returns `true` if agent messaging is currently permitted.
-    pub fn is_agent_messaging_enabled(&self) -> bool {
-        self.agent_mail.is_enabled()
-    }
-
-    /// Returns `true` if whole-workspace `.cast` compositor frame recording is active.
-    pub fn is_workspace_recording(&self) -> bool {
-        self.workspace_recorder
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
-    }
-
-    /// Returns `true` if an active whole-workspace `.cast` recorder has captured at least one rendered frame.
-    pub fn has_recorded_workspace_frames(&self) -> bool {
-        self.workspace_recorder
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|r| r.frame_count() > 0))
-            .unwrap_or(false)
-    }
-
-    /// Captures a rendered workspace `Buffer` frame into the active `WorkspaceRecorder` (`REC-02`).
-    pub fn record_workspace_frame(&self, buf: &Buffer) {
-        if let Ok(mut guard) = self.workspace_recorder.lock()
-            && let Some(recorder) = guard.as_mut()
-        {
-            recorder.capture_buffer(buf);
-        }
-    }
-
-    /// Stops whole-workspace `.cast` recording and writes the `.cast` file to disk (`REC-02`).
-    pub fn stop_workspace_recording(&mut self) -> std::io::Result<Option<PathBuf>> {
-        let recorder_opt = self
-            .workspace_recorder
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take());
-        match recorder_opt {
-            Some(rec) => rec.stop().map(Some),
-            None => Ok(None),
-        }
-    }
 
     pub fn pane_count(&self) -> usize { self.panes.len() }
     pub fn pane(&self, id: PaneId) -> Option<&CompositePane> { self.panes.get(&id) }
@@ -739,70 +597,6 @@ impl WindowManager {
         &mut self.scrollback
     }
 
-    /// Toggles the `<F1>` interactive Help Modal.
-    pub fn toggle_help(&mut self) {
-        if matches!(self.modal, Modal::Help { .. }) {
-            self.modal = Modal::None;
-        } else {
-            self.modal = Modal::Help { scroll: 0 };
-        }
-    }
-
-    /// Toggles the `:version` details window.
-    pub fn toggle_version_info(&mut self) {
-        self.modal = if matches!(self.modal, Modal::Version { .. }) { Modal::None } else { Modal::Version { scroll: 0 } };
-    }
-
-    pub fn is_version_info_visible(&self) -> bool {
-        matches!(self.modal, Modal::Version { .. })
-    }
-
-    pub fn version_info_scroll(&self) -> usize {
-        match self.modal {
-            Modal::Version { scroll } => scroll,
-            _ => 0,
-        }
-    }
-
-    /// Toggles the `<F9>` / `:inspector` Live 3270 Terminal Inspector modal (`BEL-01`).
-    pub fn toggle_inspector(&mut self) {
-        let next = !self.is_inspector_visible();
-        self.set_inspector_visible(next);
-    }
-
-    /// Toggles the top 1-row Borland Turbo Vision Menu Bar (`:menubar`, `ECO-03`).
-    pub fn toggle_menubar(&mut self) {
-        self.config.show_top_menubar = !self.config.show_top_menubar;
-        if !self.config.show_top_menubar && matches!(self.modal, Modal::Menubar { .. }) {
-            self.modal = Modal::None;
-        }
-        self.reflow_default_viewport();
-    }
-
-    /// Sets or toggles Synchronized Multi-Pane Input Broadcast (`:broadcast`, `ECO-04`).
-    pub fn set_broadcast_input(&mut self, enabled: bool) {
-        self.broadcast_input = enabled;
-        self.active_pane_mut().set_status_message(Some(format!(
-            "Multi-Pane Input Broadcast: {}",
-            if enabled { "ON (📡 BCAST)" } else { "OFF" }
-        )));
-    }
-
-    /// Toggles the interactive Fuzzy Command Palette modal (`Ctrl+P` / `Alt+Space` / `:palette`, `v0.6.0`).
-    pub fn toggle_palette(&mut self) {
-        if self.command_window.pinned && self.command_window.active {
-            self.command_window.focused = true;
-            return;
-        }
-        if matches!(self.modal, Modal::Palette { .. }) {
-            self.modal = Modal::None;
-        } else {
-            self.modal = Modal::Palette {
-                query: String::new(),
-                selected: 0,
-            };
-        }
-    }
 
     pub fn new_headless(rows: u16, cols: u16) -> Self {
         let pane = CompositePane::new_headless(1, rows, cols);
