@@ -231,8 +231,8 @@ So the only scripted-UI step is the single `sys c:` command; no installer dialog
 | Set | Zips | Zip | Uncompressed (with SOURCE) | Files on disk | On-disk used |
 |---|---|---|---|---|---|
 | BASE (57) | 12.6 MB | 12.3 MiB | 18.9 MB | 1002 | ~13.4 MiB (image 13756 KiB) |
-| FULL = base+apps+archiver+drivers+net+tools+unix (152) | 114 MB | ~108 MiB | ~164 MB | 4260 | ~97 MiB (99200 KiB) |
-| ALL = FULL+games+sound (191) | 259 MB | ~247 MiB | ~395 MB | 5667 | ~259 MiB (265064 KiB) |
+| FULL = base+apps+archiver+drivers+net+tools+unix (152) | 117 MB | 112 MiB | ~164 MB | 4260 | ~97 MiB (99200 KiB) |
+| ALL = FULL+games+sound (191) | 266 MB | 254 MiB | ~395 MB | 5667 | ~259 MiB (265064 KiB) |
 
   Live ISO is 316 MB (games 114 MB and sound 31 MB zipped dominate; net 67 MB).
 - **Decision for `setup --full`**: image **256 MiB** (FAT16, ~2.6x headroom over ~97 MiB used; 512 MiB measured working too), package set `base apps archiver drivers net tools unix` (no games/sound; those are opt-in `--games`). BASE-only default stays 128 MiB (13 MiB used). Max stays 2 GiB (FAT16 limit, UNVERIFIED above 1 GiB).
