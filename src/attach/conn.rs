@@ -1,11 +1,11 @@
 //! One attach connection: bounded handshake (`Hello` -> `HelloOk`/`Refuse`) then a small control
-//! loop (`Attach`, `Detach`, `Ping`). No screen data, input or resize yet (T-A4/A5/A6, T-A3).
+//! loop (`Attach`, `Detach`, `Ping`, and from T-A5 `Input`/`Act` for `rw` clients). No screen data or resize yet (T-A4/A6, T-A3).
 //! Generic over the stream so tests drive it with in-memory duplex pipes. Never panics on bad
 //! peers: every failure becomes a best-effort `Error`/`Refuse`/`Bye` and a close.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::watch;
@@ -13,9 +13,14 @@ use tokio::time::timeout;
 
 use super::frame::{Direction, Frame, FrameError, FrameReader, HANDSHAKE_MAX_PAYLOAD};
 use super::handshake::{negotiate, HOST_PROTO_MAX, HOST_PROTO_MIN};
-use super::limits::{HANDSHAKE_MAX_BYTES, HANDSHAKE_TIMEOUT, MAX_MISSED_PINGS, PING_INTERVAL};
-use super::msg::{ByeReason, ClientMsg, ErrorCode, HostMsg, MsgError};
+use super::input::{decode_input_b64, HostRequest, InputError, RequestSink, TokenBucket};
+use super::limits::{
+    HANDSHAKE_MAX_BYTES, HANDSHAKE_TIMEOUT, INPUT_BURST_BYTES, INPUT_RATE_BYTES_PER_SEC, MAX_ACT_PER_SEC,
+    MAX_MISSED_PINGS, PING_INTERVAL,
+};
+use super::msg::{ByeReason, ClientMsg, ErrorCode, HostMsg, MsgError, Role};
 use super::registry::ClientSlot;
+use crate::colon_command::parse_colon_command;
 
 /// Consecutive recoverable protocol errors tolerated before the connection is dropped.
 pub const MAX_CONSECUTIVE_ERRORS: u32 = 16;
@@ -29,6 +34,8 @@ pub struct HostInfo {
     pub pid: u32,
     pub version: String,
     pub caps: Vec<String>,
+    /// Bounded queue into the control plane for accepted `Input`/`Act`; `None` = not supported.
+    pub requests: Option<RequestSink>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -36,6 +43,11 @@ pub struct ConnConfig {
     pub handshake_timeout: Duration,
     pub idle_timeout: Duration,
     pub write_timeout: Duration,
+    /// Sustained `Input` bytes per second (decoded) and burst size.
+    pub input_rate: usize,
+    pub input_burst: usize,
+    /// Sustained `Act` messages per second (burst equals one second's worth).
+    pub act_per_sec: u32,
 }
 
 impl Default for ConnConfig {
@@ -44,6 +56,9 @@ impl Default for ConnConfig {
             handshake_timeout: HANDSHAKE_TIMEOUT,
             idle_timeout: PING_INTERVAL * MAX_MISSED_PINGS,
             write_timeout: Duration::from_secs(5),
+            input_rate: INPUT_RATE_BYTES_PER_SEC,
+            input_burst: INPUT_BURST_BYTES,
+            act_per_sec: MAX_ACT_PER_SEC,
         }
     }
 }
@@ -131,7 +146,7 @@ where
     // Hello accepted: widen the cap for later headers; buffered/queued bytes are kept so a
     // pipelined follow-up frame is not lost.
     io.reader.set_max_payload(Direction::ClientToHost.max_payload());
-    let end = control_loop(&mut io, &slot, &mut shutdown).await;
+    let end = control_loop(&mut io, &slot, &host, &mut shutdown).await;
     if matches!(end, ConnEnd::Idle) {
         io.send(&HostMsg::Bye { reason: ByeReason::IdleTimeout }).await;
     }
@@ -206,9 +221,14 @@ async fn refuse_frame_error<S: AsyncRead + AsyncWrite + Unpin>(io: &mut Io<S>, e
 async fn control_loop<S: AsyncRead + AsyncWrite + Unpin>(
     io: &mut Io<S>,
     slot: &ClientSlot,
+    host: &HostInfo,
     shutdown: &mut watch::Receiver<bool>,
 ) -> ConnEnd {
     let mut errors = 0u32;
+    let mut limits = Limits {
+        input: TokenBucket::new(io.cfg.input_rate, io.cfg.input_burst),
+        act: TokenBucket::new(io.cfg.act_per_sec as usize, io.cfg.act_per_sec as usize),
+    };
     loop {
         let frame = tokio::select! {
             biased;
@@ -224,7 +244,7 @@ async fn control_loop<S: AsyncRead + AsyncWrite + Unpin>(
             },
         };
         match ClientMsg::decode(&frame) {
-            Ok(msg) => match handle(io, slot, msg).await {
+            Ok(msg) => match handle(io, slot, host, &mut limits, msg).await {
                 Step::Continue => errors = 0,
                 Step::Soft(code, text) => {
                     errors += 1;
@@ -248,13 +268,25 @@ async fn control_loop<S: AsyncRead + AsyncWrite + Unpin>(
     }
 }
 
+/// Per-connection rate limiters.
+struct Limits {
+    input: TokenBucket,
+    act: TokenBucket,
+}
+
 enum Step {
     Continue,
     Soft(ErrorCode, &'static str),
     End(ConnEnd),
 }
 
-async fn handle<S: AsyncRead + AsyncWrite + Unpin>(io: &mut Io<S>, slot: &ClientSlot, msg: ClientMsg) -> Step {
+async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
+    io: &mut Io<S>,
+    slot: &ClientSlot,
+    host: &HostInfo,
+    limits: &mut Limits,
+    msg: ClientMsg,
+) -> Step {
     match msg {
         ClientMsg::Hello { .. } => Step::Soft(ErrorCode::BadRequest, "already greeted"),
         ClientMsg::Attach { session, role, cols, rows, .. } => {
@@ -271,8 +303,58 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(io: &mut Io<S>, slot: &Client
         }
         // Flow control and clipboard replies have no state to touch until T-A6 / P3.
         ClientMsg::Ack { .. } | ClientMsg::ClipboardReply { .. } => Step::Continue,
-        ClientMsg::Input { .. } | ClientMsg::Act { .. } | ClientMsg::Resize { .. } => {
-            Step::Soft(ErrorCode::UnknownMessage, "not supported by this host build yet")
+        ClientMsg::Input { pane, data_b64 } => {
+            let Some(sink) = &host.requests else { return unsupported() };
+            if let Err(step) = require_rw(slot) {
+                return step;
+            }
+            let bytes = match decode_input_b64(&data_b64) {
+                Ok(b) => b,
+                Err(InputError::TooLarge) => return Step::Soft(ErrorCode::LimitExceeded, "input too large"),
+                Err(_) => return Step::Soft(ErrorCode::BadRequest, "invalid input payload"),
+            };
+            if !limits.input.try_take(bytes.len(), Instant::now()) {
+                return Step::Soft(ErrorCode::RateLimited, "input rate limit exceeded");
+            }
+            enqueue(sink, HostRequest::PaneInput { client: slot.id(), pane, bytes })
         }
+        ClientMsg::Act { cmd } => {
+            let Some(sink) = &host.requests else { return unsupported() };
+            if let Err(step) = require_rw(slot) {
+                return step;
+            }
+            if !limits.act.try_take(1, Instant::now()) {
+                return Step::Soft(ErrorCode::RateLimited, "act rate limit exceeded");
+            }
+            // Same parser as the keyboard `:` prompt and `wm.command`; typed Actions are never on the wire.
+            let text = if cmd.trim_start().starts_with(':') { cmd.trim().to_string() } else { format!(":{}", cmd.trim()) };
+            match parse_colon_command(&text) {
+                Some(Ok(action)) => enqueue(sink, HostRequest::Act { client: slot.id(), action }),
+                _ => Step::Soft(ErrorCode::BadRequest, "not a valid colon command"),
+            }
+        }
+        ClientMsg::Resize { .. } => unsupported(),
+    }
+}
+
+fn unsupported() -> Step {
+    Step::Soft(ErrorCode::UnknownMessage, "not supported by this host build yet")
+}
+
+/// Input and `Act` need a completed `Attach` with the `rw` role; `ro` observers are refused.
+fn require_rw(slot: &ClientSlot) -> Result<(), Step> {
+    match slot.registry().lock().role_of(slot.id()) {
+        Some(Role::Rw) => Ok(()),
+        Some(Role::Ro) => Err(Step::Soft(ErrorCode::ReadOnly, "read-only client")),
+        None => Err(Step::Soft(ErrorCode::BadRequest, "attach first")),
+    }
+}
+
+/// Never awaits the plane: a full queue is back-pressure on this client, not a stall.
+fn enqueue(sink: &RequestSink, req: HostRequest) -> Step {
+    match sink.try_send(req) {
+        Ok(()) => Step::Continue,
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => Step::Soft(ErrorCode::RateLimited, "host busy"),
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => Step::End(ConnEnd::HostShutdown),
     }
 }

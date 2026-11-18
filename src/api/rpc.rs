@@ -155,6 +155,8 @@ pub struct AutomationControlPlane {
     pub output_hub: super::output_ring::OutputHub,
     /// Session-host persistence target and last written state (`host_tick`); `None` unless hosting.
     pub(super) host_persist: Option<super::host_tick::HostPersist>,
+    /// Validated attach-client requests awaiting `host_tick` (`T-A5`); `None` without `--attach`.
+    pub(super) attach_requests: Option<tokio::sync::mpsc::Receiver<crate::attach::input::HostRequest>>,
 }
 
 /// Execution policy determining whether snapshot exports are confined to the designated snapshot dir.
@@ -204,6 +206,7 @@ impl AutomationControlPlane {
             snapshot_dir: None,
             output_hub: super::output_ring::OutputHub::new(),
             host_persist: None,
+            attach_requests: None,
         }
     }
 
