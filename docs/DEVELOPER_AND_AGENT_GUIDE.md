@@ -135,6 +135,7 @@ src/
 │   ├── link_cmd.rs             # RemoteLinkOp vocabulary for :ssh-tmux sub-verbs (Phase 51.1)
 │   └── tests.rs                # Unit tests for WindowManager & ZStack
 ├── attach/                     # Session-host attach (P2): T-A1 wire layer + T-A2 listener (`--headless --host-ptys --attach`)
+│   └── client/                 # T-A7 `bilterm attach <host|socket> [--ro]` TUI client (link, state, keys, outbox, ui, tui); detach Ctrl-] d, panes Ctrl-] n/p; exit codes 0 detach,1 io,2 usage,3 refused,4 kicked,5 protocol,6 host shutdown
 │   ├── limits.rs               # Every attach cap (frame 4 MiB/64 KiB, 500x200, 8 KiB input, ...)
 │   ├── frame.rs                # BTHS header (version, msg_type, flags, len), bounded decode_one/FrameReader
 │   ├── msg.rs                  # ClientMsg/HostMsg JSON payloads + field validation
