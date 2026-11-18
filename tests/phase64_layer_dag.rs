@@ -140,6 +140,8 @@ pub const BOUNDARY_EXEMPT: &[(&str, &str)] = &[
     ("src/daemon/process.rs", "connect-only liveness probe of the daemon socket; no bytes are exchanged and the stream is dropped (64-02 Task 0 audit)"),
     ("src/swarm/heal.rs", "self-heal verify_cmd child process in a worktree, not terminal traffic"),    ("src/attach/listener.rs", "T-A2 accept loop: handshake/control frames only, no terminal bytes yet; traffic attribution (TrafficEndpoint::Attach) lands with T-A5/T-A6"),
     ("src/attach/conn.rs", "T-A2 per-connection handshake/control frames only, no terminal bytes yet; tapped with T-A5/T-A6"),
+    ("src/attach/client/link.rs", "T-A7 attach client socket framing; host-side traffic attribution lives in the host path"),
+    ("src/attach/client/tui.rs", "T-A7 attach client terminal I/O (own crossterm loop, not the WM render path)"),
     ("src/attach/conn_tests.rs", "test code"),
 ];
 
