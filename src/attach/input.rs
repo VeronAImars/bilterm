@@ -50,7 +50,7 @@ pub fn decode_input_b64(s: &str) -> Result<Vec<u8>, InputError> {
     if b.is_empty() {
         return Err(InputError::Empty);
     }
-    if b.len() % 4 != 0 {
+    if !b.len().is_multiple_of(4) {
         return Err(InputError::BadBase64);
     }
     let pad = b.iter().rev().take_while(|&&c| c == b'=').count();
