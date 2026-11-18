@@ -80,6 +80,8 @@ State dot per pane (derived only from signals Bilterm already tracks; no agent n
 
 Blocked, errored and done are the **attention** states. `!` (key, footer button, or leader `!`) jumps to the next pane needing attention: blocked first, then errored, then done.
 
+**Order is stable.** Session rows keep a fixed order (session-tree order, then saved-session order, then unsaved sessions by name). Selecting, unfolding or switching to a session never moves it, and agent state changes never re-sort the list; fold state is kept per session name.
+
 A footer button bar at the bottom of the drawer (when it is at least 4 rows tall) shows `* ! N + r x @ agents`. Each label is the key of the same character, and the last button is labelled `@ agents` so the Agent Traffic window is easy to find: it **toggles** the window (open on the selected pane row, close when open). Buttons that do not fit are dropped from the right (the `@ agents` text needs a 24-column inner width). See [Mouse](#mouse).
 
 ## Keyboard
