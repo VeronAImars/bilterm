@@ -2,11 +2,13 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 
+pub mod highlight;
 pub mod navigator;
 
 use crate::config::BiltermConfig;
+use highlight::{RowMark, mark_style, selection_is_bar};
 use crate::ui::chrome::{render_borland_frame_styled, render_drop_shadow_styled};
 use crate::ui::glyphs::GlyphSet;
 use crate::ui::occlusion::occlude_rect;
@@ -378,11 +380,14 @@ pub fn render_workspace_drawer(
             inner.width
         };
 
-        let sel_card_bg = if cfg.liquid_glass {
-            Color::Rgb(24, 44, 74)
-        } else {
-            Color::Rgb(30, 41, 59)
-        };
+        let hover = drawer.hover_row;
+        let bar = selection_is_bar(palette, is_modern);
+        let sel_card_bg = mark_style(base_style, palette, true, RowMark::Selected)
+            .bg
+            .unwrap_or(palette.window_frame_bg);
+        let hover_card_bg = mark_style(base_style, palette, true, RowMark::Hover)
+            .bg
+            .unwrap_or(palette.window_frame_bg);
 
         for (vis_idx, (row_idx, row)) in rows
             .iter()
@@ -396,6 +401,7 @@ pub fn render_workspace_drawer(
                 break;
             }
             let is_sel = row_idx == selected;
+            let is_hov = !is_sel && hover == Some(row_idx);
             let inline_override = match (&row.kind, wm.window_manage().inline_rename.as_ref()) {
                 (DrawerRowKind::Pane(pid), Some(ir)) if ir.pane_id == *pid => {
                     Some(format!("[ {}█ ]", ir.current_input))
@@ -414,6 +420,8 @@ pub fn render_workspace_drawer(
                 let (line1, line2) = format_liquid_drawer_card(row_ref, is_sel, wm.pane_count());
                 let bg = if is_sel {
                     sel_card_bg
+                } else if is_hov {
+                    hover_card_bg
                 } else {
                     palette.window_frame_bg
                 };
@@ -436,6 +444,7 @@ pub fn render_workspace_drawer(
                         Modifier::empty()
                     });
                 let st2 = Style::default().fg(fg2).bg(bg);
+                let st1 = if is_hov { st1.add_modifier(Modifier::UNDERLINED) } else { st1 };
                 fill_rect(buf, Rect::new(inner.x, y, row_text_w, 2), st2);
                 write_clipped_line(buf, inner.x, y, row_text_w, &h_clip(&line1, drawer.h_scroll), st1);
                 if y + 1 < inner.y + inner.height.saturating_sub(footer_h) {
@@ -456,15 +465,9 @@ pub fn render_workspace_drawer(
                         .add_modifier(Modifier::BOLD),
                     _ => base_style,
                 };
-                if is_sel {
-                    if is_modern {
-                        row_style = Style::default()
-                            .fg(palette.title_fg)
-                            .bg(sel_card_bg)
-                            .add_modifier(Modifier::BOLD);
-                    } else {
-                        row_style = row_style.add_modifier(Modifier::REVERSED);
-                    }
+                let mark = RowMark::of(row_idx, selected, hover);
+                if mark != RowMark::Plain {
+                    row_style = mark_style(row_style, palette, bar, mark);
                     fill_rect(buf, Rect::new(inner.x, y, row_text_w, 1), row_style);
                 }
                 let base_line = if let Some(ref ov) = inline_override {
@@ -596,15 +599,9 @@ pub fn render_workspace_drawer(
         {
             let y = inner.y + 1 + vis_idx as u16;
             let mut style = base_style;
-            if row_idx == selected {
-                style = if is_modern {
-                    Style::default()
-                        .fg(palette.title_fg)
-                        .bg(Color::Rgb(24, 44, 74))
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    style.add_modifier(Modifier::REVERSED)
-                };
+            let mark = RowMark::of(row_idx, selected, drawer.hover_row);
+            if mark != RowMark::Plain {
+                style = mark_style(style, palette, is_modern, mark);
                 fill_rect(buf, Rect::new(inner.x, y, inner.width, 1), style);
             }
             write_clipped_line(buf, inner.x, y, inner.width, &row.formatted_line(), style);

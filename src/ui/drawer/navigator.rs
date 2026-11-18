@@ -11,6 +11,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use super::highlight::{RowMark, mark_style, selection_is_bar};
 use super::{fill_rect, write_clipped_line};
 use crate::config::BiltermConfig;
 use crate::ui::chrome::{render_borland_frame_styled, render_drop_shadow_styled};
@@ -791,6 +792,8 @@ pub fn render_navigator_drawer(
         fill_rect(buf, inner, base_style);
     }
 
+    let hover = wm.drawer().hover_row;
+    let bar = selection_is_bar(palette, is_modern);
     let hg = NavigatorGlyphs::for_pack(cfg.glyphs);
     let tokens = DesignTokens::from_palette(palette);
     let tick = drawer.spinner_tick();
@@ -811,15 +814,9 @@ pub fn render_navigator_drawer(
         {
             style = style.fg(tokens.accent).add_modifier(Modifier::BOLD);
         }
-        if row_idx == selected {
-            style = if is_modern {
-                Style::default()
-                    .fg(palette.title_fg)
-                    .bg(Color::Rgb(30, 41, 59))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                style.add_modifier(Modifier::REVERSED)
-            };
+        let mark = RowMark::of(row_idx, selected, hover);
+        if mark != RowMark::Plain {
+            style = mark_style(style, palette, is_modern, mark);
             fill_rect(buf, Rect::new(inner.x, y, inner.width, height), style);
         }
         let marker = if row.is_focused_pane { hg.current } else { " " };
@@ -855,7 +852,7 @@ pub fn render_navigator_drawer(
                     {
                         cs = cs.add_modifier(Modifier::BOLD);
                     }
-                    if row_idx == selected && !is_modern {
+                    if row_idx == selected && !bar {
                         // Keep the reversed selection bar continuous behind the accent glyph.
                         cs = cs.bg(palette.text_fg.unwrap_or(palette.inactive_border_fg)).remove_modifier(Modifier::REVERSED);
                     }
@@ -906,12 +903,12 @@ pub fn render_navigator_drawer(
     for cell in navigator_dot_cells(wm, workspace_area) {
         let on_selected = cell.row_index == selected;
         let mut st = Style::default().fg(dot_color(cell.state, &tokens));
-        if on_selected && !is_modern {
+        if on_selected && !bar {
             // Keep the reversed selection bar continuous behind the dot.
             st = st.bg(palette.text_fg.unwrap_or(palette.inactive_border_fg));
         }
         buf[(cell.x, cell.y)].set_symbol(&hg.dot(cell.state, tick)).set_style(st);
-        if on_selected && !is_modern {
+        if on_selected && !bar {
             buf[(cell.x, cell.y)].modifier.remove(Modifier::REVERSED);
         }
     }
