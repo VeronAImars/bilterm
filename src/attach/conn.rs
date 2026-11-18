@@ -84,7 +84,7 @@ pub enum ConnEnd {
     Idle,
     HostShutdown,
     WriteFailed,
-    /// Closed by the lag/kick policy (`Bye{lagged_resync_failed}`).
+    /// Closed by the lag policy (`Bye{lagged_resync_failed}`) or an operator `attach.kick` (`Bye{kicked}`).
     Kicked,
 }
 
@@ -285,6 +285,10 @@ async fn control_loop<S: AsyncRead + AsyncWrite + Unpin>(
             _ = shutdown.changed() => {
                 out.push(&HostMsg::Bye { reason: ByeReason::HostShutdown });
                 break ConnEnd::HostShutdown;
+            }
+            () = slot.kicked() => {
+                out.push(&HostMsg::Bye { reason: ByeReason::Kicked });
+                break ConnEnd::Kicked;
             }
             w = out.write_some(&mut wr), if !out.is_empty() => match w {
                 Ok(_) => {

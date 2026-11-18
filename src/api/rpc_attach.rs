@@ -13,6 +13,24 @@ impl AutomationControlPlane {
     }
 }
 
+impl AutomationControlPlane {
+    /// `attach.kick {client_id}` or `{ro: true}`: same trust level as `daemon.stop` (local control
+    /// socket). Lowered through `Action::Daemon(DaemonSupervisorOp::AttachKick)`.
+    pub(super) fn rpc_attach_kick(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        let client_id = match params.get("client_id") {
+            None | Some(JsonValue::Null) => None,
+            Some(v) => Some(v.as_i64().and_then(|n| u64::try_from(n).ok()).ok_or("client_id must be a non-negative integer")?),
+        };
+        let all_ro = params.get("ro").and_then(JsonValue::as_bool).unwrap_or(false);
+        if client_id.is_some() == all_ro {
+            return Err("attach.kick needs exactly one of client_id or ro".to_string());
+        }
+        self.apply_with_policy(Action::Daemon(DaemonSupervisorOp::AttachKick { client_id, all_ro }), super::rpc::SnapshotPolicy::Trusted)?;
+        let data = self.wm.take_command_data().ok_or_else(|| "no attach data".to_string())?;
+        JsonValue::parse(&data).ok_or_else(|| "invalid attach data".to_string())
+    }
+}
+
 /// Most requests applied per tick, so a flood cannot starve PTY pumping (the queue is bounded too).
 const MAX_REQUESTS_PER_TICK: usize = crate::attach::limits::IN_QUEUE_FRAMES;
 
@@ -44,6 +62,7 @@ impl AutomationControlPlane {
                 break;
             };
             any = true;
+            let is_act = matches!(req, HostRequest::Act { .. });
             let (client, action) = match req {
                 HostRequest::PaneInput { client, pane, bytes } => {
                     if let Err(why) = self.wm.pane_input_allowed(pane) {
@@ -63,7 +82,11 @@ impl AutomationControlPlane {
                 }
             };
             // A host never quits because a client asked; errors are surfaced in the status line.
-            if let Err(e) = self.apply_with_policy(action, super::rpc::SnapshotPolicy::Confined) {
+            // The attach-origin flag makes `attach.kick` refuse anything an attach client sends.
+            self.wm.set_attach_origin(is_act);
+            let res = self.apply_with_policy(action, super::rpc::SnapshotPolicy::Confined);
+            self.wm.set_attach_origin(false);
+            if let Err(e) = res {
                 tracing::debug!(error = %e, "attach request failed");
                 self.attach_reply(client, ErrorCode::BadRequest, e);
             }

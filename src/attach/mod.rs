@@ -40,3 +40,5 @@ mod msg_tests;
 mod view_tests;
 #[cfg(test)]
 mod size_owner_tests;
+#[cfg(test)]
+mod kick_tests;

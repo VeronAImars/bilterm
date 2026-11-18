@@ -168,6 +168,7 @@ bilterm ctl -t ~/.bilterm.token 127.0.0.1:7370 workspace.status
 | Method | Params | Result |
 |--------|--------|--------|
 | `attach.clients` | none | Read-only list of clients attached to this host's attach socket, or a `disabled` report when the host was started without `--attach`. Same data as `:daemon attach` and MCP `attach_clients`. The attach wire protocol itself is not JSON-RPC; see [user guide chapter 15](user-guide/15-attaching-to-a-session-host.md) and `docs/plans/session-host-p2-attach.md`. |
+| `attach.kick` | `client_id` (integer) or `ro` (true); exactly one | Closes one attach client, or every read-only client, with `Bye{kicked}` (client exit code 4). Result `{kicked:[ids], count}`; unknown id or a host without `--attach` is an error. Same gate as `daemon.stop`. Same as `:daemon attach kick <id>\|--ro` and MCP `bilterm_daemon` `action="attach_kick"`. An attach client's own `Act` can never trigger it. |
 
 ### Daemon Management: `daemon.*`
 

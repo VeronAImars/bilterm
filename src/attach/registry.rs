@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+use tokio::sync::Notify;
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -31,6 +32,8 @@ pub struct ClientInfo {
     pub cols: u16,
     pub rows: u16,
     pub connected: Instant,
+    /// Wakes the connection task so it sends `Bye{kicked}` and closes (`attach.kick`).
+    pub kick: Arc<Notify>,
 }
 
 #[derive(Debug)]
@@ -43,6 +46,10 @@ pub struct ClientRegistry {
 /// The registry is full.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RegistryFull;
+
+/// `attach.kick` named a client id that is not connected.
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnknownClient(pub u64);
 
 impl ClientRegistry {
     pub fn new(max: usize) -> Self {
@@ -82,6 +89,7 @@ impl ClientRegistry {
                 cols: 0,
                 rows: 0,
                 connected: now,
+                kick: Arc::new(Notify::new()),
             },
         );
         Ok(id)
@@ -112,6 +120,21 @@ impl ClientRegistry {
     /// The role the client attached with; `None` before `Attach`.
     pub fn role_of(&self, id: u64) -> Option<Role> {
         self.clients.get(&id).and_then(|c| c.role)
+    }
+
+    /// Signals client `id` to close with `Bye{kicked}`. The entry itself is removed when its
+    /// connection task ends (the slot guard), so `attach.clients` converges within a tick.
+    pub fn kick(&mut self, id: u64) -> Result<(), UnknownClient> {
+        self.clients.get(&id).map(|c| c.kick.notify_one()).ok_or(UnknownClient(id))
+    }
+
+    /// Kicks every attached read-only client; returns their ids (possibly empty).
+    pub fn kick_all_ro(&mut self) -> Vec<u64> {
+        let ids: Vec<u64> = self.clients.values().filter(|c| c.role == Some(Role::Ro)).map(|c| c.id).collect();
+        for id in &ids {
+            let _ = self.kick(*id);
+        }
+        ids
     }
 
     pub fn remove(&mut self, id: u64) {
@@ -174,8 +197,13 @@ impl SharedRegistry {
 
     /// Reserves a slot; dropping the returned guard releases it.
     pub fn reserve(&self) -> Result<ClientSlot, RegistryFull> {
-        let id = self.lock().reserve(Instant::now())?;
-        Ok(ClientSlot { registry: self.clone(), id })
+        let (id, kick) = {
+            let mut g = self.lock();
+            let id = g.reserve(Instant::now())?;
+            let kick = g.clients.get(&id).map(|c| c.kick.clone()).unwrap_or_default();
+            (id, kick)
+        };
+        Ok(ClientSlot { registry: self.clone(), id, kick })
     }
 
     pub fn to_json(&self) -> Value {
@@ -188,9 +216,15 @@ impl SharedRegistry {
 pub struct ClientSlot {
     registry: SharedRegistry,
     id: u64,
+    kick: Arc<Notify>,
 }
 
 impl ClientSlot {
+    /// Completes when the control plane kicks this client (permit is stored: no lost wakeup).
+    pub async fn kicked(&self) {
+        self.kick.notified().await;
+    }
+
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -222,6 +256,26 @@ mod tests {
         let c = reg.reserve().unwrap();
         assert!(c.id() > b.id() && c.id() != a_id, "ids are never reused");
         assert_eq!(reg.lock().len(), 2);
+    }
+
+    #[test]
+    fn kick_unknown_and_ro_selection() {
+        let reg = SharedRegistry::new(4);
+        let a = reg.reserve().unwrap();
+        let b = reg.reserve().unwrap();
+        reg.lock().set_attached(a.id(), "main".into(), Role::Rw, 80, 24);
+        reg.lock().set_attached(b.id(), "main".into(), Role::Ro, 80, 24);
+        assert_eq!(reg.lock().kick(99), Err(UnknownClient(99)));
+        assert_eq!(reg.lock().kick_all_ro(), vec![b.id()]);
+        assert!(reg.lock().kick(a.id()).is_ok());
+    }
+
+    #[tokio::test]
+    async fn kick_wakes_slot_even_if_signalled_first() {
+        let reg = SharedRegistry::new(2);
+        let a = reg.reserve().unwrap();
+        reg.lock().kick(a.id()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), a.kicked()).await.expect("stored permit");
     }
 
     #[test]

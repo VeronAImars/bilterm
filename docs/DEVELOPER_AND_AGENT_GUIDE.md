@@ -142,7 +142,7 @@ src/
 │   ├── listener.rs             # host-<name>.attach.sock (0600), uid-checked accept loop, client cap
 │   ├── conn.rs                 # Per-connection handshake (Hello/HelloOk/Refuse, 5 s timeout) + control loop
 │   ├── handshake.rs            # Version negotiation; registry.rs: client registry (`attach.clients`)
-│   └── host.rs / view.rs       # Wiring into the headless host; `:daemon attach` / `attach.clients` read model
+│   └── host.rs / view.rs       # Wiring into the headless host; `:daemon attach` / `attach.clients` read model, `execute_attach_kick` (`attach.kick`)
 ├── daemon/
 │   ├── mod.rs                  # Background Multiplexer Daemon exports, DaemonAction & DaemonHandshake
 │   ├── process.rs              # Live OS process daemonization (daemon-<session>.sock, stale cleanup, session discovery)
