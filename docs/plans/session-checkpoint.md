@@ -1,3 +1,10 @@
+# UPDATE 2026-11-18 (newest): #119-#122 + #125 MERGED; merged-main verify PASS; T-A7 in flight
+- Merged-tree verify of main@9ee414a: PASS 210/210 (clean worktree). #125 (T-A6 streaming: attach/hub.rs, outq.rs, stream.rs; lag->resync->kick; owner broadcast; Resize->Action::AttachResize; refusal replies) merged on its own 210/210; origin/main = 049382b.
+- DO NOT run `cargo fmt` on this repo: no rustfmt config, it rewrites the whole tree. Format own files only with `rustfmt --edition 2021 <file>`.
+- T-A6 UNVERIFIED: real-shell echo over real PTY+socket (T-A7 e2e test targets this), macOS peer_cred, 16 clients under load, partial-read lag/resync path (unit-only).
+- In flight: T-A7 `bilterm attach` client (worktree p2-a7, branch feat/attach-client; agent resumed after session end, partial work was uncommitted). Open PRs: #123 (this), #124 DOS plan (awaiting owner read of section 11).
+- Next: A8 docs+smoke; C4 Windows limits; rc11 needs owner go-ahead; cleanup leftover worktrees (verify-main, p2-a5, p2-a6, p4-c3, drawer-hl, wm-split, dos-mode, older ones).
+
 # UPDATE 2026-11-17 (night, newest): #119-#122 MERGED; DOS-mode plan PR #124 open; T-A6 in flight
 - Owner-authorized "merge 119 120 121 122": merged in order 119, retargeted 122 to main, then 120, 121, 122. origin/main = 9ee414a. Merged-tree verify NOT yet confirmed at write time (each PR was 210/210 alone); a haiku agent is running it in worktree verify-main.
 - Open: #123 (this checkpoint), #124 docs/plans/dos-mode.md (agent report, not read by coordinator: no bundling, download-on-demand with pinned SHA256, QEMU `-display curses` recommended, Bochs term fallback; FreeDOS 1.4 LiveCD has freeware-only pkgs (usbdos, slowdown, doslfn, uide, udvd2, rdisk, cal, shsufdrv), terms UNVERIFIED; QEMU 10.2.1 floppy boot in a PTY VERIFIED on Linux; macOS/Windows/Bochs/dosemu2 UNVERIFIED; graphics-mode DOS shows nothing; bilterm is Apache-2.0).
