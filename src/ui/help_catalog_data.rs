@@ -82,6 +82,7 @@ pub const HELP_LINES: &[(&str, &str)] = &[
     (":drawer next", "Navigator drawer: select the next row (keys j / Down)"),
     (":drawer prev", "Navigator drawer: select the previous row (keys k / Up)"),
     (":drawer row <n>", "Navigator drawer: select row n (1-based; what a mouse click applies)"),
+    (":drawer hover <n>|off", "Drawer: mark row n as hovered (what a mouse move applies); keyboard moves clear it"),
     (":drawer scroll <+-n>", "Navigator drawer: move the selection n rows (keys PgUp / PgDn = -5 / +5)"),
     (":drawer widen <+-n>", "Navigator drawer: grow or shrink the drawer by n (keys { / } = -2 / +2)"),
     (":drawer new-session", "Navigator drawer: create a new session and switch to it (key N)"),

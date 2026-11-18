@@ -799,7 +799,7 @@ fn parse_focalzoom_command(parts: &[&str]) -> Option<Result<ColonCommand, String
 }
 
 /// Parses the navigator operations of `:drawer` (`next|prev|enter|raise|row|fold|scroll|widen|new-session|
-/// new-pane|rename|close-pane|menu|comms|comms-focus`); `None` for every other verb. `:drawer close` stays the classic minimize.
+/// hover|new-pane|rename|close-pane|menu|comms|comms-focus`); `None` for every other verb. `:drawer close` stays the classic minimize.
 fn parse_drawer_nav(parts: &[&str]) -> Option<Result<ColonCommand, String>> {
     use crate::wm::drawer::DrawerNavOp as Op;
     let num = |usage: &str| -> Result<i16, String> {
@@ -817,6 +817,14 @@ fn parse_drawer_nav(parts: &[&str]) -> Option<Result<ColonCommand, String>> {
         "row" => match parts.get(2).and_then(|v| v.parse::<usize>().ok()).filter(|&n| n >= 1) {
             Some(n) => Op::Row(n - 1),
             None => return Some(Err("Usage: :drawer row <n>".to_string())),
+        },
+        "hover" => match parts.get(2).copied() {
+            Some("off" | "none") => Op::Hover(None),
+            Some(v) => match v.parse::<usize>().ok().filter(|&n| n >= 1) {
+                Some(n) => Op::Hover(Some(n - 1)),
+                None => return Some(Err("Usage: :drawer hover <n>|off".to_string())),
+            },
+            None => return Some(Err("Usage: :drawer hover <n>|off".to_string())),
         },
         "scroll" => match num("Usage: :drawer scroll <+-n>") {
             Ok(n) => Op::Scroll(n),
