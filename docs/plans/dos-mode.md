@@ -221,9 +221,25 @@ Decision: `bilterm dos setup` produces a persistent per-user `c.img`; Live Envir
 6. Boot once from the pinned `FD14BOOT.img` floppy with `c.img` attached (`format=raw` explicitly), wait for the FreeCom prompt, inject `sys c:` + Enter via QMP `sendkey` (screen read via `pmemsave`), see "System transferred."
 7. Boot from `c.img` alone: SeaBIOS -> FreeDOS kernel 2043 banner -> `C: HD1, Pri[1] ... size=127 MB` -> FreeCom 0.86 prompt. **VERIFIED.**
 
-So the only scripted-UI step is the single `sys c:` command; no installer dialog is driven. Installing the full package set (editors, tools) is then `mcopy`/`unzip` of pinned `.zip` packages from the 1.4 BASE/Live ISO into the FAT image (not yet done; UNVERIFIED), plus a generated `FDCONFIG.SYS`/`AUTOEXEC.BAT` (not yet done). Other options kept as fallbacks: FreeDOS installer answer file (UNVERIFIED that one exists), or full keystroke-driven installer via the same QMP driver (more fragile).
+So the only scripted-UI step is the single `sys c:` command; no installer dialog is driven. Packages are installed by `unzip` of the pinned `.zip` packages from the Live ISO (`packages/<set>/*.zip`, members are `BIN/ DOC/ APPINFO/ SOURCE/`) into a staging dir, then one `mcopy -s -Q stage/FREEDOS ::/` (about 1 s for 4260 files), plus generated `FDCONFIG.SYS` (HIMEMX, `SHELL=\COMMAND.COM \ /E:1024 /P=\AUTOEXEC.BAT`) and `AUTOEXEC.BAT` (DOSDIR/PATH/TEMP/NLSPATH). **D0b results (2026-11-18, `scripts/dos-spike-install.sh`, Linux, QEMU 10.2.1)**:
+- FD14-LiveCD.zip downloaded into a fresh dir, SHA256 checked against `download.freedos.org/1.4/verify.txt` (`2020ff6b...6339`): **VERIFIED** match. Note `verify.txt` lists md5 then sha256; parse only the `sha256sum:` section.
+- All 57 BASE packages + AUTOEXEC/FDCONFIG installed into the FAT16 image, `sys c:` via QMP `send-key` + `pmemsave` screen reads, boots to FreeCom with autoexec banner: **VERIFIED**.
+- **Reboot persistence VERIFIED**: boot 1 types `echo persist-ok-<pid> > c:\persist.txt` (QMP `send-key`), `quit`; boot 2 is a fresh QEMU process, `type c:\persist.txt` prints the text, and `mtype` on the host reads the same bytes. Whole script runs in about 37 s per image. Tested at 128 MiB (base), 512 MiB (full, FAT16 type 6 -> `0e` above 500 MiB), 1024 MiB (all).
+- Keystroke injection: QMP `send-key` qcodes work (shift as a two-key combo for `:` `>` `_`); no HMP needed. QMP over TCP loopback used (also works for the Windows path).
+- **Package sizes** (zip -> uncompressed -> on-disk FAT16 used incl. cluster slack, SOURCE/ trees dropped):
 
-Not verified: persistence across a guest write+reboot (expected), FAT32/larger sizes, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this recipe (mtools/sfdisk are Linux tools, and absent on bigmac and win-devvm: in Rust, implement steps 2-5 with a small pure-Rust FAT writer such as the `fatfs` crate plus a hand-built MBR, so Windows needs no mtools; crate choice UNVERIFIED, evaluate in D0c; dependency under `dos` accepted, section 0.1 item 4).
+| Set | Zips | Zip | Uncompressed (with SOURCE) | Files on disk | On-disk used |
+|---|---|---|---|---|---|
+| BASE (57) | 12.6 MB | 12.3 MiB | 18.9 MB | 1002 | ~13.4 MiB (image 13756 KiB) |
+| FULL = base+apps+archiver+drivers+net+tools+unix (152) | 114 MB | ~108 MiB | ~164 MB | 4260 | ~97 MiB (99200 KiB) |
+| ALL = FULL+games+sound (191) | 259 MB | ~247 MiB | ~395 MB | 5667 | ~259 MiB (265064 KiB) |
+
+  Live ISO is 316 MB (games 114 MB and sound 31 MB zipped dominate; net 67 MB).
+- **Decision for `setup --full`**: image **256 MiB** (FAT16, ~2.6x headroom over ~97 MiB used; 512 MiB measured working too), package set `base apps archiver drivers net tools unix` (no games/sound; those are opt-in `--games`). BASE-only default stays 128 MiB (13 MiB used). Max stays 2 GiB (FAT16 limit, UNVERIFIED above 1 GiB).
+- Pitfalls: `MKDIR failed` if AUTOEXEC mkdirs a dir that the packages already staged (stage `FREEDOS/TEMP`); kernel prints harmless `suspect partition` CHS warnings from the mformat geometry (boots fine).
+- **macOS arm64 (bigmac, QEMU 11.1.3)**: `brew install mtools` OK (4.0.50); `bsdtar`, `unzip`, `python3` present; **`sfdisk` absent, script stops with exit 3 as designed** (UNVERIFIED beyond that; D0c pure-Rust builder covers partition table + MBR + FAT, and must also embed an MBR since syslinux `mbr.bin` is not on macOS either). Windows out of scope here. Other options kept as fallbacks: FreeDOS installer answer file (UNVERIFIED that one exists), or full keystroke-driven installer via the same QMP driver (more fragile).
+
+Not verified: FAT32/sizes above 1 GiB, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this recipe (mtools/sfdisk are Linux tools, and absent on bigmac and win-devvm: in Rust, implement steps 2-5 with a small pure-Rust FAT writer such as the `fatfs` crate plus a hand-built MBR, so Windows needs no mtools; crate choice UNVERIFIED, evaluate in D0c; dependency under `dos` accepted, section 0.1 item 4).
 
 - **Location and size**: `<data>/bilterm/dos/c/<name>.img` via `secure_fs::ensure_private_dir` (0700) and atomic 0600 writes (`write_private_file_atomic`: build as `.part`, fsync, rename); `validate_safe_name` on `<name>`. Default 128 MiB raw (sparse), configurable up to a cap (default 2 GiB); sparse-file support checked by `doctor`.
 - **Lifecycle**: `bilterm dos reset [--name N]` (delete and rebuild from the pinned base, confirm), `snapshot [--name N] [--tag T]` (reflink/plain copy to `snapshots/<name>/<tag>.img`, guest must be stopped or use QMP `stop` + copy + `cont`), `restore --tag T`, `snapshot list|rm`. Per-session overlay mode: `-drive ...,snapshot=on` for throwaway runs.
@@ -300,7 +316,7 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 | PR | Scope | Exit criteria |
 |---|---|---|
 | D0 | Spike script (not wired in): QEMU curses boot and key injection. DONE for Linux (4.1) and macOS `-display help` (4.2) | results in this doc |
-| D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; remaining: add packages + AUTOEXEC, reboot-persistence check. macOS run: `ssh bill@bigmac.local 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; brew install mtools && cd ~/worktrees/<wt> && scripts/dos-spike-install.sh'` (sfdisk absent on macOS: use the D0c Rust builder or `fdisk -e`) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
+| D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; packages + AUTOEXEC + reboot persistence now VERIFIED on Linux (2026-11-18); macOS stops at missing sfdisk (exit 3). macOS run: `ssh bill@bigmac.local 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; brew install mtools && cd ~/worktrees/<wt> && scripts/dos-spike-install.sh'` (sfdisk absent on macOS: use the D0c Rust builder or `fdisk -e`) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
 | D0c | Pure-Rust image builder spike (`fatfs` or equivalent + embedded MBR) producing the same image; Bochs `term` and QEMU textbuf poll runs | image boots; Windows-viable (no mtools); crate decision recorded |
 | D1 | `dos` feature flag, `src/dos/{manifest,download,verify,paths}.rs`, `manifest.toml`, mock downloader, `bilterm dos setup/remove/doctor` (CLI) | unit tests; `cargo check --features dos`; real setup on Linux |
 | D1b | `DosBackend` trait, `HostEnv`, per-OS `detect()`, mock backend, conformance suite | suite green on mock |
@@ -324,7 +340,7 @@ Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6, D6b, D7a, 
 Former questions 1-5 are answered (section 0.1). Genuinely open:
 
 1. BSD: add FreeBSD/OpenBSD guests to win-devvm/libvirt (D2d), or keep BSD documented best-effort indefinitely?
-2. `setup --full` default image size (512 MiB proposed) and the exact package list: decide after D0b measures the Live package sizes.
+2. `setup --full` default image size (512 MiB proposed) and the exact package list: decided by D0b: 256 MiB, base+apps+archiver+drivers+net+tools+unix (~97 MiB used; see 5.1).
 
 ## Sources (fetched 2026-11-17 and 2026-11-18)
 
