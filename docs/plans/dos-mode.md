@@ -150,9 +150,9 @@ Evidence (fetched/run 2026-11-18):
 | OS | Level | Backend order | Status / verification |
 |---|---|---|---|
 | Linux (x86_64, aarch64) | **Supported** | qemu-curses, qemu-textbuf, bochs-term | curses VERIFIED (QEMU 10.2.1); aarch64: UNVERIFIED, no host here (qemu TCG, same path) |
-| macOS arm64 | **Supported** | qemu-curses, qemu-textbuf | curses + pmemsave VERIFIED on bigmac (QEMU 11.1.3); image recipe UNVERIFIED (mtools/sfdisk absent; pure-Rust builder D0c) |
+| macOS arm64 | **Supported** | qemu-curses, qemu-textbuf | curses + pmemsave VERIFIED on bigmac (QEMU 11.1.3); pure-Rust image builder boots to FreeCom VERIFIED on bigmac (D0c, 5.1a) |
 | macOS Intel x86_64 | **Supported** | qemu-curses, qemu-textbuf | bigmac builds/tests the `x86_64-apple-darwin` bilterm binary under Rosetta; native Intel QEMU not available on bigmac (no `/usr/local` brew): UNVERIFIED, task D7b |
-| Windows 10/11 x86_64 | **Supported** | qemu-textbuf, qemu-curses | QEMU install via winget, curses listed, TCP QMP pmemsave VERIFIED on win-devvm; ConPTY run, image build, bilterm `dos run` UNVERIFIED (D6) |
+| Windows 10/11 x86_64 | **Supported** | qemu-textbuf, qemu-curses | QEMU install via winget, curses listed, TCP QMP pmemsave VERIFIED on win-devvm; pure-Rust image build VERIFIED on win-devvm (D0c, 5.1a; image booted on Linux); ConPTY run, QEMU boot on Windows, bilterm `dos run` UNVERIFIED (D6) |
 | Windows 11 ARM64 | **Supported** | qemu-textbuf, qemu-curses | win-devvm on bigmac Parallels; x64 QEMU runs under Windows' x64 emulation: UNVERIFIED, task D6b |
 | FreeBSD / OpenBSD | **Best-effort** (no guest) | FreeBSD: curses, textbuf, bochs-term; OpenBSD: textbuf first | no BSD VM exists; task D2d proposes adding a FreeBSD and OpenBSD guest to win-devvm/libvirt; until then ports analysis only, not run |
 | other (NetBSD, illumos, ...) | **Unsupported** | `dos doctor` explains and exits non-zero | no promises |
@@ -223,11 +223,48 @@ Decision: `bilterm dos setup` produces a persistent per-user `c.img`; Live Envir
 
 So the only scripted-UI step is the single `sys c:` command; no installer dialog is driven. Installing the full package set (editors, tools) is then `mcopy`/`unzip` of pinned `.zip` packages from the 1.4 BASE/Live ISO into the FAT image (not yet done; UNVERIFIED), plus a generated `FDCONFIG.SYS`/`AUTOEXEC.BAT` (not yet done). Other options kept as fallbacks: FreeDOS installer answer file (UNVERIFIED that one exists), or full keystroke-driven installer via the same QMP driver (more fragile).
 
-Not verified: persistence across a guest write+reboot (expected), FAT32/larger sizes, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this recipe (mtools/sfdisk are Linux tools, and absent on bigmac and win-devvm: in Rust, implement steps 2-5 with a small pure-Rust FAT writer such as the `fatfs` crate plus a hand-built MBR, so Windows needs no mtools; crate choice UNVERIFIED, evaluate in D0c; dependency under `dos` accepted, section 0.1 item 4).
+Not verified: persistence across a guest write+reboot (expected), FAT32/larger sizes, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this mtools recipe (mtools/sfdisk are Linux tools: the pure-Rust `fatfs` + hand-built MBR replacement of steps 2-5 is built and VERIFIED in 5.1a on Linux, macOS arm64 and Windows x64; dependency under `dos` accepted, section 0.1 item 4).
 
 - **Location and size**: `<data>/bilterm/dos/c/<name>.img` via `secure_fs::ensure_private_dir` (0700) and atomic 0600 writes (`write_private_file_atomic`: build as `.part`, fsync, rename); `validate_safe_name` on `<name>`. Default 128 MiB raw (sparse), configurable up to a cap (default 2 GiB); sparse-file support checked by `doctor`.
 - **Lifecycle**: `bilterm dos reset [--name N]` (delete and rebuild from the pinned base, confirm), `snapshot [--name N] [--tag T]` (reflink/plain copy to `snapshots/<name>/<tag>.img`, guest must be stopped or use QMP `stop` + copy + `cont`), `restore --tag T`, `snapshot list|rm`. Per-session overlay mode: `-drive ...,snapshot=on` for throwaway runs.
 - **Corruption handling**: single writer (lock file in the dir, `controlling-processes-safely` rules: pid+start-time check); a `.dirty` marker set at run and cleared on clean exit; on a dirty start run a read-only FAT check (`fsck.fat -n` where present, or built-in boot-sector/FAT sanity) and offer restore from the latest snapshot; keep one automatic `pre-run` snapshot rotation (N=2, cap by size).
+
+### 5.1a Spike D0c: pure-Rust image builder (2026-11-18)
+
+Source: `spikes/dos-d0c/` (standalone crate, own empty `[workspace]`, NOT in the bilterm build, bilterm's `Cargo.toml` untouched). Repro: `WORK=<fresh dir on /datanapps> spikes/dos-d0c/scripts/repro.sh` (downloads `FD14-FloppyEdition.zip`, SHA256 `45b1fa7c...fc5a` checked against `verify.txt`, builds, boots; printed `D0C REPRO PASS` on Linux).
+
+**Crates evaluated** (crates.io API, 2026-11-18):
+
+| Crate | Version / last release | Licence | Verdict |
+|---|---|---|---|
+| `fatfs` | 0.3.6, 2023-01-17 (~1.9M downloads) | MIT | **Chosen.** Formats FAT12/16/32 (`format_volume`, `FatType::Fat16`), creates files, `std` Read+Write+Seek; worked unchanged on Linux, macOS arm64, Windows x64. Caveats: last release is almost 2 years old (maintenance risk; code is small and pinnable/vendorable), no hook to write boot code (we patch sector 0 ourselves), timestamps via `chrono` (not byte-reproducible across runs) |
+| `fscommon` | 0.1.1, 2020-07-14 | MIT | **Chosen** for `StreamSlice` (partition view inside the raw file) and `BufStream`; tiny, stable, unmaintained but trivial to inline (~100 lines) |
+| `embedded-fatfs` | 0.0.0, 2023-07 | MIT | Rejected: placeholder release, async/embedded API |
+| `fat32`, `exfat` | 0.2.0 (2020), 0.1.0 (2023) | MIT | Rejected: wrong scope (FAT32 only / exFAT) |
+| `mbrman` | 0.7.0, 2026-11-09 | MIT OR Apache-2.0 | Not needed: an MBR with one entry is 16 bytes written by hand; reconsider only if multiple partitions are wanted |
+
+MIT is compatible with bilterm's Apache-2.0 (needs the MIT notice in the third-party notices). Dependency stays under the `dos` feature (0.1 item 4).
+
+**What the spike does** (`spikes/dos-d0c/src/main.rs`, ~200 lines): `set_len` a sparse raw image (128 MiB default); write an MBR (original 105-byte boot code hand-assembled for this spike: relocate to 0x600, find the active entry, INT 13h/42h LBA read of its first sector, check 0xAA55, jump; so **no syslinux `mbr.bin` and no third-party licence**) with one active type-0x06 partition at LBA 2048; `format_volume` FAT16 into the partition; patch the BPB (63 sectors/track, 16 heads, hidden sectors 2048, drive 0x80); copy `KERNEL.SYS` first, then `COMMAND.COM`, generated `FDCONFIG.SYS` and `AUTOEXEC.BAT`; build as `.part` then rename.
+
+**Evidence** (QEMU `-display none` + QMP `pmemsave` 0xB8000, driver `spikes/dos-d0c/scripts/qemu_drive.py`; and `-display curses` in a PTY):
+
+| Check | Result |
+|---|---|
+| Linux (QEMU 10.2.1): pure-Rust image boots to `FreeCom version 0.86`, `AUTOEXEC RAN`, `C:\>` | VERIFIED (128, 64 and 512 MiB; same boot sector blob each time) |
+| Linux `-display curses` in a PTY: same output | VERIFIED (128 MiB) |
+| Image is sparse on Linux | VERIFIED (412 KiB allocated of 128 MiB) |
+| macOS arm64 on bigmac (rustc/cargo 1.99, QEMU 11.1.3): build, boot to prompt | VERIFIED; sparse on APFS (2.8 MiB allocated). Image also boots on Linux |
+| Windows 11 x64 on win-devvm (MSVC rustc, `vm.sh ssh`): `cargo build --release` + image build | VERIFIED; image pulled back to Linux boots to `C:\>`. QEMU itself not run for this image on Windows (UNVERIFIED; D6) |
+| Windows sparse files | **Finding:** plain `set_len` on NTFS allocates all 128 MiB. Marking the file sparse first (`fsutil sparse setflag`, equivalent to `FSCTL_SET_SPARSE`) gave 512 KiB allocated, flag survives the rename: VERIFIED. Real code should call `DeviceIoControl(FSCTL_SET_SPARSE)` |
+| Windows ARM64, Bochs `term`, QMP textbuf poll against the new image | UNVERIFIED (not run) |
+| `fsck.fat`/Windows `chkdsk` on the image | UNVERIFIED (`mdir`, `sfdisk -l` read it back correctly on Linux) |
+
+**Boot sector decision.** The FreeDOS FAT16 boot sector (`sys c:` writes it) is the one piece pure Rust cannot invent. Findings: (a) the sector written by `fatfs` has no boot code; (b) once the BPB values above are set, a sector captured from the guest's own `sys c:` is **byte-identical** to the one the Rust builder produces with that blob, and the same 450 bytes of code booted FAT16 volumes of 64, 128 and 512 MiB (code is geometry-independent, it reads the BPB at run time); (c) the FAT12 floppy boot sector cannot be reused (236 of 448 code bytes differ); (d) `SYS.COM` in 1.4 is UPX-packed (`UPX!` marker), so the embedded sectors cannot be read out without a UPX unpacker (UNVERIFIED that one is practical in Rust). (e) The FreeDOS kernel boot code is GPL-2.0-or-later: embedding the 450-byte blob in an Apache-2.0 repo is a licensing call for the owner, not made here. Options ranked: 1) **Capture once at `dos setup`**: build the image in Rust, boot the pinned `FD14BOOT.img` once, QMP-type `sys c:`, read sector 0 back (this is exactly step 6 of 5.1, already PROVEN, ~40 s), cache the blob in the data dir; no GPL code in the repo, one scripted command. 2) UPX-unpack `SYS.COM` from the pinned zip in Rust and slice out the FAT16 sector (no guest boot; UNVERIFIED). 3) Commit the blob with a GPL notice (simplest, fastest; needs the licence decision). The spike's `--boot-sector FILE` interface supports all three.
+
+**Doc corrections to 5.1** (found while diffing): the D0b recipe's `mformat -F` forces **FAT32**, not FAT16 (the boot sector of that `c.img` starts `EB 58 90` with `FAT32   ` at 0x52) although the MBR type is 0x06; it booted anyway under FreeDOS, but the Rust builder produces a true FAT16 volume and boots too.
+
+**Decision: pure-Rust `fatfs` 0.3.6 + `fscommon` 0.1.1 under the `dos` feature on all OSes, no mtools shell-out.** Revisit only if `fatfs` fails on a real image (fallback: shell out to mtools on Unix). Status: image builder VERIFIED on Linux, macOS arm64, Windows x64 (build); boot-sector source = open decision above.
 
 ### 5.2 Windows (in v1 scope)
 
@@ -236,7 +273,7 @@ Test machines: win-devvm x64 (this Linux box) and win-devvm ARM64 (bigmac Parall
 - **Emulator install**: detect `qemu-system-i386.exe` on PATH and in `%ProgramFiles%\qemu`; guidance in `dos doctor`: `winget install -e --id SoftwareFreedomConservancy.QEMU` (VERIFIED 2026-11-18), `choco install qemu` (UNVERIFIED), the Stefan Weil installer, or MSYS2 pacman. `setup` never installs system software silently; with consent it can download the pinned installer `qemu-w64-setup-20260811.exe` (SHA256 in 0.1 item 5) and run only extraction into the private data dir.
 - **Downloads without bash**: all fetch/verify/extract is Rust (rustls HTTPS, sha2, zip crate) inside `src/dos/`; no `scripts/*.sh` involvement on Windows. Keyboard: Windows Terminal passes VT input; map to QMP key names.
 - **Paths**: `%LOCALAPPDATA%\bilterm\dos\` via the existing data-dir helper; `secure_fs` 0700/0600 semantics map to NTFS ACL inheritance (check what `secure_fs.rs` already does on Windows before D6; UNVERIFIED).
-- **Image build** without mtools/sfdisk: the pure-Rust writer from 5.1.
+- **Image build** without mtools/sfdisk: the pure-Rust `fatfs` builder from 5.1a (VERIFIED building on win-devvm x64; mark the file sparse with `FSCTL_SET_SPARSE` first, NTFS otherwise allocates the full size).
 - Windows ARM64: SUPPORTED, verified on win-devvm ARM64 (D6b); QEMU is the x64 build under Windows x64 emulation unless a native ARM64 build is found. 32-bit unsupported (QEMU states it).
 - Validation plan (local, CI-free): x64: `cd /home/bill/src/infra/win-devvm && ./vm.sh start && ./vm.sh wait`, then `WIN_DEVVM_DIR=... scripts/build-windows-vm.sh <tag> --arch x64 --test` plus a `dos` smoke added to `scripts/windows-smoke-test.ps1` (qemu present, `-display help`, QMP pmemsave decode, image boot to FreeCom). ARM64: same with `--arch arm64` over `ssh bill@bigmac.local` (PATH `/usr/local/bin:/opt/homebrew/bin`). Remaining spike to run: `-display curses` under a real ConPTY (portable-pty) on both guests.
 
@@ -301,7 +338,7 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 |---|---|---|
 | D0 | Spike script (not wired in): QEMU curses boot and key injection. DONE for Linux (4.1) and macOS `-display help` (4.2) | results in this doc |
 | D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; remaining: add packages + AUTOEXEC, reboot-persistence check. macOS run: `ssh bill@bigmac.local 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; brew install mtools && cd ~/worktrees/<wt> && scripts/dos-spike-install.sh'` (sfdisk absent on macOS: use the D0c Rust builder or `fdisk -e`) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
-| D0c | Pure-Rust image builder spike (`fatfs` or equivalent + embedded MBR) producing the same image; Bochs `term` and QEMU textbuf poll runs | image boots; Windows-viable (no mtools); crate decision recorded |
+| D0c | Pure-Rust image builder spike (`fatfs` + hand-written MBR). **DONE 2026-11-18**, see 5.1a: builds a bootable sparse FAT16 `c.img` with no mtools/sfdisk/dd; boots to FreeCom + AUTOEXEC on Linux, macOS arm64, and (image built on) Windows x64; decision: `fatfs` 0.3.6 + `fscommon`. Remaining: FreeDOS FAT16 boot-sector source (5.1a), Bochs `term` and textbuf-poll runs UNVERIFIED (not run) | image boots VERIFIED; Windows-viable VERIFIED (x64 build+image); crate decision recorded |
 | D1 | `dos` feature flag, `src/dos/{manifest,download,verify,paths}.rs`, `manifest.toml`, mock downloader, `bilterm dos setup/remove/doctor` (CLI) | unit tests; `cargo check --features dos`; real setup on Linux |
 | D1b | `DosBackend` trait, `HostEnv`, per-OS `detect()`, mock backend, conformance suite | suite green on mock |
 | D1c | Persistent image: builder, `reset/snapshot/restore`, lock, dirty marker, corruption path | image tests green; ignored smoke boots |
