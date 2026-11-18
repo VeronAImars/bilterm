@@ -138,7 +138,9 @@ pub const BOUNDARY_EXEMPT: &[(&str, &str)] = &[
     ("src/daemon/mod.rs", "connect-only liveness probe of the daemon socket; no bytes are exchanged and the stream is dropped (64-02 Task 0 audit)"),
     ("src/swarm/heal.rs", "verify_cmd child-process stdout/stderr pipes for the Phase 69 self-heal loop, not terminal traffic"),
     ("src/daemon/process.rs", "connect-only liveness probe of the daemon socket; no bytes are exchanged and the stream is dropped (64-02 Task 0 audit)"),
-    ("src/swarm/heal.rs", "self-heal verify_cmd child process in a worktree, not terminal traffic"),
+    ("src/swarm/heal.rs", "self-heal verify_cmd child process in a worktree, not terminal traffic"),    ("src/attach/listener.rs", "T-A2 accept loop: handshake/control frames only, no terminal bytes yet; traffic attribution (TrafficEndpoint::Attach) lands with T-A5/T-A6"),
+    ("src/attach/conn.rs", "T-A2 per-connection handshake/control frames only, no terminal bytes yet; tapped with T-A5/T-A6"),
+    ("src/attach/conn_tests.rs", "test code"),
 ];
 
 /// Taps implemented by a wrapper or accessor type rather than an adjacent call.

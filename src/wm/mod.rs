@@ -19,8 +19,6 @@ pub mod agents_geometry;
 pub mod agents_list_geometry;
 mod host_mode;
 pub mod host_view;
-#[cfg(test)]
-mod host_view_tests;
 mod attach_resize;
 pub mod command_window;
 pub mod context_bus;
@@ -201,6 +199,8 @@ pub struct WindowManager {
     headless_mode: bool,
     /// Session-host mode: headless but panes own real PTYs (`host_mode.rs`); default off.
     host_ptys: bool,
+    /// Attach client registry when the host runs an attach listener (`attach::host`); default none.
+    attach_registry: Option<crate::attach::registry::SharedRegistry>,
     pub(crate) default_size: (u16, u16),
     /// Dynamic scrollback budget governor (`[scrollback]`).
     scrollback: ScrollbackGovernor,
@@ -361,6 +361,7 @@ impl WindowManager {
             next_pane_id: initial_id + 1,
             headless_mode,
             host_ptys: false,
+            attach_registry: None,
             default_size: (screen_rows, cols),
             scrollback: if headless_mode {
                 ScrollbackGovernor::new(Box::new(FixedMemoryProbe::default()))

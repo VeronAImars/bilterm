@@ -1,19 +1,28 @@
 //! Attach protocol wire layer (P2 of `docs/plans/session-host-p2-attach.md`, task T-A1).
 //!
-//! Pure library: frame codec, limits and message types. No sockets, no listener, no
-//! `WindowManager` coupling; later tasks (T-A2..T-A7) build on these types.
+//! Wire layer (T-A1: `frame`, `limits`, `msg`) plus the T-A2 listener: `listener` (sibling
+//! socket, accept loop), `conn` (handshake + control loop), `registry`, `handshake`, `host`
+//! (wiring). No screen data yet; later tasks (T-A3..T-A7) build on these.
 
-pub mod diff;
+pub mod conn;
 pub mod frame;
+pub mod handshake;
+pub mod host;
+pub mod diff;
 pub mod layout;
 pub mod limits;
+pub mod listener;
 pub mod msg;
+pub mod registry;
+pub mod view;
 pub mod session;
 pub mod wire_grid;
 pub mod size_owner;
 
 #[cfg(test)]
 mod frame_tests;
+#[cfg(test)]
+mod conn_tests;
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]

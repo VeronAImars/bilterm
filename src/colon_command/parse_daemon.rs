@@ -14,7 +14,7 @@ use crate::action::DaemonSupervisorOp;
 use crate::daemon::limits::MemoryLimits;
 use crate::daemon::restart_policy::RestartMode;
 
-const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] | stop [name] [--force] | switch <name> | prune | host [name]]";
+const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] | stop [name] [--force] | switch <name> | prune | host [name] | attach]";
 
 /// Parses `:daemon` command invocations into a [`ColonCommand`].
 pub(super) fn parse_daemon_colon_command(
@@ -130,6 +130,12 @@ pub(super) fn parse_daemon_colon_command(
                 return Some(Err(USAGE.to_string()));
             }
             Some(Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::HostState { name })))
+        }
+        "attach" => {
+            if parts.len() > 2 {
+                return Some(Err(USAGE.to_string()));
+            }
+            Some(Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::AttachClients)))
         }
         _ => Some(Err(USAGE.to_string())),
     }

@@ -79,6 +79,7 @@ pub const RPC_METHODS: &[&str] = &[
     "daemon.stop",
     "daemon.switch",
     "daemon.host_state",
+    "attach.clients",
     "drawer.preview",
     "clipboard.list",
     "clipboard.get",

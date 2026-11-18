@@ -21,6 +21,16 @@ impl WindowManager {
         self.host_ptys
     }
 
+    /// Attaches the shared client registry (set once by `attach::host::start_attach`).
+    pub fn set_attach_registry(&mut self, reg: crate::attach::registry::SharedRegistry) {
+        self.attach_registry = Some(reg);
+    }
+
+    /// The attach client registry, when an attach listener is running.
+    pub fn attach_registry(&self) -> Option<&crate::attach::registry::SharedRegistry> {
+        self.attach_registry.as_ref()
+    }
+
     /// Pane-creation sites use this instead of `headless_mode`: model-only unless hosting PTYs.
     pub(super) fn model_only_panes(&self) -> bool {
         self.headless_mode && !self.host_ptys

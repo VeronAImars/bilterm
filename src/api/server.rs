@@ -347,13 +347,7 @@ impl RpcAcceptor for tokio::net::UnixListener {
         let (stream, _addr) = self.accept().await?;
         let cred = stream.peer_cred()?;
         let peer_uid = cred.uid();
-        let my_uid = crate::secure_fs::current_euid();
-        if peer_uid != my_uid {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                format!("peer UID {peer_uid} does not match daemon UID {my_uid}"),
-            ));
-        }
+        crate::secure_fs::check_peer_uid(peer_uid, crate::secure_fs::current_euid())?;
         Ok((stream, format!("unix:uid={peer_uid}")))
     }
 }

@@ -106,6 +106,7 @@ async fn real_main() -> color_eyre::Result<()> {
                -m, --mcp                        Run Model Context Protocol (MCP) JSON-RPC 2.0 server over stdio\n  \
                -d, --headless, --daemon         Run headless JSON-RPC 2.0 daemon (default: private Unix socket; TCP loopback via -l 127.0.0.1:PORT -t PATH)\n  \
                    --host-ptys                  With --headless: session host; the daemon owns real PTYs (default off; P1 of docs/plans/session-host-architecture.md)\n  \
+                   --attach                     With --headless --host-ptys: also serve the attach protocol on host-<NAME>.attach.sock (0600, same-uid; default off; P2 of docs/plans/session-host-p2-attach.md)\n  \
                    --name <NAME>                With --headless: daemon name (default: 'default'); each named daemon gets its own lock and socket (daemons/daemon-<NAME>.sock) so several run side by side\n  \
                    --daemon-name <NAME>         With ctl/agent/pane/workspace/coords/daemon: talk to the named daemon (or BILTERM_DAEMON); before or after the subcommand\n  \
                -l, --listen <ADDR>              Listen address (IP:PORT, localhost:PORT, or unix:PATH); TCP requires -t/--token-file\n  \
@@ -374,6 +375,9 @@ async fn real_main() -> color_eyre::Result<()> {
     if has_switch(&args, &["--host-ptys"]) && !has_switch(&args, &["-d", "--headless", "--daemon"]) {
         return Err(bilterm::error::BiltermError::Config("--host-ptys requires --headless/--daemon".into()).into());
     }
+    if has_switch(&args, &["--attach"]) && !has_switch(&args, &["--host-ptys"]) {
+        return Err(bilterm::error::BiltermError::Config("--attach requires --host-ptys (with --headless)".into()).into());
+    }
     if has_switch(&args, &["-d", "--headless", "--daemon"]) {
         let listen = switch_value(&args, &["-l", "--listen"]);
         let allow_remote = has_switch(&args, &["-r", "--allow-remote"]);
@@ -462,7 +466,18 @@ async fn real_main() -> color_eyre::Result<()> {
                 std::thread::sleep(std::time::Duration::from_secs(2));
             });
         }
+        let attach = if has_switch(&args, &["--attach"]) {
+            Some(bilterm::attach::host::start_attach(&runtime_dir, daemon_name, &mut plane)?)
+        } else {
+            None
+        };
+        if let Some(a) = &attach {
+            eprintln!("bilterm: attach listening on unix:{}", a.socket_path.display());
+        }
         run_headless_server_with_http(cfg, plane, http).await?;
+        if let Some(a) = attach {
+            a.stop().await;
+        }
         return Ok(());
     }
     if let Some(shell) = switch_value(&args, &["-C", "--completions"]) {

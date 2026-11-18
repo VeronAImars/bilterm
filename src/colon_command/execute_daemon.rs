@@ -216,6 +216,7 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
         DaemonSupervisorOp::HostState { name } => {
             super::execute_daemon_host::execute_host_state(wm, &runtime_dir, name.as_deref());
         }
+        DaemonSupervisorOp::AttachClients => crate::attach::view::execute_attach_clients(wm),
     }
     match op {
         // Start/Stop/Switch surface the live supervisor state in the floating window.
