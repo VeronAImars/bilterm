@@ -14,6 +14,15 @@ impl WindowManager {
         self.api_origin = on;
     }
 
+    /// Marks actions as coming from an attach client's `Act` (`attach.kick` refuses these).
+    pub fn set_attach_origin(&mut self, on: bool) {
+        self.attach_origin = on;
+    }
+
+    pub fn is_attach_origin(&self) -> bool {
+        self.attach_origin
+    }
+
     /// Stores the structured JSON payload of the last query command.
     pub fn set_command_data(&mut self, s: String) {
         self.command_data = Some(s);

@@ -88,10 +88,24 @@ Caps live in one place, `src/attach/limits.rs`:
 
 All three are read-only and report `disabled` when the host runs without `--attach`.
 
+## Kicking a client
+
+- Colon command: `:daemon attach kick <client-id>` or `:daemon attach kick --ro` (every read-only client)
+- RPC: `bilterm ctl attach.kick '{"client_id":3}'` or `'{"ro":true}'`
+- MCP: `bilterm_daemon` with `action="attach_kick"` and `client_id` or `ro=true`
+
+The kicked client receives `Bye{kicked}` and exits with code 4 ("kicked by the host"); its entry
+disappears from `attach.clients` as the connection closes. Other clients are unaffected. An unknown
+id is an error (`unknown attach client N`); `--ro` with no read-only clients kicks none and succeeds.
+Kicking needs the same access as other daemon-changing commands (the local control socket, same
+uid, or the TCP token). An attach client can never kick another: an `Act` containing
+`:daemon attach kick` is refused with `bad_request`. A kicked client may reconnect (there is no ban
+list); the host logs every kick at `warn` level (`attach.kick`).
+
 ## Known gaps
 
 - No Windows client or host attach (named pipes deferred).
-- No way to kick a client from `ctl`/colon/MCP yet; a host that is over its cap refuses new clients.
+- A kicked client can reconnect immediately (no ban list); a host that is over its cap refuses new clients.
 - No graphics (Kitty/Sixel) or clipboard proxying through attach yet; no GUI attach client.
 - A `bilterm attach` client does not start a host; start it yourself.
 - Not yet verified on macOS (the peer-uid call is the same code path as the JSON-RPC socket).
