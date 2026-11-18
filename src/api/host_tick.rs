@@ -67,7 +67,9 @@ impl AutomationControlPlane {
     /// whether the workspace changed.
     pub fn host_tick(&mut self) -> bool {
         let drained = self.drain_attach_requests();
-        let changed = self.wm.poll_all_ptys() | drained;
+        let resized = self.attach_tick_pre();
+        let changed = self.wm.poll_all_ptys() | drained | resized;
+        self.attach_publish();
         if let Some(p) = self.host_persist.as_mut() {
             let state = self.wm.host_state(&p.name);
             p.maybe_write(state, Instant::now());

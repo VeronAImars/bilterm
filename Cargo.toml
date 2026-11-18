@@ -40,6 +40,7 @@ zune-jpeg = { version = "0.5.15", default-features = false, features = ["std", "
 [dev-dependencies]
 insta = "1.42.2"
 tempfile = "3.19.1"
+tokio = { version = "1.44.0", features = ["test-util"] }
 
 # Line tables keep file:line in backtraces but cut a full test build ~19G -> ~9G (with deps below; worktrees on quota'd /tmp
 # ran out of space). Set `CARGO_PROFILE_DEV_DEBUG=true` for full debug info when you need a debugger.
