@@ -8,11 +8,15 @@ pub mod conn;
 pub mod frame;
 pub mod handshake;
 pub mod host;
+pub mod diff;
+pub mod layout;
 pub mod limits;
 pub mod listener;
 pub mod msg;
 pub mod registry;
 pub mod view;
+pub mod session;
+pub mod wire_grid;
 pub mod size_owner;
 
 #[cfg(test)]
@@ -23,5 +27,7 @@ mod conn_tests;
 mod golden_tests;
 #[cfg(test)]
 mod msg_tests;
+#[cfg(test)]
+mod view_tests;
 #[cfg(test)]
 mod size_owner_tests;
