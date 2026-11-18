@@ -16,7 +16,7 @@ use super::msg::*;
 use super::registry::SharedRegistry;
 
 fn host() -> Arc<HostInfo> {
-    Arc::new(HostInfo { name: "h".into(), pid: 7, version: "t".into(), caps: vec![] })
+    Arc::new(HostInfo { name: "h".into(), pid: 7, version: "t".into(), caps: vec![], requests: None })
 }
 
 fn fast() -> ConnConfig {
@@ -24,6 +24,7 @@ fn fast() -> ConnConfig {
         handshake_timeout: Duration::from_millis(200),
         idle_timeout: Duration::from_millis(300),
         write_timeout: Duration::from_millis(200),
+        ..ConnConfig::default()
     }
 }
 

@@ -856,6 +856,10 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             wm.attach_resize(cols, rows);
             false
         }
+        ColonCommand::PaneInputBytes { pane, bytes } => {
+            wm.pane_input_bytes(pane, &bytes);
+            false
+        }
         ColonCommand::ExitProtectionSet(policy) => {
             wm.config_mut().exit_protection = policy;
             wm.active_pane_mut().set_status_message(Some(format!(

@@ -66,7 +66,8 @@ impl AutomationControlPlane {
     /// Pumps PTY output, then rewrites the host state file if it changed (debounced). Returns
     /// whether the workspace changed.
     pub fn host_tick(&mut self) -> bool {
-        let changed = self.wm.poll_all_ptys();
+        let drained = self.drain_attach_requests();
+        let changed = self.wm.poll_all_ptys() | drained;
         if let Some(p) = self.host_persist.as_mut() {
             let state = self.wm.host_state(&p.name);
             p.maybe_write(state, Instant::now());

@@ -20,6 +20,7 @@ pub mod agents_list_geometry;
 mod host_mode;
 pub mod host_view;
 mod attach_resize;
+mod pane_input;
 mod wm_accessors;
 mod wm_toggles;
 pub mod command_window;

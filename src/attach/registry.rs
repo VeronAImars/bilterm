@@ -109,6 +109,11 @@ impl ClientRegistry {
         self.clients.get(&id).is_some_and(|c| c.session.is_some())
     }
 
+    /// The role the client attached with; `None` before `Attach`.
+    pub fn role_of(&self, id: u64) -> Option<Role> {
+        self.clients.get(&id).and_then(|c| c.role)
+    }
+
     pub fn remove(&mut self, id: u64) {
         self.clients.remove(&id);
     }

@@ -8,6 +8,7 @@ pub mod conn;
 pub mod frame;
 pub mod handshake;
 pub mod host;
+pub mod input;
 pub mod diff;
 pub mod layout;
 pub mod limits;
@@ -23,6 +24,8 @@ pub mod size_owner;
 mod frame_tests;
 #[cfg(test)]
 mod conn_tests;
+#[cfg(test)]
+mod input_tests;
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]

@@ -8,6 +8,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use super::conn::{ConnConfig, HostInfo};
+use super::limits::IN_QUEUE_FRAMES;
 use super::listener::{attach_socket_path_in, bind_attach_socket, serve_attach};
 use super::registry::SharedRegistry;
 use crate::api::AutomationControlPlane;
@@ -46,11 +47,14 @@ pub fn start_attach(runtime_dir: &Path, name: &str, plane: &mut AutomationContro
     let (listener, guard) = bind_attach_socket(&socket_path)?;
     let registry = SharedRegistry::default();
     plane.wm.set_attach_registry(registry.clone());
+    let (req_tx, req_rx) = tokio::sync::mpsc::channel(IN_QUEUE_FRAMES);
+    plane.set_attach_requests(req_rx);
     let host = Arc::new(HostInfo {
         name: name.to_string(),
         pid: std::process::id(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         caps: Vec::new(),
+        requests: Some(req_tx),
     });
     let (tx, rx) = watch::channel(false);
     let task = tokio::spawn(async move {

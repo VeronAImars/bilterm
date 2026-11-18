@@ -259,6 +259,12 @@ pub enum Action {
         cols: u16,
         rows: u16,
     },
+    /// Raw bytes from an attach client for a pane's PTY (`T-A5`). Constructed host-side from the
+    /// attach `Input` message after role, size and rate checks; never parsed or deserialized.
+    PaneInputBytes {
+        pane: PaneId,
+        bytes: Vec<u8>,
+    },
     /// `:exit-guard [guard|respawn|detach|off]` (`SAFE-01`).
     ExitProtectionSet(ExitProtectionPolicy),
     /// `:respawn-pane` / `:respawn`: Respawn exited shell in-place inside held pane (`SAFE-03`).
