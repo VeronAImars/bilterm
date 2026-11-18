@@ -721,7 +721,8 @@ pub(super) fn handle_drawer_mouse_event(
     }
     match mouse.kind {
         MouseEventKind::Moved => {
-            if wm.update_drawer_hover(mouse.column, mouse.row, workspace_area) {
+            let row_changed = super::drawer_hover::apply_drawer_hover(wm, workspace_area, mouse.column, mouse.row);
+            if wm.update_drawer_hover(mouse.column, mouse.row, workspace_area) || row_changed {
                 return Some(AppAction::Handled);
             }
             return None;

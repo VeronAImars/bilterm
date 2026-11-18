@@ -11,6 +11,7 @@ pub mod traffic_monitor_keys;
 pub mod command_window;
 pub mod command_window_keys;
 pub mod copy_mode_keys;
+pub mod drawer_hover;
 pub mod drawer_navigator;
 pub mod encode;
 pub mod find_modal;

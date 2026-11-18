@@ -231,6 +231,9 @@ pub struct WorkspaceDrawer {
     pub maximized: bool,
     pub hover_active: bool,
     pub selected_index: usize,
+    /// Row under the mouse pointer (pointer-only; set by `DrawerNavOp::Hover`, cleared by any selection
+    /// change so the last input wins). Rendered with a style distinct from the selection.
+    pub hover_row: Option<usize>,
     pub scroll_offset: usize,
     /// Columns the row text is scrolled left by (46-04); 0 = unchanged rendering.
     pub h_scroll: usize,

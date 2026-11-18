@@ -182,6 +182,7 @@ impl WindowManager {
     /// Called when the user scrolls/moves selection in the drawer: clears any explicit pin,
     /// activates preview if `auto_preview_on_scroll` is enabled, and refreshes the target cache.
     pub fn on_drawer_selection_changed(&mut self, from_scroll: bool) {
+        self.drawer.hover_row = None;
         self.drawer.preview.explicit_target = None;
         if from_scroll && self.drawer.preview.auto_preview_on_scroll {
             self.drawer.preview.active = true;

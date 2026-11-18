@@ -214,6 +214,7 @@ All of these lower to the same internal action as their key and mouse twin. `:na
 | `:drawer next` | `j`, `Down` | wheel | Select next row |
 | `:drawer prev` | `k`, `Up` | wheel | Select previous row |
 | `:drawer row <n>` | | click row n | Select row n (1-based) |
+| `:drawer hover <n>\|off` | | mouse move | Mark row n (1-based) as hovered, or clear it. Light highlight (tint + underline), distinct from the selection bar; any selection change clears it |
 | `:drawer scroll <+-n>` | `PageUp` / `PageDown` | wheel (3 rows) | Move the selection n rows |
 | `:drawer widen <+-n>` | `{` / `}` | drag edge | Resize the drawer |
 | `:drawer new-session` | `N` | footer `N`, `[+]` by title, menu | New session |
