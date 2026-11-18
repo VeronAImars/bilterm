@@ -331,7 +331,7 @@ pub fn classify_exit(signal: Option<i32>, limits: &MemoryLimits, peak_rss: u64, 
 }
 
 /// Sum of resident bytes over every process in process group `pgid` (host plus PTY children).
-/// Falls back to the single pid elsewhere than Linux.
+/// Linux walks `/proc`; macOS uses `proc_listpids`; elsewhere the single pid.
 pub fn group_rss_bytes(pgid: u32) -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -349,10 +349,50 @@ pub fn group_rss_bytes(pgid: u32) -> Option<u64> {
         }
         any.then_some(total)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        macos_group_rss_bytes(pgid)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         crate::daemon::rss::rss_bytes_of(pgid)
     }
+}
+
+/// macOS: sums `ri_phys_footprint` over every pid in process group `pgid` (`proc_listpids`
+/// with `PROC_PGRP_ONLY`), so PTY children count toward the limit. Hosts are spawned as their own
+/// group leader (`process_group(0)`), so the group is the host's fault domain. Falls back to the
+/// leader alone when the listing fails.
+#[cfg(target_os = "macos")]
+fn macos_group_rss_bytes(pgid: u32) -> Option<u64> {
+    const PROC_PGRP_ONLY: u32 = 2; // sys/proc_info.h
+    let pids = macos_group_pids(pgid, PROC_PGRP_ONLY);
+    let mut total = 0u64;
+    let mut any = false;
+    for pid in pids {
+        if let Some(b) = crate::daemon::rss::rss_bytes_of(pid) {
+            total = total.saturating_add(b);
+            any = true;
+        }
+    }
+    if any { Some(total) } else { crate::daemon::rss::rss_bytes_of(pgid) }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_group_pids(pgid: u32, kind: u32) -> Vec<u32> {
+    // First call sizes the buffer (bytes); grow slack for racing forks.
+    let need = unsafe { libc::proc_listpids(kind, pgid, std::ptr::null_mut(), 0) };
+    if need <= 0 {
+        return Vec::new();
+    }
+    let cap = need as usize / std::mem::size_of::<libc::pid_t>() + 16;
+    let mut buf = vec![0 as libc::pid_t; cap];
+    let got = unsafe { libc::proc_listpids(kind, pgid, buf.as_mut_ptr() as *mut libc::c_void, (cap * std::mem::size_of::<libc::pid_t>()) as libc::c_int) };
+    if got <= 0 {
+        return Vec::new();
+    }
+    buf.truncate(got as usize / std::mem::size_of::<libc::pid_t>());
+    buf.into_iter().filter(|p| *p > 0).map(|p| p as u32).collect()
 }
 
 /// Process group (5th field) of a `/proc/<pid>/stat` line; `comm` may contain spaces/parens.
@@ -490,11 +530,28 @@ mod tests {
         assert_eq!(parse_stat_pgrp("garbage"), None);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn own_group_rss_is_plausible() {
         // SAFETY: getpgrp has no preconditions.
         let pgid = unsafe { libc::getpgrp() } as u32;
         assert!(group_rss_bytes(pgid).is_some_and(|b| b > 100 * 1024));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_group_sum_includes_children() {
+        use std::os::unix::process::CommandExt;
+        // Own group: sh (leader) plus a sleep child; the sum must cover both pids.
+        let mut c = std::process::Command::new("sh").args(["-c", "sleep 5 & wait"]).process_group(0).spawn().unwrap();
+        let pgid = c.id();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let pids = macos_group_pids(pgid, 2);
+        let sum = group_rss_bytes(pgid);
+        let _ = c.kill();
+        let _ = c.wait();
+        unsafe { libc::killpg(pgid as i32, libc::SIGKILL) };
+        assert!(pids.len() >= 2, "expected sh + sleep, got {pids:?}");
+        assert!(sum.is_some_and(|b| b > 0));
     }
 }

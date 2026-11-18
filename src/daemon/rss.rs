@@ -45,8 +45,9 @@ fn macos_footprint(pid: u32) -> Option<u64> {
     // RUSAGE_INFO_V4 == 4 (sys/resource.h); the struct is the libc crate's `rusage_info_v4`.
     const RUSAGE_INFO_V4: libc::c_int = 4;
     let mut info: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
-    let mut ptr = &mut info as *mut libc::rusage_info_v4 as libc::rusage_info_t;
-    let rc = unsafe { libc::proc_pid_rusage(pid as libc::c_int, RUSAGE_INFO_V4, &mut ptr) };
+    // C signature takes `rusage_info_t *` (void **) but the buffer it fills is the struct itself,
+    // so pass the struct's address cast to that type (not the address of a pointer variable).
+    let rc = unsafe { libc::proc_pid_rusage(pid as libc::c_int, RUSAGE_INFO_V4, &mut info as *mut libc::rusage_info_v4 as *mut libc::rusage_info_t) };
     (rc == 0).then_some(info.ri_phys_footprint)
 }
 
