@@ -196,10 +196,6 @@ impl WindowManager {
         let mut rows = Vec::new();
         let mut visited = BTreeSet::new();
 
-        if tree.node(active).is_none() {
-            let node = SessionTreeNode::new(active, SessionNodeKind::Independent, None);
-            ctx.walk(&node, 0, &mut visited, &mut rows);
-        }
         for node in &tree.nodes {
             let is_root = node.parent.as_deref().is_none_or(|p| tree.node(p).is_none());
             let explicit = node.parent.is_some() || !node.children.is_empty() || node.name != "main";
@@ -207,21 +203,17 @@ impl WindowManager {
                 ctx.walk(node, 0, &mut visited, &mut rows);
             }
         }
-        for name in saved {
-            if !visited.contains(&name) && tree.node(&name).is_none() && name != active {
+        // Sessions outside the tree (saved, parked, or the active one) follow in a key that does not
+        // depend on which session is active or parked: saved order, then unsaved by name. Selecting or
+        // switching a session therefore never reorders the list.
+        let mut loose: Vec<String> = saved.iter().filter(|n| tree.node(n).is_none()).cloned().collect();
+        let mut unsaved: BTreeSet<String> = self.window_manage.background_sessions.keys().cloned().collect();
+        unsaved.insert(active.to_string());
+        loose.extend(unsaved.into_iter().filter(|n| tree.node(n).is_none() && !saved.contains(n)));
+        for name in loose {
+            if !visited.contains(&name) {
                 let mut node = SessionTreeNode::new(name, SessionNodeKind::Independent, None);
                 node.pane_count = 0;
-                ctx.walk(&node, 0, &mut visited, &mut rows);
-            }
-        }
-        for name in self.window_manage.background_sessions.keys() {
-            if !visited.contains(name) && tree.node(name).is_none() && name != active {
-                let mut node = SessionTreeNode::new(name.clone(), SessionNodeKind::Independent, None);
-                node.pane_count = self
-                    .window_manage
-                    .background_sessions
-                    .get(name)
-                    .map_or(0, |bg| bg.panes.len());
                 ctx.walk(&node, 0, &mut visited, &mut rows);
             }
         }
