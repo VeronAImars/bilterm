@@ -852,6 +852,10 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             true
         }
         ColonCommand::DetachClient => wm.detach_client(),
+        ColonCommand::AttachResize { cols, rows } => {
+            wm.attach_resize(cols, rows);
+            false
+        }
         ColonCommand::ExitProtectionSet(policy) => {
             wm.config_mut().exit_protection = policy;
             wm.active_pane_mut().set_status_message(Some(format!(

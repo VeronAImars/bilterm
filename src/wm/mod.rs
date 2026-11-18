@@ -18,6 +18,7 @@ pub mod agents_list_cmd;
 pub mod agents_geometry;
 pub mod agents_list_geometry;
 mod host_mode;
+mod attach_resize;
 pub mod command_window;
 pub mod context_bus;
 pub mod context_queue_ops;

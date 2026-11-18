@@ -8,7 +8,8 @@ use std::path::Path;
 
 use crate::daemon::list_view::{collect_rows, row_for, rows_json, table};
 use crate::daemon::restart_policy::RestartMode;
-use crate::daemon::supervisor::{ensure_started_with, stop_daemon, DaemonStartResult};
+use crate::daemon::limits::MemoryLimits;
+use crate::daemon::supervisor::{ensure_started_limited, stop_daemon, DaemonStartResult};
 use crate::secure_fs::validate_safe_name;
 
 /// Switch that selects which named daemon a client command talks to.
@@ -20,7 +21,7 @@ pub const DAEMON_NAME_ENV: &str = "BILTERM_DAEMON";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DaemonCmd {
     List { json: bool },
-    Start { name: String, restart: RestartMode },
+    Start { name: String, restart: RestartMode, limits: MemoryLimits },
     Stop { name: String, force: bool },
     Status { name: String, json: bool },
 }
@@ -30,10 +31,14 @@ pub fn usage() -> String {
     "\
 Usage:
   bilterm daemon list [--json]              List daemons: status, PID, RSS, restarts, last exit
-  bilterm daemon start [NAME] [--restart never|on-crash]
+  bilterm daemon start [NAME] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE]
                                             Start daemon NAME in the background (no-op if running);
                                             on-crash respawns it with backoff (1s..60s) and stops after
-                                            5 crashes in 120s (shown as 'failed')
+                                            5 crashes in 120s (shown as 'failed').
+                                            --memory-max (e.g. 2G) caps the host: a systemd user scope
+                                            (MemoryMax, no swap, OOM kill) on Linux, else a best-effort RSS
+                                            watchdog (SIGTERM, then SIGKILL). --memory-high must be below
+                                            --memory-max and only throttles/warns
   bilterm daemon stop [NAME] [--force]      Stop daemon NAME (SIGTERM; --force = SIGKILL)
   bilterm daemon status [NAME] [--json]     Show one daemon (exit 0 running, 3 otherwise)
 
@@ -78,6 +83,7 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
     let mut pos = Vec::new();
     let (mut json, mut force) = (false, false);
     let mut restart = RestartMode::Never;
+    let (mut mem_max, mut mem_high): (Option<String>, Option<String>) = (None, None);
     let mut args_it = args.iter();
     while let Some(a) = args_it.next() {
         match a.as_str() {
@@ -86,6 +92,10 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
                 restart = RestartMode::parse(v)?;
             }
             s if s.starts_with("--restart=") => restart = RestartMode::parse(&s["--restart=".len()..])?,
+            "--memory-max" => mem_max = Some(args_it.next().ok_or_else(|| format!("--memory-max needs a size\n{}", usage()))?.clone()),
+            "--memory-high" => mem_high = Some(args_it.next().ok_or_else(|| format!("--memory-high needs a size\n{}", usage()))?.clone()),
+            s if s.starts_with("--memory-max=") => mem_max = Some(s["--memory-max=".len()..].to_string()),
+            s if s.starts_with("--memory-high=") => mem_high = Some(s["--memory-high=".len()..].to_string()),
             "--json" => json = true,
             "--force" | "-f" => force = true,
             "-h" | "--help" | "help" => return Err(usage()),
@@ -104,7 +114,7 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
     };
     match sub {
         "list" | "ls" if pos.len() <= 1 => Ok(DaemonCmd::List { json }),
-        "start" => Ok(DaemonCmd::Start { name: name()?, restart }),
+        "start" => Ok(DaemonCmd::Start { name: name()?, restart, limits: MemoryLimits::from_args(mem_max.as_deref(), mem_high.as_deref())? }),
         "stop" => Ok(DaemonCmd::Stop { name: name()?, force }),
         "status" => Ok(DaemonCmd::Status { name: name()?, json }),
         other => Err(format!("unknown daemon subcommand '{other}'\n{}", usage())),
@@ -154,7 +164,7 @@ pub fn run(cmd: &DaemonCmd, runtime_dir: &Path) -> (String, i32) {
             };
             (text, code)
         }
-        DaemonCmd::Start { name, restart } => match ensure_started_with(runtime_dir, name, *restart) {
+        DaemonCmd::Start { name, restart, limits } => match ensure_started_limited(runtime_dir, name, *restart, *limits) {
             Ok(DaemonStartResult::Started { pid, socket_path }) => {
                 (format!("daemon '{name}' started (PID {pid}, socket {})", socket_path.display()), 0)
             }
@@ -183,15 +193,15 @@ mod tests {
     fn parses_subcommands_and_defaults() {
         assert_eq!(parse_daemon_args(&v(&[]), None), Ok(DaemonCmd::List { json: false }));
         assert_eq!(parse_daemon_args(&v(&["ls", "--json"]), None), Ok(DaemonCmd::List { json: true }));
-        assert_eq!(parse_daemon_args(&v(&["start", "alpha"]), None), Ok(DaemonCmd::Start { name: "alpha".into(), restart: RestartMode::Never }));
-        assert_eq!(parse_daemon_args(&v(&["start"]), None), Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never }));
+        assert_eq!(parse_daemon_args(&v(&["start", "alpha"]), None), Ok(DaemonCmd::Start { name: "alpha".into(), restart: RestartMode::Never, limits: MemoryLimits::default() }));
+        assert_eq!(parse_daemon_args(&v(&["start"]), None), Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never, limits: MemoryLimits::default() }));
         assert_eq!(
             parse_daemon_args(&v(&["start", "--restart", "on-crash", "w"]), None),
-            Ok(DaemonCmd::Start { name: "w".into(), restart: RestartMode::OnCrash })
+            Ok(DaemonCmd::Start { name: "w".into(), restart: RestartMode::OnCrash, limits: MemoryLimits::default() })
         );
         assert_eq!(
             parse_daemon_args(&v(&["start", "--restart=never"]), None),
-            Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never })
+            Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never, limits: MemoryLimits::default() })
         );
         assert!(parse_daemon_args(&v(&["start", "--restart", "always"]), None).unwrap_err().contains("invalid restart"));
         assert!(parse_daemon_args(&v(&["start", "--restart"]), None).unwrap_err().contains("needs"));

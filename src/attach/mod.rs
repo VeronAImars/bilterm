@@ -13,6 +13,7 @@ pub mod listener;
 pub mod msg;
 pub mod registry;
 pub mod view;
+pub mod size_owner;
 
 #[cfg(test)]
 mod frame_tests;
@@ -22,3 +23,5 @@ mod conn_tests;
 mod golden_tests;
 #[cfg(test)]
 mod msg_tests;
+#[cfg(test)]
+mod size_owner_tests;
