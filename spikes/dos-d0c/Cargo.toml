@@ -1,0 +1,13 @@
+# Standalone spike D0c. NOT part of the bilterm build: the empty [workspace]
+# table detaches it from the root package, and it adds no deps to bilterm.
+[package]
+name = "dos-d0c"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+fatfs = "0.3.6"     # MIT
+fscommon = "0.1.1"  # MIT
+
+[workspace]
