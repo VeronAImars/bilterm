@@ -173,6 +173,16 @@ async fn real_main() -> color_eyre::Result<()> {
         eprintln!("{msg}");
         std::process::exit(2);
     }
+    // `bilterm dos setup|remove|doctor`: opt-in DOS mode host setup (feature `dos`).
+    if args.first().map(String::as_str) == Some("dos") {
+        #[cfg(feature = "dos")]
+        std::process::exit(bilterm::dos::cli::run(&args[1..]));
+        #[cfg(not(feature = "dos"))]
+        {
+            eprintln!("bilterm: built without the `dos` feature (rebuild with `cargo build --features dos`)");
+            std::process::exit(2);
+        }
+    }
     // `bilterm attach <host|socket> [--ro]` / `attach-host`: TUI client of a session host's attach
     // socket (T-A7). Plain `bilterm attach [SESSION]` keeps its layout re-attach meaning below.
     if bilterm::attach::client::is_host_attach(&args)

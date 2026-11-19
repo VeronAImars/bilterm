@@ -74,7 +74,7 @@ USE_XVFB=false
 tier_name=""
 
 all_stages() {
-  echo clippy; echo unit
+  echo clippy; echo unit; echo dos
   local f; for f in tests/*.rs; do echo "t:$(basename "$f" .rs)"; done
 }
 quick_stages() { echo clippy; echo unit; }
@@ -166,7 +166,7 @@ tier_stages() {
 
 group_stages() {
   case "$1" in
-    g:lint)     printf '%s\n' clippy unit ;;
+    g:lint)     printf '%s\n' clippy unit dos ;;
     g:ui)       printf '%s\n' t:composite_pane_snapshots t:phase4_retro_aesthetics t:slide_out_drawer_and_telemetry t:itermcolors_and_paste_fixes t:linux_session_regression_and_gui_scaling t:high_res_pixel_and_ssh_canvas ;;
     g:vt)       printf '%s\n' t:vt_worker_and_snapshot_seam t:pty_lifecycle t:vttest_esctest_fuzz_torture t:font_scaling_and_dec_line_attrs t:tektronix_and_graphical_canvas t:v040_v050_gpu_ghostty_tmux_graphics ;;
     g:wm)       printf '%s\n' t:phase2_prompt_ergonomics t:phase3_window_manager t:phase5_tmux_and_platform t:layout_profiles_and_autosave t:live_daemon_detach_attach t:smooth_and_mainframe_page_scrolling t:tab_completion_and_streaming ;;
@@ -200,6 +200,7 @@ cmd_for() {
     fmt)    echo "cargo fmt --check" ;;
     clippy) echo "cargo clippy -q --all-targets -- -D warnings" ;;
     unit)   echo "cargo test -q --lib --bins --no-fail-fast$extra" ;;
+    dos)    echo "cargo clippy -q --features dos --lib --bins -- -D warnings && cargo test -q --features dos --lib dos:: --no-fail-fast" ;;
     t:*)    echo "cargo test -q --test ${1#t:} --no-fail-fast$extra" ;;
     *)      return 1 ;;
   esac
