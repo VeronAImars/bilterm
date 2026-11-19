@@ -8,7 +8,7 @@ use super::verify::Version;
 pub const EMBEDDED: &str = include_str!("manifest.toml");
 
 /// Hosts downloads may come from (HTTPS only).
-pub const HOST_ALLOWLIST: &[&str] = &["download.freedos.org"];
+pub const HOST_ALLOWLIST: &[&str] = &["download.freedos.org", "qemu.weilnetz.de"];
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Manifest {
