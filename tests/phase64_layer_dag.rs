@@ -144,6 +144,7 @@ pub const BOUNDARY_EXEMPT: &[(&str, &str)] = &[
     ("src/attach/client/link.rs", "T-A7 attach client socket framing; host-side traffic attribution lives in the host path"),
     ("src/attach/client/tui.rs", "T-A7 attach client terminal I/O (own crossterm loop, not the WM render path)"),
     ("src/attach/conn_tests.rs", "test code"),
+    ("src/dos/backend/qmp.rs", "D1b QMP control socket to the emulator (loopback/0700 unix socket); JSON commands only, guest screen is read via pmemsave files, not terminal traffic"),
 ];
 
 /// Taps implemented by a wrapper or accessor type rather than an adjacent call.
