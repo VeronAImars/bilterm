@@ -14,7 +14,7 @@ use crate::action::DaemonSupervisorOp;
 use crate::daemon::limits::MemoryLimits;
 use crate::daemon::restart_policy::RestartMode;
 
-const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] | stop [name] [--force] | switch <name> | prune | host [name] | attach]";
+const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] | stop [name] [--force] | switch <name> | prune | host [name] | attach [kick <client-id>|--ro]]";
 
 /// Parses `:daemon` command invocations into a [`ColonCommand`].
 pub(super) fn parse_daemon_colon_command(
@@ -130,6 +130,17 @@ pub(super) fn parse_daemon_colon_command(
                 return Some(Err(USAGE.to_string()));
             }
             Some(Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::HostState { name })))
+        }
+        "attach" if parts.get(2) == Some(&"kick") => {
+            let op = match (parts.get(3), parts.len()) {
+                (Some(&"--ro"), 4) => DaemonSupervisorOp::AttachKick { client_id: None, all_ro: true },
+                (Some(id), 4) => match id.parse::<u64>() {
+                    Ok(id) => DaemonSupervisorOp::AttachKick { client_id: Some(id), all_ro: false },
+                    Err(_) => return Some(Err(format!("invalid attach client id '{id}'; {USAGE}"))),
+                },
+                _ => return Some(Err(USAGE.to_string())),
+            };
+            Some(Ok(ColonCommand::DaemonSupervisor(op)))
         }
         "attach" => {
             if parts.len() > 2 {

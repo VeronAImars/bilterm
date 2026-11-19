@@ -216,6 +216,8 @@ pub struct WindowManager {
     command_data: Option<String>,
     /// `true` while an API-originated action (RPC/MCP/playbook-confined/send_keys) runs.
     api_origin: bool,
+    /// True while applying an `Act` that came from an attach client (never allowed to kick).
+    attach_origin: bool,
     /// Optional attached `tmux -CC` Control Mode subprocess (`TMUX-03`, `ARCH-R05`).
     pub(crate) tmux_control: Option<crate::tmux::TmuxControlSubprocess>,
     /// Bi-directional `tmux -CC` Control Mode parser/router (`TMUX-03`, `ARCH-R05`).
@@ -375,6 +377,7 @@ impl WindowManager {
             automation_error: None,
             command_data: None,
             api_origin: false,
+            attach_origin: false,
             tmux_control: None,
             tmux_bridge: crate::tmux::TmuxControlBridge::new(),
             tmux_link: crate::tmux::link::TmuxLinkState::default(),

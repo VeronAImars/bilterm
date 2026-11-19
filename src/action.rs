@@ -394,6 +394,9 @@ pub enum DaemonSupervisorOp {
     HostState { name: Option<String> },
     /// `:daemon attach` / `attach.clients`: read-only list of attached clients (P2).
     AttachClients,
+    /// `:daemon attach kick <client-id> | --ro` / `attach.kick`: close one attach client (or all
+    /// read-only ones) with `Bye{kicked}`. Refused when applied on behalf of an attach client.
+    AttachKick { client_id: Option<u64>, all_ro: bool },
 }
 
 pub type DaemonOp = DaemonSupervisorOp;

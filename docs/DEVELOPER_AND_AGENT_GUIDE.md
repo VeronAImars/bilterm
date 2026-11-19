@@ -134,7 +134,7 @@ src/
 │   ├── pane_hold.rs            # Exited remote pane hold and respawn_active_pane (Phase 51.1)
 │   ├── link_cmd.rs             # RemoteLinkOp vocabulary for :ssh-tmux sub-verbs (Phase 51.1)
 │   └── tests.rs                # Unit tests for WindowManager & ZStack
-├── attach/                     # Session-host attach (P2): T-A1 wire layer + T-A2 listener (`--headless --host-ptys --attach`)
+├── attach/                     # Session-host attach (P2): user doc: docs/user-guide/15-attaching-to-a-session-host.md; smoke: scripts/attach_smoke.py; T-A1 wire layer + T-A2 listener (`--headless --host-ptys --attach`)
 │   └── client/                 # T-A7 `bilterm attach <host|socket> [--ro]` TUI client (link, state, keys, outbox, ui, tui); detach Ctrl-] d, panes Ctrl-] n/p; exit codes 0 detach,1 io,2 usage,3 refused,4 kicked,5 protocol,6 host shutdown
 │   ├── limits.rs               # Every attach cap (frame 4 MiB/64 KiB, 500x200, 8 KiB input, ...)
 │   ├── frame.rs                # BTHS header (version, msg_type, flags, len), bounded decode_one/FrameReader
@@ -142,7 +142,7 @@ src/
 │   ├── listener.rs             # host-<name>.attach.sock (0600), uid-checked accept loop, client cap
 │   ├── conn.rs                 # Per-connection handshake (Hello/HelloOk/Refuse, 5 s timeout) + control loop
 │   ├── handshake.rs            # Version negotiation; registry.rs: client registry (`attach.clients`)
-│   └── host.rs / view.rs       # Wiring into the headless host; `:daemon attach` / `attach.clients` read model
+│   └── host.rs / view.rs       # Wiring into the headless host; `:daemon attach` / `attach.clients` read model, `execute_attach_kick` (`attach.kick`)
 ├── daemon/
 │   ├── mod.rs                  # Background Multiplexer Daemon exports, DaemonAction & DaemonHandshake
 │   ├── process.rs              # Live OS process daemonization (daemon-<session>.sock, stale cleanup, session discovery)

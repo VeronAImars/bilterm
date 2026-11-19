@@ -115,7 +115,7 @@ impl AutomationControlPlane {
                         } else if tool_name == "bilterm_window_manage" {
                             Err("missing or invalid 'action' parameter: move, rename, rename_session, select, bulk, or undo".to_string())
                         } else if tool_name == "bilterm_daemon" {
-                            Err("missing or invalid 'action' parameter: list, status, start, stop, switch".to_string())
+                            Err("missing or invalid 'action' parameter: list, status, start, stop, switch, host_state, attach_clients, attach_kick".to_string())
                         } else if tool_name == "bilterm_web_surface" {
                             Err("invalid 'action' parameter: status, open, port or stop".to_string())
                         } else if tool_name == "bilterm_clipboard" {
@@ -315,9 +315,11 @@ impl AutomationControlPlane {
             ),
             Self::mcp_tool_schema(
                 "bilterm_daemon",
-                "Supervise and inspect Bilterm background daemons (list, status, start, stop, switch). list/status report rss_bytes, restart_count, last_exit and limits.",
+                "Supervise and inspect Bilterm background daemons (list, status, start, stop, switch, host_state, attach_clients, attach_kick). list/status report rss_bytes, restart_count, last_exit and limits.",
                 &[
-                    ("action", "string", "Operation: list | status | start | stop | switch"),
+                    ("action", "string", "Operation: list | status | start | stop | switch | host_state | attach_clients | attach_kick"),
+                    ("client_id", "integer", "With action='attach_kick': attach client id to close with Bye{kicked}"),
+                    ("ro", "boolean", "With action='attach_kick': kick every read-only attach client instead of one id"),
                     ("name", "string", "Optional daemon name (defaults to 'default')"),
                     ("force", "boolean", "Optional flag to force stop without graceful shutdown"),
                     ("restart", "string", "With action='start': restart policy never (default) | on-crash"),
@@ -578,6 +580,7 @@ impl AutomationControlPlane {
             "switch" => Some("daemon.switch"),
             "host_state" => Some("daemon.host_state"),
             "attach_clients" => Some("attach.clients"),
+            "attach_kick" => Some("attach.kick"),
             _ => None,
         }
     }

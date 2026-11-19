@@ -215,13 +215,29 @@ Decision: `bilterm dos setup` produces a persistent per-user `c.img`; Live Envir
 **Recipe PROVEN by spike D0b (2026-11-18, Linux, no sudo, QEMU 10.2.1, files under /datanapps/dos-spike/d0b)**, no FreeDOS installer UI needed:
 1. `qemu-img create -f raw c.img 128M`
 2. `sfdisk c.img` with `label: dos` / `start=2048, type=6, bootable` (one FAT16 partition at 1 MiB)
-3. `mformat -i c.img@@1048576 -F -t 250 -h 16 -s 63 ::` (mtools formats the partition in place; offset syntax `@@`)
+3. `mformat -i c.img@@1048576 -F -t 250 -h 16 -s 63 ::` (mtools formats the partition in place; offset syntax `@@`). NOTE (D0c correction, 5.1a): `-F` forces **FAT32**, not FAT16, despite the MBR type 0x06; it booted anyway, but drop `-F` (or use the Rust builder) for a true FAT16 volume
 4. `mcopy -i c.img@@1048576 KERNEL.SYS COMMAND.COM ::/` (both taken from the pinned `FD14LIVE.iso`/BASE content)
 5. `dd if=mbr.bin of=c.img bs=440 count=1 conv=notrunc` (MBR boot code is required: sfdisk writes the table only and SeaBIOS hangs at "Booting from Hard Disk..." without it; the syslinux `mbr.bin` worked; for a no-syslinux path, embed a ~440-byte public-domain MBR or use FreeDOS `FDISK /MBR`)
 6. Boot once from the pinned `FD14BOOT.img` floppy with `c.img` attached (`format=raw` explicitly), wait for the FreeCom prompt, inject `sys c:` + Enter via QMP `sendkey` (screen read via `pmemsave`), see "System transferred."
 7. Boot from `c.img` alone: SeaBIOS -> FreeDOS kernel 2043 banner -> `C: HD1, Pri[1] ... size=127 MB` -> FreeCom 0.86 prompt. **VERIFIED.**
 
-So the only scripted-UI step is the single `sys c:` command; no installer dialog is driven. Installing the full package set (editors, tools) is then `mcopy`/`unzip` of pinned `.zip` packages from the 1.4 BASE/Live ISO into the FAT image (not yet done; UNVERIFIED), plus a generated `FDCONFIG.SYS`/`AUTOEXEC.BAT` (not yet done). Other options kept as fallbacks: FreeDOS installer answer file (UNVERIFIED that one exists), or full keystroke-driven installer via the same QMP driver (more fragile).
+So the only scripted-UI step is the single `sys c:` command; no installer dialog is driven. Packages are installed by `unzip` of the pinned `.zip` packages from the Live ISO (`packages/<set>/*.zip`, members are `BIN/ DOC/ APPINFO/ SOURCE/`) into a staging dir, then one `mcopy -s -Q stage/FREEDOS ::/` (about 1 s for 4260 files), plus generated `FDCONFIG.SYS` (HIMEMX, `SHELL=\COMMAND.COM \ /E:1024 /P=\AUTOEXEC.BAT`) and `AUTOEXEC.BAT` (DOSDIR/PATH/TEMP/NLSPATH). **D0b results (2026-11-18, `scripts/dos-spike-install.sh`, Linux, QEMU 10.2.1)**:
+- FD14-LiveCD.zip downloaded into a fresh dir, SHA256 checked against `download.freedos.org/1.4/verify.txt` (`2020ff6b...6339`): **VERIFIED** match. Note `verify.txt` lists md5 then sha256; parse only the `sha256sum:` section.
+- All 57 BASE packages + AUTOEXEC/FDCONFIG installed into the FAT16 image, `sys c:` via QMP `send-key` + `pmemsave` screen reads, boots to FreeCom with autoexec banner: **VERIFIED**.
+- **Reboot persistence VERIFIED**: boot 1 types `echo persist-ok-<pid> > c:\persist.txt` (QMP `send-key`), `quit`; boot 2 is a fresh QEMU process, `type c:\persist.txt` prints the text, and `mtype` on the host reads the same bytes. Whole script runs in about 37 s per image. Tested at 128 MiB (base), 512 MiB (full, FAT16 type 6 -> `0e` above 500 MiB), 1024 MiB (all).
+- Keystroke injection: QMP `send-key` qcodes work (shift as a two-key combo for `:` `>` `_`); no HMP needed. QMP over TCP loopback used (also works for the Windows path).
+- **Package sizes** (zip -> uncompressed -> on-disk FAT16 used incl. cluster slack, SOURCE/ trees dropped):
+
+| Set | Zips | Zip | Uncompressed (with SOURCE) | Files on disk | On-disk used |
+|---|---|---|---|---|---|
+| BASE (57) | 12.6 MB | 12.3 MiB | 18.9 MB | 1002 | ~13.4 MiB (image 13756 KiB) |
+| FULL = base+apps+archiver+drivers+net+tools+unix (152) | 117 MB | 112 MiB | ~164 MB | 4260 | ~97 MiB (99200 KiB) |
+| ALL = FULL+games+sound (191) | 266 MB | 254 MiB | ~395 MB | 5667 | ~259 MiB (265064 KiB) |
+
+  Live ISO is 316 MB (games 114 MB and sound 31 MB zipped dominate; net 67 MB).
+- **Decision for `setup --full`**: image **256 MiB** (FAT16, ~2.6x headroom over ~97 MiB used; 512 MiB measured working too), package set `base apps archiver drivers net tools unix` (no games/sound; those are opt-in `--games`). BASE-only default stays 128 MiB (13 MiB used). Max stays 2 GiB (FAT16 limit, UNVERIFIED above 1 GiB).
+- Pitfalls: `MKDIR failed` if AUTOEXEC mkdirs a dir that the packages already staged (stage `FREEDOS/TEMP`); kernel prints harmless `suspect partition` CHS warnings from the mformat geometry (boots fine).
+- **macOS arm64 (bigmac, QEMU 11.1.3)**: `brew install mtools` OK (4.0.50); `bsdtar`, `unzip`, `python3` present; **`sfdisk` absent, script stops with exit 3 as designed** (UNVERIFIED beyond that; D0c pure-Rust builder covers partition table + MBR + FAT, and must also embed an MBR since syslinux `mbr.bin` is not on macOS either). Windows out of scope here. Other options kept as fallbacks: FreeDOS installer answer file (UNVERIFIED that one exists), or full keystroke-driven installer via the same QMP driver (more fragile).
 
 Not verified: persistence across a guest write+reboot (expected), FAT32/larger sizes, qcow2 (use qcow2 only if snapshots via `qemu-img snapshot` are wanted; raw + file copy is simpler), macOS/Windows runs of this mtools recipe (mtools/sfdisk are Linux tools: the pure-Rust `fatfs` + hand-built MBR replacement of steps 2-5 is built and VERIFIED in 5.1a on Linux, macOS arm64 and Windows x64; dependency under `dos` accepted, section 0.1 item 4).
 
@@ -264,7 +280,9 @@ MIT is compatible with bilterm's Apache-2.0 (needs the MIT notice in the third-p
 
 **Doc corrections to 5.1** (found while diffing): the D0b recipe's `mformat -F` forces **FAT32**, not FAT16 (the boot sector of that `c.img` starts `EB 58 90` with `FAT32   ` at 0x52) although the MBR type is 0x06; it booted anyway under FreeDOS, but the Rust builder produces a true FAT16 volume and boots too.
 
-**Decision: pure-Rust `fatfs` 0.3.6 + `fscommon` 0.1.1 under the `dos` feature on all OSes, no mtools shell-out.** Revisit only if `fatfs` fails on a real image (fallback: shell out to mtools on Unix). Status: image builder VERIFIED on Linux, macOS arm64, Windows x64 (build); boot-sector source = open decision above.
+**OWNER DECISION (2026-11-18), closes the boot-sector licensing question:** the FreeDOS FAT16 boot-sector code blob is GPL-2.0-or-later and is **NOT committed to the repo** (options 2 and 3 above rejected). It is captured once at `dos setup` via option 1 (the proven guest `sys c:` step: build the image in Rust, boot the pinned `FD14BOOT.img`, QMP-type `sys c:`, read sector 0 back) and cached in the per-user data dir (`secure_fs`: 0700 dir, 0600 atomic file). The Rust builder takes the cached blob through its `--boot-sector FILE` interface.
+
+**Decision: pure-Rust `fatfs` 0.3.6 + `fscommon` 0.1.1 under the `dos` feature on all OSes, no mtools shell-out.** Revisit only if `fatfs` fails on a real image (fallback: shell out to mtools on Unix). Status: image builder VERIFIED on Linux, macOS arm64, Windows x64 (build); boot-sector source = captured at setup, not committed (owner decision above, closed).
 
 ### 5.2 Windows (in v1 scope)
 
@@ -337,17 +355,17 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 | PR | Scope | Exit criteria |
 |---|---|---|
 | D0 | Spike script (not wired in): QEMU curses boot and key injection. DONE for Linux (4.1) and macOS `-display help` (4.2) | results in this doc |
-| D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; remaining: add packages + AUTOEXEC, reboot-persistence check. macOS run: `ssh bill@bigmac.local 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; brew install mtools && cd ~/worktrees/<wt> && scripts/dos-spike-install.sh'` (sfdisk absent on macOS: use the D0c Rust builder or `fdisk -e`) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
-| D0c | Pure-Rust image builder spike (`fatfs` + hand-written MBR). **DONE 2026-11-18**, see 5.1a: builds a bootable sparse FAT16 `c.img` with no mtools/sfdisk/dd; boots to FreeCom + AUTOEXEC on Linux, macOS arm64, and (image built on) Windows x64; decision: `fatfs` 0.3.6 + `fscommon`. Remaining: FreeDOS FAT16 boot-sector source (5.1a), Bochs `term` and textbuf-poll runs UNVERIFIED (not run) | image boots VERIFIED; Windows-viable VERIFIED (x64 build+image); crate decision recorded |
+| D0b | Persistent-install spike: bounded to ONE script (`scripts/dos-spike-install.sh`, not in verify) that builds `c.img` per 5.1. Linux recipe PROVEN 2026-11-18; packages + AUTOEXEC + reboot persistence now VERIFIED on Linux (2026-11-18); macOS stops at missing sfdisk (exit 3). macOS run: `ssh bill@bigmac.local 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; brew install mtools && cd ~/worktrees/<wt> && scripts/dos-spike-install.sh'` (sfdisk absent on macOS: use the D0c Rust builder or `fdisk -e`) | script reproduces a bootable `c.img` on Linux and macOS; time box 1 day |
+| D0c | Pure-Rust image builder spike (`fatfs` + hand-written MBR). **DONE 2026-11-18**, see 5.1a: builds a bootable sparse FAT16 `c.img` with no mtools/sfdisk/dd; boots to FreeCom + AUTOEXEC on Linux, macOS arm64, and (image built on) Windows x64; decision: `fatfs` 0.3.6 + `fscommon`. Boot-sector source decided: captured at `dos setup`, not committed (5.1a). Remaining: Bochs `term` and textbuf-poll runs UNVERIFIED (not run) | image boots VERIFIED; Windows-viable VERIFIED (x64 build+image); crate decision recorded |
 | D1 | `dos` feature flag, `src/dos/{manifest,download,verify,paths}.rs`, `manifest.toml`, mock downloader, `bilterm dos setup/remove/doctor` (CLI) | unit tests; `cargo check --features dos`; real setup on Linux |
 | D1b | `DosBackend` trait, `HostEnv`, per-OS `detect()`, mock backend, conformance suite | suite green on mock |
-| D1c | Persistent image: builder, `reset/snapshot/restore`, lock, dirty marker, corruption path | image tests green; ignored smoke boots |
+| D1c | Persistent image: builder, boot-sector capture at `dos setup` (guest `sys c:` via QMP, cached in the per-user data dir with `secure_fs` 0700/0600; blob NOT committed, GPL-2.0+), `reset/snapshot/restore`, lock, dirty marker, corruption path | image tests green; ignored smoke boots |
 | D2a | `qemu-curses` backend + `dos run` + pane spawn via `WindowManager::apply`, min size, `-nic none` | headless fixture + ignored smoke (Linux, macOS) |
 | D2b | `qemu-textbuf` backend: QMP client, text decoder, `Bridge` pane source, graphics-mode notice | golden-fixture tests; smoke on Linux |
 | D2c | `bochs-term` backend (Linux/BSD; optional) | smoke or documented skip |
 | D2d | BSD best-effort: FreeBSD/OpenBSD detection rows, doctor messages; first add a FreeBSD and an OpenBSD guest to win-devvm/libvirt (small infra task, separate repo) and run `dos doctor` + smoke there | rows verified, else stay best-effort |
 | D3 | `Action::Dos*`, `:dos ...`, RPC `dos.*`, MCP tools, status line, parity table test | parity test green, `ctl` e2e |
-| D6 | **Windows x64**: ConPTY/Bridge wiring, loopback QMP (spike VERIFIED), winget guidance and consented pinned installer download, path/ACL handling, pure-Rust builder, no-bash setup | `build-windows-vm.sh --arch x64 --test` + dos smoke green on win-devvm x64; `-display curses` under ConPTY result recorded |
+| D6 | **Windows x64**: ConPTY/Bridge wiring, loopback QMP (spike VERIFIED), winget guidance and consented pinned installer download, path/ACL handling, pure-Rust builder, boot-sector capture via guest `sys c:` at setup (QMP over loopback; blob cached, not committed), no-bash setup | `build-windows-vm.sh --arch x64 --test` + dos smoke green on win-devvm x64; `-display curses` under ConPTY result recorded |
 | D6b | **Windows ARM64**: same suite via bigmac Parallels win-devvm (x64 QEMU under emulation; speed measured) | `--arch arm64 --test` + dos smoke green |
 | D7a | **macOS arm64**: `dos run`/image build/smoke on bigmac (throwaway worktree) | ignored smoke green |
 | D7b | **macOS Intel**: `x86_64-apple-darwin` build + tests under Rosetta on bigmac; native Intel QEMU unavailable, so record that gap explicitly or add an Intel Homebrew under `/usr/local` (Rosetta) | tests green; gap documented or closed |
@@ -361,7 +379,7 @@ Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6, D6b, D7a, 
 Former questions 1-5 are answered (section 0.1). Genuinely open:
 
 1. BSD: add FreeBSD/OpenBSD guests to win-devvm/libvirt (D2d), or keep BSD documented best-effort indefinitely?
-2. `setup --full` default image size (512 MiB proposed) and the exact package list: decide after D0b measures the Live package sizes.
+2. `setup --full` default image size (512 MiB proposed) and the exact package list: decided by D0b: 256 MiB, base+apps+archiver+drivers+net+tools+unix (~97 MiB used; see 5.1).
 
 ## Sources (fetched 2026-11-17 and 2026-11-18)
 

@@ -80,6 +80,7 @@ pub const RPC_METHODS: &[&str] = &[
     "daemon.switch",
     "daemon.host_state",
     "attach.clients",
+    "attach.kick",
     "drawer.preview",
     "clipboard.list",
     "clipboard.get",
