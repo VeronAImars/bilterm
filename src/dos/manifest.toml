@@ -1,0 +1,62 @@
+# DOS mode download manifest (feature `dos`). Pinned, never "latest".
+# Every entry's sha256 was computed locally over a fresh download on 2026-11-18 and matches the
+# vendor's published verify.txt (https://download.freedos.org/1.4/verify.txt).
+# `sha256 = "TODO"` marks an UNVERIFIED pin: `bilterm dos setup` refuses such entries.
+# Nothing here is bundled in bilterm; the user downloads it on explicit consent.
+# NOTE: the FreeDOS FAT16 boot-sector blob is GPL-2.0-or-later and is NEVER committed; it is
+# captured at setup time (PR D1c) into the per-user cache.
+
+schema = 1
+
+[emulator]
+name = "qemu-system-i386"
+min_version = "10.2.0"   # security/feature floor (plan section 8)
+# Windows (Stefan Weil build) and macOS/Linux packages come from the user's package manager.
+
+[freedos]
+version = "1.4"
+notice = "DOS mode -- runs FreeDOS. FreeDOS is a trademark of Jim Hall; it is a collection of separately licensed packages (mostly GPL, see each package). bilterm does not bundle or redistribute it: this command downloads it from freedos.org to your user data directory."
+
+[[entry]]
+id = "freedos-14-livecd"
+file = "FD14-LiveCD.zip"
+version = "1.4"
+url = "https://download.freedos.org/1.4/FD14-LiveCD.zip"
+sha256 = "2020ff6bb681967fd6eff8f51ad2e5cd5ab4421165948cef4246e4f7fcaf6339"
+bytes = 293950337
+default = true
+platform = "all"
+license_note = "Collection of separately licensed packages; kernel GPL-2.0-or-later. See package .LSM files."
+source_url = "https://www.freedos.org/download/"
+# Members used by later PRs (D1c). Pinned now so extraction can verify them.
+members = [
+  { name = "FD14BOOT.img", sha256 = "ab6882e068ec2a47cf2f60bf0260d247310f2a4ed0050bcf749c54e80a08dd9e", bytes = 1474560 },
+  { name = "FD14LIVE.iso", sha256 = "c48a9dcf4b8e22f44e268a9879745f0bd88c061195ac584e6ef2deb0477f81fb", bytes = 316557312 },
+]
+
+[[entry]]
+id = "freedos-14-floppy"
+file = "FD14-FloppyEdition.zip"
+version = "1.4"
+url = "https://download.freedos.org/1.4/FD14-FloppyEdition.zip"
+sha256 = "45b1fa7c52dd996c3bfa5e352ffcd410781b952a6ad629f15a4c9ec4bbaefc5a"
+bytes = 23624258
+default = false
+platform = "all"
+license_note = "Collection of separately licensed packages; kernel GPL-2.0-or-later."
+source_url = "https://www.freedos.org/download/"
+members = []
+
+# Portable Windows emulator: NOT yet pinned (needs a hash fetched and verified on Windows, PR D6).
+[[entry]]
+id = "qemu-windows-x64"
+file = "qemu-w64-setup.exe"
+version = "TODO"
+url = "https://qemu.weilnetz.de/w64/"
+sha256 = "TODO"
+bytes = 0
+default = false
+platform = "windows"
+license_note = "QEMU is GPL-2.0; Windows builds by Stefan Weil."
+source_url = "https://qemu.weilnetz.de/"
+members = []

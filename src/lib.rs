@@ -10,6 +10,8 @@ pub mod colon_command;
 pub mod command_registry;
 pub mod config;
 pub mod daemon;
+#[cfg(feature = "dos")]
+pub mod dos;
 pub mod error;
 pub mod input;
 pub mod launcher;
