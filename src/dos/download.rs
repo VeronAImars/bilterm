@@ -240,9 +240,12 @@ mod tests {
     #[test]
     fn unpinned_entry_refused_without_network() {
         let (_d, paths, _) = fixture(b"x");
-        let e = Manifest::embedded()
-            .unwrap()
-            .entry("qemu-windows-x64")
+        let e = Manifest::parse(&crate::dos::manifest::EMBEDDED.replace(
+            "f98a8aeb5f7faea9765b6dee28316c266cd179d80354a2fed8e50176f9a2e59f",
+            "TODO",
+        ))
+        .unwrap()
+        .entry("qemu-windows-x64")
             .unwrap()
             .clone();
         let dl = MockDownloader::new(vec![]);
