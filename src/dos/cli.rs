@@ -402,7 +402,11 @@ mod tests {
     #[test]
     fn setup_refuses_unpinned_entry_without_network_or_dirs() {
         let t = tempfile::tempdir().unwrap();
-        let m = Manifest::embedded().unwrap();
+        let m = Manifest::parse(&crate::dos::manifest::EMBEDDED.replace(
+            "f98a8aeb5f7faea9765b6dee28316c266cd179d80354a2fed8e50176f9a2e59f",
+            "TODO",
+        ))
+        .unwrap();
         let dl = MockDownloader::new(vec![]);
         let c = ctx(&t, &m, &dl, false);
         let mut out = String::new();
