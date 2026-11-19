@@ -102,6 +102,14 @@ impl DosPaths {
     pub fn c_dir(&self) -> PathBuf {
         self.root.join("c")
     }
+    /// Snapshots: `snapshots/<name>/<tag>.img` (D1c).
+    pub fn snapshots_dir(&self) -> PathBuf {
+        self.root.join("snapshots")
+    }
+    /// Per-run scratch (emulator control sockets, boot-sector capture images, fsck copies).
+    pub fn sessions_dir(&self) -> PathBuf {
+        self.root.join("sessions")
+    }
     /// Cache for the FreeDOS FAT16 boot sector captured at setup (D1c). GPL-2.0+: never committed.
     pub fn boot_cache_dir(&self) -> PathBuf {
         self.root.join("boot")
@@ -137,6 +145,8 @@ impl DosPaths {
             self.images_dir(),
             self.c_dir(),
             self.boot_cache_dir(),
+            self.snapshots_dir(),
+            self.sessions_dir(),
         ] {
             secure_fs::ensure_private_dir(&d)?;
         }
