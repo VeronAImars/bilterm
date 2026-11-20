@@ -262,6 +262,7 @@ impl WindowManager {
                 if let Some(partner_id) = partner_opt
                     && self.split_tree.swap_leaves(pane_id, partner_id)
                 {
+                    self.window_order_swap(pane_id, partner_id);
                     self.reflow_default_viewport();
                     if let Some(new_row) = self
                         .drawer_rows()

@@ -44,6 +44,12 @@ impl WindowManager {
                 out.push(name.clone());
             }
         }
+        // Tree-registered sessions keep the tree's own creation order for their first placement.
+        for node in &tree.nodes {
+            if candidates.contains(&node.name) && !out.contains(&node.name) {
+                out.push(node.name.clone());
+            }
+        }
         for name in &candidates {
             if !out.contains(name) {
                 out.push(name.clone());
@@ -66,6 +72,15 @@ impl WindowManager {
         let view = self.session_order_view(&persisted, &saved);
         if view != persisted {
             self.save_session_order(view);
+        }
+    }
+
+    /// Swaps two windows in the active session's window order.
+    pub(crate) fn window_order_swap(&mut self, a: PaneId, b: PaneId) {
+        let mut ids = self.ordered_pane_ids();
+        if let (Some(i), Some(j)) = (ids.iter().position(|&x| x == a), ids.iter().position(|&x| x == b)) {
+            ids.swap(i, j);
+            self.window_manage.window_order = ids;
         }
     }
 

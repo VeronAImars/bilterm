@@ -215,7 +215,18 @@ impl WindowManager {
         }
         // Children whose parent was never walked (parent not an order entry) still appear.
         for name in &order {
-            if !visited.contains(name) {
+            // A folded or depth-capped ancestor hides its descendants; only orphans surface here.
+            let mut anc = tree.node(name).and_then(|n| n.parent.clone());
+            let mut hidden = false;
+            for _ in 0..=MAX_DEPTH + 1 {
+                let Some(a) = anc else { break };
+                if visited.contains(&a) {
+                    hidden = true;
+                    break;
+                }
+                anc = tree.node(&a).and_then(|n| n.parent.clone());
+            }
+            if !hidden && !visited.contains(name) {
                 let mut n = SessionTreeNode::new(name.clone(), SessionNodeKind::Independent, None);
                 n.pane_count = 0;
                 ctx.walk(&n, 0, &mut visited, &mut rows);
