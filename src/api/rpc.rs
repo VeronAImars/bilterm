@@ -160,6 +160,9 @@ pub struct AutomationControlPlane {
     pub(super) attach_requests: Option<tokio::sync::mpsc::Receiver<crate::attach::input::HostRequest>>,
     /// Streaming rendezvous with attach connections (`T-A6`); `None` without `--attach`.
     pub(super) attach_hub: Option<std::sync::Arc<crate::attach::hub::AttachHub>>,
+    /// Name of the daemon this plane serves when it was started WITHOUT `--host-ptys` (its panes
+    /// have no shell); command-sending RPCs then fail loudly instead of reporting success.
+    pub(super) no_pty_daemon: Option<String>,
 }
 
 /// Execution policy determining whether snapshot exports are confined to the designated snapshot dir.
@@ -211,7 +214,24 @@ impl AutomationControlPlane {
             host_persist: None,
             attach_requests: None,
             attach_hub: None,
+            no_pty_daemon: None,
         }
+    }
+
+    /// Marks this plane as a daemon `name` without host PTYs (see [`Self::no_pty_error`]).
+    pub fn with_no_pty_daemon(mut self, name: &str) -> Self {
+        self.no_pty_daemon = Some(name.to_string());
+        self
+    }
+
+    /// The structured error for a command-sending RPC on a PTY-less daemon, else `None`.
+    pub(super) fn no_pty_error(&self, method: &str) -> Option<String> {
+        let name = self.no_pty_daemon.as_deref()?;
+        Some(format!(
+            "no_host_ptys: daemon '{name}' was started without --host-ptys; its panes have no shell, so {method} cannot run anything. \
+             Restart it with PTYs: `bilterm daemon stop {name}` then `bilterm daemon new {name} --host-ptys` (or start a new named host daemon). \
+             Check `host_ptys` in daemon.status / workspace.status first."
+        ))
     }
 
     pub fn with_snapshot_dir(mut self, dir: PathBuf) -> Self {

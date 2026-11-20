@@ -219,6 +219,26 @@ fn parse_workspace(p: &Parsed) -> Result<RpcCall, String> {
     }
 }
 
+/// Explanation when `BILTERM_SOCKET` names a unix socket that no longer exists (the bilterm
+/// instance that exported it exited), else `None`. Callers must not silently fall back to another
+/// instance or the `default` daemon: that is a different target than the one the caller meant.
+pub fn stale_env_socket(env: &CliEnv) -> Option<String> {
+    let raw = env.socket.as_deref()?;
+    let path = match raw.strip_prefix("unix:") {
+        Some(p) => p,
+        None if raw.contains(':') && !raw.starts_with('/') => return None, // host:port, not a file
+        None => raw,
+    };
+    if Path::new(path).exists() {
+        return None;
+    }
+    Some(format!(
+        "bilterm: BILTERM_SOCKET={raw} points at a socket that no longer exists (stale: the bilterm instance that exported it has exited). \
+         Not falling back to the 'default' daemon or another instance, because that would be a different target. \
+         Unset BILTERM_SOCKET to use the default daemon, or name a target with --daemon NAME / BILTERM_DAEMON."
+    ))
+}
+
 /// Picks the endpoint (`unix:PATH`): `BILTERM_SOCKET`, else the registry's newest live instance /
 /// `bilterm.sock` link under `runtime`, else `None` (caller falls back to its default).
 pub fn resolve_endpoint(env: &CliEnv, runtime: Option<&Path>) -> Option<String> {
