@@ -12,15 +12,28 @@ pub const BDA_LEN: usize = 0x100;
 const CP437_LOW: &str = "\u{20}☺☻♥♦♣♠•◘○◙♂♀♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼";
 const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
 
-/// CP437 byte to Unicode. Byte 0 (and NUL cells) render as a space.
+fn cp437_table() -> &'static [char; 256] {
+    static T: std::sync::OnceLock<[char; 256]> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        let mut t = [' '; 256];
+        for (i, c) in CP437_LOW.chars().enumerate().take(32) {
+            t[i] = c;
+        }
+        for b in 0x20..=0x7eusize {
+            t[b] = b as u8 as char;
+        }
+        t[0x7f] = '⌂';
+        for (i, c) in CP437_HIGH.chars().enumerate().take(128) {
+            t[0x80 + i] = c;
+        }
+        t[0] = ' ';
+        t
+    })
+}
+
+/// CP437 byte to Unicode. Byte 0 (and NUL cells) render as a space. O(1) table lookup.
 pub fn cp437(b: u8) -> char {
-    match b {
-        0 => ' ',
-        1..=0x1f => CP437_LOW.chars().nth(b as usize).unwrap_or(' '),
-        0x20..=0x7e => b as char,
-        0x7f => '⌂',
-        _ => CP437_HIGH.chars().nth(b as usize - 0x80).unwrap_or(' '),
-    }
+    cp437_table()[b as usize]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,8 +64,13 @@ pub struct TextScreen {
     pub cells: Vec<TextCell>,
     /// (col, row) when known from the BIOS data area.
     pub cursor: Option<(u16, u16)>,
+    /// False when the guest disabled the cursor (BDA 0x461 bit 5); true when unknown.
+    pub cursor_visible: bool,
     /// BIOS video mode (BDA 0x449) when known.
     pub video_mode: Option<u8>,
+    /// Text geometry the BIOS reports differs from 80x25 (BDA 0x44A / 0x484); the 4000 byte
+    /// buffer is then not a faithful picture, so hosts show a notice instead.
+    pub odd_geometry: bool,
 }
 
 impl TextScreen {
@@ -62,7 +80,39 @@ impl TextScreen {
             rows: GUEST_ROWS,
             cells: vec![TextCell::from_raw(b' ', 0x07); GUEST_COLS as usize * GUEST_ROWS as usize],
             cursor: Some((0, 0)),
+            cursor_visible: true,
             video_mode: Some(3),
+            odd_geometry: false,
+        }
+    }
+
+    /// A screen telling the user the guest left text mode (or uses a geometry bilterm cannot
+    /// show). Pure host text, nothing derived from guest memory except the mode number.
+    pub fn notice(msg: &str) -> Self {
+        let mut s = Self::blank();
+        s.cursor = None;
+        s.cursor_visible = false;
+        let line = |r: usize, text: &str, s: &mut Self| {
+            let start = (GUEST_COLS as usize).saturating_sub(text.chars().count()) / 2;
+            for (i, ch) in text.chars().take(GUEST_COLS as usize).enumerate() {
+                let c = &mut s.cells[r * GUEST_COLS as usize + start + i];
+                *c = TextCell {
+                    ch,
+                    fg: 14,
+                    bg: 0,
+                    blink: false,
+                };
+            }
+        };
+        line(11, msg, &mut s);
+        line(13, "(text mode and 80x25 only in this version)", &mut s);
+        s
+    }
+
+    pub fn graphics_notice(mode: Option<u8>) -> Self {
+        match mode {
+            Some(m) => Self::notice(&format!("guest is in graphics mode 0x{m:02X}")),
+            None => Self::notice("guest is in a graphics mode"),
         }
     }
 
@@ -83,13 +133,26 @@ impl TextScreen {
             rows: GUEST_ROWS,
             cells,
             cursor: None,
+            cursor_visible: true,
             video_mode: None,
+            odd_geometry: false,
         };
         if let Some(b) = bda.filter(|b| b.len() >= 0x52) {
             s.video_mode = Some(b[0x49]);
             let (c, r) = (b[0x50] as u16, b[0x51] as u16);
             if c < s.cols && r < s.rows {
                 s.cursor = Some((c, r));
+            }
+            if b.len() > 0x84 {
+                // Columns 0x44A (u16); rows-1 at 0x484 is 0 on BIOSes that never set it.
+                let cols = u16::from_le_bytes([b[0x4a], b[0x4b]]);
+                let rows_m1 = b[0x84];
+                s.odd_geometry = (cols != 0 && cols != GUEST_COLS)
+                    || (rows_m1 != 0 && rows_m1 as u16 + 1 != GUEST_ROWS);
+            }
+            if b.len() > 0x61 {
+                // Cursor start scan line (0x461) bit 5 set = cursor off (FreeDOS installer does it).
+                s.cursor_visible = b[0x61] & 0x20 == 0;
             }
         }
         Ok(s)
@@ -98,6 +161,18 @@ impl TextScreen {
     /// True for the text modes this buffer is meaningful in (0x2, 0x3, 0x7). Unknown counts as text.
     pub fn is_text_mode(&self) -> bool {
         self.video_mode.is_none_or(|m| matches!(m, 2 | 3 | 7))
+    }
+
+    /// The screen a host should draw: this one, or a notice when the buffer is not a faithful
+    /// 80x25 text picture (graphics mode, odd geometry).
+    pub fn for_display(&self) -> TextScreen {
+        if !self.is_text_mode() {
+            Self::graphics_notice(self.video_mode)
+        } else if self.odd_geometry {
+            Self::notice("guest text geometry is not 80x25")
+        } else {
+            self.clone()
+        }
     }
 
     pub fn cell(&self, col: u16, row: u16) -> Option<&TextCell> {

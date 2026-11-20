@@ -2,15 +2,14 @@
 //! `Command::args` only, never through a shell. Control is QMP on a unix socket inside a 0700
 //! per-session directory where possible, else TCP on 127.0.0.1 with an OS-assigned port.
 
-use std::fs::File;
-use std::io::Read;
 use std::net::{Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::qmp::{Conn, Qmp};
-use super::screen::{BDA_ADDR, BDA_LEN, TEXT_BUF_ADDR, TEXT_BUF_LEN, TextScreen};
+use super::screen::TextScreen;
+use super::textbuf::VgaReader;
 use super::{
     BackendCaps, BackendError, ControlEndpoint, DosBackend, DosKey, LaunchKind, LaunchPlan, Result,
     SessionSpec, random_hex,
@@ -165,7 +164,13 @@ pub struct QemuBackend {
     child: Option<Child>,
     qmp: Option<Qmp<Conn, Conn>>,
     size: (u16, u16),
+    prefer_unix: bool,
 }
+
+/// Launch attempts when a loopback TCP port picked earlier is taken before QEMU binds it.
+const TCP_LAUNCH_ATTEMPTS: usize = 3;
+/// After a TCP handshake, how long to wait before trusting that the listener is our child's.
+const TCP_OWNERSHIP_GRACE: Duration = Duration::from_millis(150);
 
 impl QemuBackend {
     pub fn new(mode: QemuMode, program: PathBuf, base: PathBuf) -> Self {
@@ -178,6 +183,35 @@ impl QemuBackend {
             child: None,
             qmp: None,
             size: (super::GUEST_COLS, super::GUEST_ROWS),
+            prefer_unix: cfg!(unix),
+        }
+    }
+
+    /// Use loopback TCP for QMP even where unix sockets work (Windows always does).
+    pub fn prefer_tcp(mut self) -> Self {
+        self.prefer_unix = false;
+        self
+    }
+
+    /// A TCP handshake could have been answered by a squatter that won the port race; QEMU would
+    /// then have failed to bind and exited. Wait briefly and require the child to still be alive.
+    fn confirm_ownership(&mut self, tcp: bool) -> Result<()> {
+        if !tcp {
+            return Ok(());
+        }
+        std::thread::sleep(TCP_OWNERSHIP_GRACE);
+        match self.child.as_mut().map(|c| c.try_wait()) {
+            Some(Ok(None)) => Ok(()),
+            _ => Err(BackendError::Process(
+                "emulator exited right after the QMP handshake (port taken?)".into(),
+            )),
+        }
+    }
+
+    fn kill_child(&mut self) {
+        if let Some(mut c) = self.child.take() {
+            let _ = c.kill();
+            let _ = c.wait();
         }
     }
 
@@ -192,26 +226,6 @@ impl QemuBackend {
 
     fn qmp_mut(&mut self) -> Result<&mut Qmp<Conn, Conn>> {
         self.qmp.as_mut().ok_or(BackendError::NotRunning)
-    }
-
-    fn dump(&mut self, addr: u64, len: usize, name: &str) -> Result<Vec<u8>> {
-        let path = self
-            .session_dir
-            .as_ref()
-            .ok_or(BackendError::NotRunning)?
-            .join(name);
-        self.qmp_mut()?.pmemsave(addr, len, &path)?;
-        let mut buf = Vec::with_capacity(len);
-        File::open(&path)?
-            .take(len as u64 + 1)
-            .read_to_end(&mut buf)?;
-        if buf.len() != len {
-            return Err(BackendError::Qmp(format!(
-                "dump {name} was {} bytes, expected {len}",
-                buf.len()
-            )));
-        }
-        Ok(buf)
     }
 }
 
@@ -236,7 +250,7 @@ impl DosBackend for QemuBackend {
     fn plan(&mut self, spec: &SessionSpec) -> Result<LaunchPlan> {
         let dir = self.ensure_session_dir()?;
         if self.endpoint == ControlEndpoint::None {
-            self.endpoint = allocate_endpoint(&dir, cfg!(unix))?;
+            self.endpoint = allocate_endpoint(&dir, self.prefer_unix)?;
         }
         Ok(LaunchPlan {
             kind: if self.mode == QemuMode::Curses {
@@ -261,20 +275,44 @@ impl DosBackend for QemuBackend {
             return Err(BackendError::Process("already launched".into()));
         }
         self.size = (spec.size_cols, spec.size_rows);
-        let plan = self.plan(spec)?;
-        let child = Command::new(&plan.program)
-            .args(&plan.argv)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| BackendError::Process(format!("spawn {}: {e}", plan.program.display())))?;
-        self.child = Some(child);
-        if let Err(e) = self.attach() {
-            let _ = self.shutdown();
-            return Err(e);
+        // The loopback port is chosen by bind-and-release, so another process can take it before
+        // QEMU binds it (D1b open question). Two defences: a squatter fails the QMP greeting, and
+        // a lost bind makes QEMU exit; either way retry with a fresh port. Unix sockets inside the
+        // private session directory cannot race, so they get a single attempt.
+        let mut last = None;
+        for attempt in 0..TCP_LAUNCH_ATTEMPTS {
+            let plan = self.plan(spec)?;
+            let tcp = matches!(plan.control, ControlEndpoint::Tcp { .. });
+            let child = Command::new(&plan.program)
+                .args(&plan.argv)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| {
+                    BackendError::Process(format!("spawn {}: {e}", plan.program.display()))
+                })?;
+            self.child = Some(child);
+            let r = self.attach().and_then(|()| self.confirm_ownership(tcp));
+            match r {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    let retry = tcp
+                        && attempt + 1 < TCP_LAUNCH_ATTEMPTS
+                        && matches!(e, BackendError::Process(_) | BackendError::Qmp(_));
+                    self.kill_child();
+                    self.qmp = None;
+                    if !retry {
+                        let _ = self.shutdown();
+                        return Err(e);
+                    }
+                    self.endpoint = ControlEndpoint::None;
+                    last = Some(e);
+                }
+            }
         }
-        Ok(())
+        let _ = self.shutdown();
+        Err(last.unwrap_or_else(|| BackendError::Process("launch failed".into())))
     }
 
     fn attach(&mut self) -> Result<()> {
@@ -311,9 +349,12 @@ impl DosBackend for QemuBackend {
     }
 
     fn read_text(&mut self) -> Result<TextScreen> {
-        let raw = self.dump(TEXT_BUF_ADDR, TEXT_BUF_LEN, "vga.bin")?;
-        let bda = self.dump(BDA_ADDR, BDA_LEN, "bda.bin")?;
-        TextScreen::from_vga(&raw, Some(&bda))
+        let reader = VgaReader::new(
+            self.session_dir
+                .clone()
+                .ok_or(BackendError::NotRunning)?,
+        );
+        reader.read(self.qmp_mut()?)
     }
 
     fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {

@@ -3,14 +3,19 @@
 //! Hosts depend only on [`DosBackend`]; QEMU ([`qemu`]) and the deterministic [`mock`] backend
 //! are interchangeable. Nothing here is wired to `Action`/colon/RPC yet (that is D3).
 
+pub mod hostkeys;
 pub mod keys;
 pub mod mock;
 pub mod qemu;
 pub mod qmp;
+pub mod render;
 pub mod screen;
+pub mod textbuf;
 
 #[cfg(test)]
 mod conformance;
+#[cfg(test)]
+mod textbuf_tests;
 
 use std::fmt;
 use std::path::PathBuf;
