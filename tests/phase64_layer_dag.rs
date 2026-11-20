@@ -144,6 +144,7 @@ pub const BOUNDARY_EXEMPT: &[(&str, &str)] = &[
     ("src/attach/client/link.rs", "T-A7 attach client socket framing; host-side traffic attribution lives in the host path"),
     ("src/attach/client/tui.rs", "T-A7 attach client terminal I/O (own crossterm loop, not the WM render path)"),
     ("src/attach/conn_tests.rs", "test code"),
+    ("src/dos/backend/textbuf_tests.rs", "test code: in-process fake QMP server on loopback"),
     ("src/dos/launch/tests.rs", "D2a #[ignore] smoke test reads QEMU curses output from a test-owned PTY; no production I/O"),
     ("src/dos/backend/qmp.rs", "D1b QMP control socket to the emulator (loopback/0700 unix socket); JSON commands only, guest screen is read via pmemsave files, not terminal traffic"),
 ];

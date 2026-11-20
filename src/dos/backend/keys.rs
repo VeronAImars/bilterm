@@ -24,6 +24,55 @@ pub enum DosKey {
     F(u8),
     Ctrl(char),
     Alt(char),
+    /// Modifier bits ([`MOD_SHIFT`] | [`MOD_CTRL`] | [`MOD_ALT`]) held with a non-character key
+    /// (arrows, F-keys, Home, ...). Built by the host key map; `chord` validates the key.
+    Combo(u8, ComboKey),
+}
+
+pub const MOD_SHIFT: u8 = 1;
+pub const MOD_CTRL: u8 = 2;
+pub const MOD_ALT: u8 = 4;
+
+/// Keys that may carry modifiers in [`DosKey::Combo`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComboKey {
+    Enter,
+    Backspace,
+    Tab,
+    Esc,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Insert,
+    Delete,
+    F(u8),
+}
+
+impl ComboKey {
+    fn qcode(self) -> Option<&'static str> {
+        Some(match self {
+            Self::Enter => "ret",
+            Self::Backspace => "backspace",
+            Self::Tab => "tab",
+            Self::Esc => "esc",
+            Self::Up => "up",
+            Self::Down => "down",
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Home => "home",
+            Self::End => "end",
+            Self::PageUp => "pgup",
+            Self::PageDown => "pgdn",
+            Self::Insert => "insert",
+            Self::Delete => "delete",
+            Self::F(n) => return fkey(n),
+        })
+    }
 }
 
 /// Keys pressed together (down in order, released together) as one `send-key` command.
@@ -122,6 +171,21 @@ impl DosKey {
             Self::Insert => vec!["insert"],
             Self::Delete => vec!["delete"],
             Self::F(n) => vec![fkey(n).ok_or_else(|| bad(format!("F{n}")))?],
+            Self::Combo(mods, k) => {
+                let q = k.qcode().ok_or_else(|| bad(format!("{k:?}")))?;
+                let mut v: Chord = Vec::with_capacity(4);
+                if mods & MOD_CTRL != 0 {
+                    v.push("ctrl");
+                }
+                if mods & MOD_ALT != 0 {
+                    v.push("alt");
+                }
+                if mods & MOD_SHIFT != 0 {
+                    v.push("shift");
+                }
+                v.push(q);
+                v
+            }
             Self::Ctrl(c) | Self::Alt(c) => {
                 let base = plain(c.to_ascii_lowercase()).ok_or_else(|| bad(format!("{c:?}")))?;
                 vec![
@@ -173,6 +237,16 @@ mod tests {
         for (k, want) in cases {
             assert_eq!(&k.chord().unwrap(), want, "{k:?}");
         }
+    }
+
+    #[test]
+    fn combo_table() {
+        let c = |m, k| DosKey::Combo(m, k).chord().unwrap();
+        assert_eq!(c(MOD_SHIFT, ComboKey::F(5)), ["shift", "f5"]);
+        assert_eq!(c(MOD_CTRL | MOD_ALT, ComboKey::Delete), ["ctrl", "alt", "delete"]);
+        assert_eq!(c(MOD_SHIFT, ComboKey::Tab), ["shift", "tab"]);
+        assert_eq!(c(0, ComboKey::Left), ["left"]);
+        assert!(DosKey::Combo(MOD_ALT, ComboKey::F(13)).chord().is_err());
     }
 
     #[test]

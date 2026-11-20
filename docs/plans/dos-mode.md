@@ -180,7 +180,25 @@ pub trait DosBackend: Send {
 
 ### 4.4 Text-buffer (screendump) renderer -- the no-curses path
 
-Spike result, VERIFIED 2026-11-18: with `-display none` and `-qmp unix:...`, QMP `pmemsave val=0xB8000 size=4000` writes the VGA text buffer; taking every second byte and decoding as CP437 yielded the exact FreeDOS installer screen (box drawing intact), polled via a Python client while keys went in through the monitor command `sendkey`. So a pure-Rust Windows/BSD path needs no curses: poll `pmemsave` (or `pmemread`-style via a temp file; on Windows a named temp file under the private data dir) at ~10-20 Hz when dirty, convert 80x25 (char, attribute) cells to the bilterm grid with the 16-color CGA palette, map cursor from the BIOS data area (0x40:0x50, UNVERIFIED). Cost: polling, no true cursor-shape/blink fidelity. Limits: text modes only (0x3/0x7); in graphics modes the buffer at 0xB8000 is not text, so detect mode (BDA 0x449) and show a "graphics mode" notice. Later (post-v1): QMP `screendump` (PPM/PNG) -> existing Kitty/Sixel path (`src/vt/graphics.rs`) to render graphics modes; caps (64 placements, 512 px) UNVERIFIED for 640x480.
+Spike result, VERIFIED 2026-11-18: with `-display none` and `-qmp unix:...`, QMP `pmemsave val=0xB8000 size=4000` writes the VGA text buffer; taking every second byte and decoding as CP437 yielded the exact FreeDOS installer screen (box drawing intact), polled via a Python client while keys went in through the monitor command `sendkey`. So a pure-Rust Windows/BSD path needs no curses: poll `pmemsave` (or `pmemread`-style via a temp file; on Windows a named temp file under the private data dir) at ~10-20 Hz when dirty, convert 80x25 (char, attribute) cells to the bilterm grid with the 16-color CGA palette, map cursor from the BIOS data area (0x40:0x50, VERIFIED in D2b below). Cost: polling, no true cursor-shape/blink fidelity. Limits: text modes only (0x3/0x7); in graphics modes the buffer at 0xB8000 is not text, so detect mode (BDA 0x449) and show a "graphics mode" notice. Later (post-v1): QMP `screendump` (PPM/PNG) -> existing Kitty/Sixel path (`src/vt/graphics.rs`) to render graphics modes; caps (64 placements, 512 px) UNVERIFIED for 640x480.
+
+**D2b result (2026-11-20, Linux, QEMU 10.2.1, pinned `FD14BOOT.img` booted via the `qemu-textbuf` backend, unix-socket and loopback-TCP QMP both):**
+
+| BDA field (dump of 0x400, 256 bytes) | Offset in dump | Result |
+|---|---|---|
+| video mode (0x449) | `0x49` | VERIFIED: `0x03` throughout boot and installer; graphics detection is by this byte (text = 2, 3, 7) |
+| columns (0x44A, u16) | `0x4A` | VERIFIED: 80 |
+| rows - 1 (0x484) | `0x84` | VERIFIED: 24 (0 means "never set" and is treated as 25 rows) |
+| cursor col/row page 0 (0x450/0x451) | `0x50/0x51` | VERIFIED: tracks the kernel banner (0,24) and the installer menu |
+| cursor start scan line (0x461) | `0x61` | VERIFIED: `0x20` (bit 5 = cursor off) while the installer runs, `6` at the shell; the renderer hides the cursor then |
+| cursor end scan line (0x460) | `0x60` | VERIFIED: `7` (shell) |
+| active page (0x462) | `0x62` | VERIFIED 0; non-zero pages and 43/50-line text modes are NOT decoded: the pane shows a notice (UNVERIFIED against a guest that switches page or font) |
+
+Golden fixtures taken from this boot (`src/dos/backend/fixtures/{boot,installer}.{vga,bda}`) drive the decoder and renderer tests. Decisions:
+- Dump files: named `vga.bin`/`bda.bin` in the per-session 0700 directory (`secure_fs::private_dir_in`) on every OS (on Windows that directory is under the private data dir); unlinked before each `pmemsave`, read back through `take(len+1)`; the 4000-byte buffer is skipped entirely in graphics modes.
+- Poll rate: 20 Hz while the screen changes or keys were just sent, easing to 4 Hz after 10 idle polls; only changed rows are re-emitted; 5 consecutive read failures end the loop.
+- Pane rendering: `render::render_ansi` produces a bounded (128 KiB cap) 24-bit-colour ANSI stream fed to the normal pane VT engine, so selection, recording and theming need no special case. Blink (attribute bit 7) maps to SGR 5.
+- **TCP port race (D1b open question) RESOLVED.** The loopback port is chosen by bind-and-release, so another process can take it before QEMU binds it. Mitigation (no code path trusts an unverified listener): the QMP greeting is validated (a squatter fails the handshake), after a TCP handshake the child must still be alive 150 ms later (a QEMU that lost the bind exits), and `launch` retries up to 3 times with a fresh port. Unix sockets live in the private session directory and cannot race. A residual window remains only for a squatter that speaks a valid QMP greeting and keeps QEMU alive, which would need a local attacker able to run code as the same user.
 
 ## 4.5 Cargo features
 

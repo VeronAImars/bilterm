@@ -174,3 +174,25 @@ fn pty_backends_plan_purely_and_keep_safety_defaults() {
         b.shutdown().unwrap();
     }
 }
+
+fn textbuf(base: &std::path::Path) -> Box<dyn DosBackend> {
+    use super::qemu::{QemuBackend, QemuMode};
+    Box::new(QemuBackend::new(QemuMode::TextBuf, "/usr/bin/qemu-system-i386".into(), base.to_path_buf()))
+}
+
+/// Bridge row (D2b): plans purely, keeps the safety defaults, is not a native text pane.
+#[test]
+fn bridge_backends_plan_purely_and_keep_safety_defaults() {
+    let base = tempfile::tempdir().unwrap();
+    let mut b = textbuf(base.path());
+    assert_eq!(b.id(), "qemu-textbuf");
+    let s = SessionSpec { c_image: Some("/d/c.img".into()), ..spec() };
+    let p = b.plan(&s).unwrap();
+    assert_eq!(p.kind, LaunchKind::Bridge);
+    assert!(!b.is_running(), "plan must not spawn");
+    assert!(!b.caps().text_pane_native);
+    assert!(p.argv.windows(2).any(|w| w == ["-nic", "none"]));
+    assert!(crate::dos::launch::check_plan_safety(&p).is_ok());
+    assert!(b.plan(&SessionSpec { c_image: None, ..spec() }).is_err());
+    b.shutdown().unwrap();
+}
