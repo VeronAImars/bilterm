@@ -313,6 +313,11 @@ pub fn append_host_folder(argv: &mut Vec<String>, spec: &SessionSpec, dir: &Path
 
 /// All checks that need no side effects: root, OS, terminal size, emulator, backend, image.
 pub fn resolve(req: &RunRequest, env: &RunEnv) -> Result<Resolved, RunError> {
+    resolve_inner(req, env, true)
+}
+
+/// `check_size` is false for `--print-argv`, which starts nothing (scripts, no tty).
+fn resolve_inner(req: &RunRequest, env: &RunEnv, check_size: bool) -> Result<Resolved, RunError> {
     if env.is_root {
         return refuse("refusing to run as root: DOS mode must not run privileged");
     }
@@ -320,6 +325,7 @@ pub fn resolve(req: &RunRequest, env: &RunEnv) -> Result<Resolved, RunError> {
         return refuse("DOS mode is unsupported on this OS; see `bilterm dos doctor`");
     }
     if let Some((c, r)) = env.term_size
+        && check_size
         && (c < MIN_COLS || r < MIN_ROWS)
     {
         return refuse(format!(
@@ -383,7 +389,11 @@ pub fn resolve(req: &RunRequest, env: &RunEnv) -> Result<Resolved, RunError> {
 
 /// `dry` skips the lock/marker/snapshot side effects (`--print-argv`).
 pub fn prepare(req: &RunRequest, env: &RunEnv, dry: bool) -> Result<PreparedRun, RunError> {
-    let r = resolve(req, env)?;
+    prepare_inner(req, env, dry, true)
+}
+
+fn prepare_inner(req: &RunRequest, env: &RunEnv, dry: bool, check_size: bool) -> Result<PreparedRun, RunError> {
+    let r = resolve_inner(req, env, check_size)?;
     let store = ImageStore::new(env.paths.clone());
     let (guard, report) = match (&r.persistent, dry) {
         (Some(name), false) => {
@@ -504,7 +514,7 @@ pub fn render_command(plan: &LaunchPlan) -> String {
 
 /// CLI entry: `--print-argv` prints and exits 0; otherwise runs in the foreground.
 pub fn cli_run(req: &RunRequest, print_argv: bool, env: &RunEnv, spawner: &dyn Spawner, out: &mut String) -> i32 {
-    match prepare(req, env, print_argv) {
+    match prepare_inner(req, env, print_argv, !print_argv) {
         Err(e) => {
             let _ = writeln!(out, "{e}");
             1
