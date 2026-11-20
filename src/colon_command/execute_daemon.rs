@@ -6,7 +6,7 @@ use crate::daemon::list_view::{collect_rows, rows_json, summary};
 use crate::daemon::registry::DaemonRegistry;
 use crate::daemon::supervise::last_exit_to_json;
 use crate::daemon::supervisor::{
-    daemon_lock_path_in, ensure_started_limited, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
+    daemon_lock_path_in, ensure_started_opts, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
 };
 use crate::wm::resilience::DaemonJob;
 use crate::wm::WindowManager;
@@ -25,11 +25,22 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
     // With a UI attached, start/stop wait on a worker; the result arrives as a status message.
     if !wm.is_headless() {
         let job = match op {
-            DaemonSupervisorOp::Start { name, restart, limits } => Some(DaemonJob::Start {
+            DaemonSupervisorOp::Start { name, restart, limits, host_ptys } => Some(DaemonJob::Start {
                 name: name.clone().unwrap_or_else(|| "default".to_string()),
                 restart: restart.unwrap_or_default(),
                 limits: limits.unwrap_or_default(),
+                host_ptys: *host_ptys,
             }),
+            DaemonSupervisorOp::New { name, restart, limits, host_ptys } => {
+                // The name is chosen (and validated) here so the caller learns it immediately.
+                match crate::daemon::create::resolve_new_name(&runtime_dir, name.as_deref()) {
+                    Ok(chosen) => {
+                        wm.set_command_data(new_data(&chosen, "starting", None));
+                        Some(DaemonJob::New { name: chosen, restart: restart.unwrap_or_default(), limits: limits.unwrap_or_default(), host_ptys: *host_ptys })
+                    }
+                    Err(e) => return new_refused(wm, &runtime_dir, name.as_deref(), &e),
+                }
+            }
             DaemonSupervisorOp::Stop { name, force } => Some(DaemonJob::Stop {
                 name: name.clone().unwrap_or_else(|| "default".to_string()),
                 force: *force,
@@ -37,8 +48,8 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
             _ => None,
         };
         if let Some(job) = job {
-            let verb = if matches!(job, DaemonJob::Start { .. }) { "starting" } else { "stopping" };
-            let (DaemonJob::Start { name, .. } | DaemonJob::Stop { name, .. }) = &job;
+            let verb = if matches!(job, DaemonJob::Start { .. } | DaemonJob::New { .. }) { "starting" } else { "stopping" };
+            let (DaemonJob::Start { name, .. } | DaemonJob::New { name, .. } | DaemonJob::Stop { name, .. }) = &job;
             wm.active_pane_mut().set_status_message(Some(format!("Daemon '{name}': {verb}…")));
             wm.spawn_daemon_job(&runtime_dir, job);
             wm.open_daemon_window_from(&runtime_dir);
@@ -116,9 +127,22 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
             }
             wm.open_daemon_window_from(&runtime_dir);
         }
-        DaemonSupervisorOp::Start { name, restart, limits } => {
+        DaemonSupervisorOp::New { name, restart, limits, host_ptys } => {
+            match crate::daemon::create::create_daemon(&runtime_dir, name.as_deref(), restart.unwrap_or_default(), limits.unwrap_or_default(), *host_ptys) {
+                Ok((chosen, DaemonStartResult::Started { pid, socket_path })) => {
+                    wm.set_command_data(new_data(&chosen, "started", Some((pid, &socket_path))));
+                    wm.active_pane_mut().set_status_message(Some(format!("Daemon '{chosen}' created (PID {pid})")));
+                }
+                Ok((chosen, DaemonStartResult::AlreadyRunning { pid, .. })) => {
+                    // create_daemon maps this to an error; kept exhaustive and non-destructive.
+                    return new_refused(wm, &runtime_dir, Some(&chosen), &format!("daemon '{chosen}' already exists (running, PID {pid})"));
+                }
+                Err(e) => return new_refused(wm, &runtime_dir, name.as_deref(), &e),
+            }
+        }
+        DaemonSupervisorOp::Start { name, restart, limits, host_ptys } => {
             let target = name.as_deref().unwrap_or("default");
-            match ensure_started_limited(&runtime_dir, target, restart.unwrap_or_default(), limits.unwrap_or_default()) {
+            match ensure_started_opts(&runtime_dir, target, restart.unwrap_or_default(), limits.unwrap_or_default(), *host_ptys) {
                 Ok(DaemonStartResult::Started { pid, socket_path }) => {
                     let res = JsonValue::obj([
                         ("name", JsonValue::String(target.to_string())),
@@ -222,6 +246,7 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
     match op {
         // Start/Stop/Switch surface the live supervisor state in the floating window.
         DaemonSupervisorOp::Start { .. }
+        | DaemonSupervisorOp::New { .. }
         | DaemonSupervisorOp::Stop { .. }
         | DaemonSupervisorOp::Switch { .. } => wm.open_daemon_window_from(&runtime_dir),
         DaemonSupervisorOp::Prune if wm.daemon_window().active => {
@@ -229,5 +254,31 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
         }
         _ => {}
     }
+    false
+}
+
+/// JSON for `New` results: always carries the chosen `name`.
+fn new_data(name: &str, status: &str, started: Option<(u32, &std::path::Path)>) -> String {
+    let mut fields = vec![
+        ("name", JsonValue::String(name.to_string())),
+        ("status", JsonValue::String(status.to_string())),
+    ];
+    if let Some((pid, sock)) = started {
+        fields.push(("pid", JsonValue::Number(i64::from(pid))));
+        fields.push(("socket_path", JsonValue::String(sock.to_string_lossy().into_owned())));
+    }
+    JsonValue::obj(fields).to_json_string()
+}
+
+/// Reports a refused/failed create (`status:"error"`) and surfaces the window.
+fn new_refused(wm: &mut WindowManager, runtime_dir: &std::path::Path, name: Option<&str>, err: &str) -> bool {
+    let res = JsonValue::obj([
+        ("name", name.map_or(JsonValue::Null, |n| JsonValue::String(n.to_string()))),
+        ("status", JsonValue::String("error".to_string())),
+        ("error", JsonValue::String(err.to_string())),
+    ]);
+    wm.set_command_data(res.to_json_string());
+    wm.active_pane_mut().set_status_message(Some(format!("Daemon not created: {err}")));
+    wm.open_daemon_window_from(runtime_dir);
     false
 }

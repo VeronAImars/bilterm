@@ -18,7 +18,7 @@ fn memory_flags_parse_identically_on_colon_cli_and_rpc() {
     let want = limits("2G", Some("1G"));
 
     let colon = parse_colon_command(":daemon start w --memory-max 2G --memory-high=1G").unwrap().unwrap();
-    assert_eq!(colon, Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: Some("w".into()), restart: None, limits: Some(want) }));
+    assert_eq!(colon, Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: Some("w".into()), restart: None, limits: Some(want), host_ptys: false }));
 
     let args: Vec<String> = ["start", "w", "--memory-max=2G", "--memory-high", "1G"].iter().map(|s| s.to_string()).collect();
     match bilterm::cli::daemon_cmd::parse_daemon_args(&args, None).unwrap() {
@@ -28,7 +28,7 @@ fn memory_flags_parse_identically_on_colon_cli_and_rpc() {
 
     // No flags: unlimited everywhere.
     let none = parse_colon_command(":daemon start w").unwrap().unwrap();
-    assert_eq!(none, Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: Some("w".into()), restart: None, limits: None }));
+    assert_eq!(none, Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: Some("w".into()), restart: None, limits: None, host_ptys: false }));
 }
 
 #[test]

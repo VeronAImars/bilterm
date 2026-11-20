@@ -503,6 +503,7 @@ impl AutomationControlPlane {
             "daemon.list" => super::rpc_daemon::handle_daemon_list(),
             "daemon.status" => super::rpc_daemon::handle_daemon_status(params),
             "daemon.start" => super::rpc_daemon::handle_daemon_start(params),
+            "daemon.new" => self.rpc_daemon_new(params),
             "daemon.stop" => super::rpc_daemon::handle_daemon_stop(params),
             "daemon.host_state" => self.rpc_daemon_host_state(params),
             "attach.clients" => self.rpc_attach_clients(),

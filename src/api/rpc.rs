@@ -76,6 +76,7 @@ pub const RPC_METHODS: &[&str] = &[
     "daemon.list",
     "daemon.status",
     "daemon.start",
+    "daemon.new",
     "daemon.stop",
     "daemon.switch",
     "daemon.host_state",

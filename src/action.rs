@@ -386,7 +386,12 @@ pub enum DaemonSupervisorOp {
     Status { name: Option<String> },
     /// `restart`: supervisor restart policy for a newly spawned host (`None` = `never`).
     /// `limits`: memory limits for the host (`None` = unlimited; P4 / C2).
-    Start { name: Option<String>, restart: Option<crate::daemon::restart_policy::RestartMode>, #[serde(default)] limits: Option<crate::daemon::limits::MemoryLimits> },
+    /// `host_ptys`: the host owns real PTYs (`--headless --host-ptys`); applies to a new spawn only.
+    Start { name: Option<String>, restart: Option<crate::daemon::restart_policy::RestartMode>, #[serde(default)] limits: Option<crate::daemon::limits::MemoryLimits>, #[serde(default)] host_ptys: bool },
+    /// `:daemon new [NAME]` / `daemon.new` / `[n] New`: create a NEW daemon. `name: None` picks the
+    /// first free `daemon-N`; an existing name (any state) is refused, never overwritten. The chosen
+    /// name is returned in the command data.
+    New { name: Option<String>, restart: Option<crate::daemon::restart_policy::RestartMode>, #[serde(default)] limits: Option<crate::daemon::limits::MemoryLimits>, #[serde(default)] host_ptys: bool },
     Stop { name: Option<String>, force: bool },
     Switch { name: String },
     Prune,

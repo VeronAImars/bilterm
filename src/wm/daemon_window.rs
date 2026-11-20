@@ -43,6 +43,7 @@ impl DaemonMenuEntry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DaemonWindowButton {
     Start,
+    New,
     Stop,
     Switch,
     Prune,
@@ -51,8 +52,9 @@ pub enum DaemonWindowButton {
 }
 
 impl DaemonWindowButton {
-    pub const ALL: [DaemonWindowButton; 6] = [
+    pub const ALL: [DaemonWindowButton; 7] = [
         Self::Start,
+        Self::New,
         Self::Stop,
         Self::Switch,
         Self::Prune,
@@ -63,7 +65,8 @@ impl DaemonWindowButton {
     /// Footer label; UI and hit-testing must both use this so they cannot drift.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Start => "[s/Enter] Start",
+            Self::Start => "[s] Start",
+            Self::New => "[n] New",
             Self::Stop => "[x] Stop",
             Self::Switch => "[w] Switch",
             Self::Prune => "[p] Prune",
@@ -73,12 +76,28 @@ impl DaemonWindowButton {
     }
 }
 
+/// Label of the host-PTYs checkbox on the prompt row (state glyph is substituted at index 1).
+pub const PROMPT_TOGGLE_LABEL: &str = "[ ] host PTYs (Tab)";
+
+/// Inline "new daemon" entry shown on the status row (`[n] New`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DaemonNewPrompt {
+    /// Text typed so far; empty means "pick the next free name".
+    pub name: String,
+    /// The new host owns real PTYs (`--host-ptys`).
+    pub host_ptys: bool,
+    /// Last validation / refusal message, shown instead of the hint.
+    pub error: Option<String>,
+}
+
 /// Mouse hit-test result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DaemonWindowHit {
     Outside,
     Frame,
     CloseBadge,
+    /// The `[ ] host PTYs` checkbox on the New-daemon prompt row.
+    PromptHostPtys,
     Row(usize),
     Button(DaemonWindowButton),
 }
@@ -112,14 +131,20 @@ impl DaemonWindowLayout {
         }
     }
 
-    /// `(button, x_start, width)` for each footer button, separated by two spaces, starting at `outer.x + 2`.
+    /// `(x_start, width)` of the host-PTYs checkbox on the New-daemon prompt row (right-aligned).
+    pub fn prompt_toggle_span(&self) -> (u16, u16) {
+        let w = PROMPT_TOGGLE_LABEL.chars().count() as u16;
+        (self.outer.x + self.outer.width.saturating_sub(w + 2), w)
+    }
+
+    /// `(button, x_start, width)` for each footer button, separated by one space, starting at `outer.x + 2`.
     pub fn button_spans(&self) -> Vec<(DaemonWindowButton, u16, u16)> {
         let mut x = self.outer.x + 2;
         let mut out = Vec::new();
         for b in DaemonWindowButton::ALL {
             let w = b.label().chars().count() as u16;
             out.push((b, x, w));
-            x += w + 2;
+            x += w + 1;
         }
         out
     }
@@ -133,6 +158,8 @@ pub struct DaemonWindowState {
     pub scroll: usize,
     pub entries: Vec<DaemonMenuEntry>,
     pub status_line: String,
+    /// Inline new-daemon name entry (`[n] New`); captures all keys while `Some`.
+    pub new_prompt: Option<DaemonNewPrompt>,
     /// Last rendered outer rect (set by the renderer/rect helper; informational).
     pub rect: Option<Rect>,
 }
@@ -162,7 +189,7 @@ impl WindowManager {
         if !self.daemon_window.active || ws.width < 40 || ws.height < 10 {
             return None;
         }
-        let w = 76.min(ws.width.saturating_sub(2));
+        let w = 80.min(ws.width.saturating_sub(2));
         let h = 16.min(ws.height.saturating_sub(2));
         Some(Rect::new(
             ws.x + ws.width.saturating_sub(w) / 2,
@@ -217,6 +244,7 @@ impl WindowManager {
     }
 
     pub fn close_daemon_window(&mut self) {
+        self.daemon_window.new_prompt = None;
         self.daemon_window.active = false;
         self.daemon_window.focused = false;
     }
@@ -302,10 +330,20 @@ impl WindowManager {
 
     /// Runs a footer/key operation via the Action path, then refreshes.
     fn daemon_window_run(&mut self, button: DaemonWindowButton) {
+        if button == DaemonWindowButton::New {
+            // First press opens the prompt; pressing again while it is open submits it.
+            if self.daemon_window.new_prompt.is_some() {
+                self.daemon_new_submit();
+            } else {
+                self.daemon_new_open();
+            }
+            return;
+        }
+        self.daemon_window.new_prompt = None;
         let name = self.daemon_window.selected_entry().map(|e| e.name.clone());
         let op = match (button, name) {
             (DaemonWindowButton::Start, Some(name)) => {
-                Some(DaemonSupervisorOp::Start { name: Some(name), restart: None, limits: None })
+                Some(DaemonSupervisorOp::Start { name: Some(name), restart: None, limits: None, host_ptys: false })
             }
             (DaemonWindowButton::Stop, Some(name)) => {
                 Some(DaemonSupervisorOp::Stop { name: Some(name), force: false })
@@ -326,12 +364,78 @@ impl WindowManager {
         }
     }
 
+    /// Opens the inline name prompt, pre-filled with the next free auto name.
+    fn daemon_new_open(&mut self) {
+        let suggestion = crate::daemon::supervisor::resolve_runtime_dir()
+            .map_or_else(|_| "daemon-1".to_string(), |d| crate::daemon::create::next_free_name(&d));
+        self.daemon_window.new_prompt = Some(DaemonNewPrompt { name: suggestion, host_ptys: false, error: None });
+    }
+
+    /// Validates the prompt and runs `Action::Daemon(New)`; keeps the prompt open on a refusal.
+    fn daemon_new_submit(&mut self) {
+        let Some(p) = self.daemon_window.new_prompt.clone() else { return };
+        let name = p.name.trim().to_string();
+        let name_opt = (!name.is_empty()).then_some(name);
+        let check = crate::daemon::supervisor::resolve_runtime_dir()
+            .map_err(|e| format!("runtime dir error: {e}"))
+            .and_then(|d| crate::daemon::create::resolve_new_name(&d, name_opt.as_deref()));
+        if let Err(e) = check {
+            if let Some(pr) = self.daemon_window.new_prompt.as_mut() {
+                pr.error = Some(e);
+            }
+            return;
+        }
+        self.daemon_window.new_prompt = None;
+        let _ = self.apply(Action::Daemon(DaemonSupervisorOp::New { name: name_opt, restart: None, limits: None, host_ptys: p.host_ptys }));
+        if self.daemon_window.active {
+            self.refresh_daemon_window();
+        }
+    }
+
+    /// Key handling while the new-daemon prompt is open.
+    fn daemon_new_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => self.daemon_window.new_prompt = None,
+            KeyCode::Enter => self.daemon_new_submit(),
+            KeyCode::Tab | KeyCode::BackTab => self.daemon_new_toggle_host_ptys(),
+            KeyCode::Backspace => {
+                if let Some(p) = self.daemon_window.new_prompt.as_mut() {
+                    p.name.pop();
+                    p.error = None;
+                }
+            }
+            KeyCode::Char(c)
+                if (c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                    && !key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                if let Some(p) = self.daemon_window.new_prompt.as_mut()
+                    && p.name.chars().count() < 64
+                {
+                    p.name.push(c);
+                    p.error = None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn daemon_new_toggle_host_ptys(&mut self) {
+        if let Some(p) = self.daemon_window.new_prompt.as_mut() {
+            p.host_ptys = !p.host_ptys;
+        }
+    }
+
     /// Handles a key while the window captures input. Returns true when consumed.
     pub fn daemon_window_key(&mut self, key: KeyEvent) -> bool {
+        if self.daemon_window.new_prompt.is_some() {
+            self.daemon_new_key(key);
+            return true;
+        }
         let sel = self.daemon_window.selected;
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.daemon_select(sel.saturating_sub(1)),
             KeyCode::Down | KeyCode::Char('j') => self.daemon_select(sel + 1),
+            KeyCode::Char('n') => self.daemon_window_run(DaemonWindowButton::New),
             KeyCode::Enter | KeyCode::Char('s') => self.daemon_window_run(DaemonWindowButton::Start),
             KeyCode::Char('x' | 'q') | KeyCode::Delete => {
                 self.daemon_window_run(DaemonWindowButton::Stop)
@@ -360,6 +464,12 @@ impl WindowManager {
         let lay = DaemonWindowLayout::new(outer);
         if row == outer.y && col >= lay.close_x && col < lay.close_x + 3 {
             return DaemonWindowHit::CloseBadge;
+        }
+        if row == lay.status_y && self.daemon_window.new_prompt.is_some() {
+            let (x, w) = lay.prompt_toggle_span();
+            if col >= x && col < x + w {
+                return DaemonWindowHit::PromptHostPtys;
+            }
         }
         if row == lay.footer_y {
             for (b, x, w) in lay.button_spans() {
@@ -391,6 +501,10 @@ impl WindowManager {
             DaemonWindowHit::Row(i) => {
                 self.daemon_window.focused = true;
                 self.daemon_select(i);
+            }
+            DaemonWindowHit::PromptHostPtys => {
+                self.daemon_window.focused = true;
+                self.daemon_new_toggle_host_ptys();
             }
             DaemonWindowHit::Button(b) => {
                 self.daemon_window.focused = true;

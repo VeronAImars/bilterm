@@ -26,6 +26,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":daemon list", "Ctrl+X D L", "List background daemons: PIDs, sessions, panes, RSS, restarts, last exit"),
     (":daemon status", "Ctrl+X D S", "Show status and telemetry of background daemon"),
     (":daemon start", "Ctrl+X D N", "Auto-spawn background daemon if not running (--restart on-crash respawns it)"),
+    (":daemon new", "Ctrl+X D C", "Create a NEW daemon (no name = first free daemon-N; --host-ptys = owns real PTYs; refuses existing names)"),
     (":daemon stop", "Ctrl+X D Q", "Gracefully stop background daemon and release resources"),
     (":daemon switch <name>", "Ctrl+X D W", "Switch active client context to a named background daemon"),
     (":daemon prune", "—", "Prune dead background daemon locks and socket records"),

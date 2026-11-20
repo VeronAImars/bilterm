@@ -28,7 +28,9 @@ const PERIODIC: Duration = Duration::from_secs(30);
 /// A daemon lifecycle operation run off the UI thread.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DaemonJob {
-    Start { name: String, restart: crate::daemon::restart_policy::RestartMode, limits: crate::daemon::limits::MemoryLimits },
+    Start { name: String, restart: crate::daemon::restart_policy::RestartMode, limits: crate::daemon::limits::MemoryLimits, host_ptys: bool },
+    /// Create a NEW daemon (name already validated free); refuses if it appeared meanwhile.
+    New { name: String, restart: crate::daemon::restart_policy::RestartMode, limits: crate::daemon::limits::MemoryLimits, host_ptys: bool },
     Stop { name: String, force: bool },
 }
 
@@ -371,9 +373,19 @@ impl WindowManager {
 
 /// Executes `job` synchronously and returns the status message for it.
 pub fn run_daemon_job(runtime_dir: &Path, job: &DaemonJob) -> String {
-    use crate::daemon::supervisor::{ensure_started_limited, stop_daemon, DaemonStartResult};
+    use crate::daemon::supervisor::{ensure_started_opts, stop_daemon, DaemonStartResult};
     match job {
-        DaemonJob::Start { name, restart, limits } => match ensure_started_limited(runtime_dir, name, *restart, *limits) {
+        DaemonJob::New { name, restart, limits, host_ptys } => {
+            match crate::daemon::create::check_new_name(runtime_dir, name)
+                .and_then(|n| crate::daemon::create::start_checked(runtime_dir, &n, *restart, *limits, *host_ptys))
+            {
+                Ok(DaemonStartResult::Started { pid, .. } | DaemonStartResult::AlreadyRunning { pid, .. }) => {
+                    format!("Daemon '{name}' created (PID {pid})")
+                }
+                Err(e) => format!("Daemon not created: {e}"),
+            }
+        }
+        DaemonJob::Start { name, restart, limits, host_ptys } => match ensure_started_opts(runtime_dir, name, *restart, *limits, *host_ptys) {
             Ok(DaemonStartResult::Started { pid, .. }) => format!("Daemon '{name}' started (PID {pid})"),
             Ok(DaemonStartResult::AlreadyRunning { pid, .. }) => {
                 format!("Daemon '{name}' is already running (PID {pid})")

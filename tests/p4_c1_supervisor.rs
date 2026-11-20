@@ -131,11 +131,11 @@ fn start_restart_flag_parses_identically_on_colon_cli_and_rpc_params() {
     let parsed = parse_colon_command(":daemon start w --restart on-crash").unwrap().unwrap();
     assert_eq!(
         parsed,
-        Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: Some("w".into()), restart: Some(RestartMode::OnCrash), limits: None })
+        Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: Some("w".into()), restart: Some(RestartMode::OnCrash), limits: None, host_ptys: false })
     );
     assert!(parse_colon_command(":daemon start w --restart bogus").unwrap().is_err());
     let cli = bilterm::cli::daemon_cmd::parse_daemon_args(&["start".into(), "w".into(), "--restart".into(), "on-crash".into()], None);
-    assert_eq!(cli, Ok(bilterm::cli::daemon_cmd::DaemonCmd::Start { name: "w".into(), restart: RestartMode::OnCrash, limits: Default::default() }));
+    assert_eq!(cli, Ok(bilterm::cli::daemon_cmd::DaemonCmd::Start { name: "w".into(), restart: RestartMode::OnCrash, limits: Default::default(), host_ptys: false }));
     let (_g, _d) = sandbox();
     let mut cp = AutomationControlPlane::new_headless(24, 80);
     let bad = JsonValue::obj([("name", JsonValue::String("w".into())), ("restart", JsonValue::String("bogus".into()))]);

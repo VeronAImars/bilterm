@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::daemon::list_view::{collect_rows, row_for, rows_json, table};
 use crate::daemon::restart_policy::RestartMode;
 use crate::daemon::limits::MemoryLimits;
-use crate::daemon::supervisor::{ensure_started_limited, stop_daemon, DaemonStartResult};
+use crate::daemon::supervisor::{ensure_started_opts, stop_daemon, DaemonStartResult};
 use crate::secure_fs::validate_safe_name;
 
 /// Switch that selects which named daemon a client command talks to.
@@ -21,7 +21,9 @@ pub const DAEMON_NAME_ENV: &str = "BILTERM_DAEMON";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DaemonCmd {
     List { json: bool },
-    Start { name: String, restart: RestartMode, limits: MemoryLimits },
+    Start { name: String, restart: RestartMode, limits: MemoryLimits, host_ptys: bool },
+    /// `new [NAME]`: `name: None` = first free `daemon-N`; an existing name is refused.
+    New { name: Option<String>, restart: RestartMode, limits: MemoryLimits, host_ptys: bool, json: bool },
     Stop { name: String, force: bool },
     Status { name: String, json: bool },
 }
@@ -39,6 +41,10 @@ Usage:
                                             (MemoryMax, no swap, OOM kill) on Linux, else a best-effort RSS
                                             watchdog (SIGTERM, then SIGKILL). --memory-high must be below
                                             --memory-max and only throttles/warns
+                                            --host-ptys: the host owns real PTYs (session host)
+  bilterm daemon new [NAME] [--host-ptys] [--restart ..] [--memory-max SIZE] [--memory-high SIZE] [--json]
+                                            Create a NEW daemon; without NAME the first free daemon-N is
+                                            used and printed. Refuses a NAME that already exists
   bilterm daemon stop [NAME] [--force]      Stop daemon NAME (SIGTERM; --force = SIGKILL)
   bilterm daemon status [NAME] [--json]     Show one daemon (exit 0 running, 3 otherwise)
 
@@ -81,7 +87,7 @@ pub fn take_daemon_target(args: &mut Vec<String>, env_value: Option<&str>) -> Re
 /// Parses the words after `bilterm daemon`. `target` is the `--daemon-name` / env default name.
 pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<DaemonCmd, String> {
     let mut pos = Vec::new();
-    let (mut json, mut force) = (false, false);
+    let (mut json, mut force, mut host_ptys) = (false, false, false);
     let mut restart = RestartMode::Never;
     let (mut mem_max, mut mem_high): (Option<String>, Option<String>) = (None, None);
     let mut args_it = args.iter();
@@ -97,6 +103,7 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
             s if s.starts_with("--memory-max=") => mem_max = Some(s["--memory-max=".len()..].to_string()),
             s if s.starts_with("--memory-high=") => mem_high = Some(s["--memory-high=".len()..].to_string()),
             "--json" => json = true,
+            "--host-ptys" => host_ptys = true,
             "--force" | "-f" => force = true,
             "-h" | "--help" | "help" => return Err(usage()),
             s if s.starts_with('-') => return Err(format!("unknown option {s}\n{}", usage())),
@@ -114,7 +121,15 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
     };
     match sub {
         "list" | "ls" if pos.len() <= 1 => Ok(DaemonCmd::List { json }),
-        "start" => Ok(DaemonCmd::Start { name: name()?, restart, limits: MemoryLimits::from_args(mem_max.as_deref(), mem_high.as_deref())? }),
+        "start" => Ok(DaemonCmd::Start { name: name()?, restart, limits: MemoryLimits::from_args(mem_max.as_deref(), mem_high.as_deref())?, host_ptys }),
+        "new" => {
+            let explicit = pos.get(1).copied().or(target);
+            if let Some(n) = explicit {
+                validate_safe_name(n).map_err(|e| format!("invalid daemon name '{n}': {e}"))?;
+            }
+            let limits = MemoryLimits::from_args(mem_max.as_deref(), mem_high.as_deref())?;
+            Ok(DaemonCmd::New { name: explicit.map(str::to_string), restart, limits, host_ptys, json })
+        }
         "stop" => Ok(DaemonCmd::Stop { name: name()?, force }),
         "status" => Ok(DaemonCmd::Status { name: name()?, json }),
         other => Err(format!("unknown daemon subcommand '{other}'\n{}", usage())),
@@ -164,7 +179,26 @@ pub fn run(cmd: &DaemonCmd, runtime_dir: &Path) -> (String, i32) {
             };
             (text, code)
         }
-        DaemonCmd::Start { name, restart, limits } => match ensure_started_limited(runtime_dir, name, *restart, *limits) {
+        DaemonCmd::New { name, restart, limits, host_ptys, json } => {
+            match crate::daemon::create::create_daemon(runtime_dir, name.as_deref(), *restart, *limits, *host_ptys) {
+                Ok((chosen, DaemonStartResult::Started { pid, socket_path } | DaemonStartResult::AlreadyRunning { pid, socket_path }))
+                    if *json =>
+                {
+                    let v = crate::api::json::JsonValue::obj([
+                        ("name", crate::api::json::JsonValue::String(chosen)),
+                        ("status", crate::api::json::JsonValue::String("started".into())),
+                        ("pid", crate::api::json::JsonValue::Number(i64::from(pid))),
+                        ("socket_path", crate::api::json::JsonValue::String(socket_path.display().to_string())),
+                    ]);
+                    (v.to_json_string(), 0)
+                }
+                Ok((chosen, DaemonStartResult::Started { pid, socket_path } | DaemonStartResult::AlreadyRunning { pid, socket_path })) => {
+                    (format!("daemon '{chosen}' created (PID {pid}, socket {})", socket_path.display()), 0)
+                }
+                Err(e) => (format!("bilterm: {e}"), 1),
+            }
+        }
+        DaemonCmd::Start { name, restart, limits, host_ptys } => match ensure_started_opts(runtime_dir, name, *restart, *limits, *host_ptys) {
             Ok(DaemonStartResult::Started { pid, socket_path }) => {
                 (format!("daemon '{name}' started (PID {pid}, socket {})", socket_path.display()), 0)
             }
@@ -193,15 +227,15 @@ mod tests {
     fn parses_subcommands_and_defaults() {
         assert_eq!(parse_daemon_args(&v(&[]), None), Ok(DaemonCmd::List { json: false }));
         assert_eq!(parse_daemon_args(&v(&["ls", "--json"]), None), Ok(DaemonCmd::List { json: true }));
-        assert_eq!(parse_daemon_args(&v(&["start", "alpha"]), None), Ok(DaemonCmd::Start { name: "alpha".into(), restart: RestartMode::Never, limits: MemoryLimits::default() }));
-        assert_eq!(parse_daemon_args(&v(&["start"]), None), Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never, limits: MemoryLimits::default() }));
+        assert_eq!(parse_daemon_args(&v(&["start", "alpha"]), None), Ok(DaemonCmd::Start { name: "alpha".into(), restart: RestartMode::Never, limits: MemoryLimits::default(), host_ptys: false }));
+        assert_eq!(parse_daemon_args(&v(&["start"]), None), Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never, limits: MemoryLimits::default(), host_ptys: false }));
         assert_eq!(
             parse_daemon_args(&v(&["start", "--restart", "on-crash", "w"]), None),
-            Ok(DaemonCmd::Start { name: "w".into(), restart: RestartMode::OnCrash, limits: MemoryLimits::default() })
+            Ok(DaemonCmd::Start { name: "w".into(), restart: RestartMode::OnCrash, limits: MemoryLimits::default(), host_ptys: false })
         );
         assert_eq!(
             parse_daemon_args(&v(&["start", "--restart=never"]), None),
-            Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never, limits: MemoryLimits::default() })
+            Ok(DaemonCmd::Start { name: "default".into(), restart: RestartMode::Never, limits: MemoryLimits::default(), host_ptys: false })
         );
         assert!(parse_daemon_args(&v(&["start", "--restart", "always"]), None).unwrap_err().contains("invalid restart"));
         assert!(parse_daemon_args(&v(&["start", "--restart"]), None).unwrap_err().contains("needs"));

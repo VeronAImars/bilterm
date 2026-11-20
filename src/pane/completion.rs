@@ -731,7 +731,7 @@ const COLON_COMMANDS: &[(&str, &[&str])] = &[
     (":web", &["status", "open", "port ", "stop"]),
     (":wmode", &["on", "off", "focus", "resize", "move"]),
     (":keys", &["list", "check", "explain ", "profile "]),
-    (":daemon", &["list", "status", "start", "stop", "switch", "prune", "host"]),
+    (":daemon", &["list", "status", "start", "new", "stop", "switch", "prune", "host"]),
     (":voice", &["toggle", "start", "stop", "cancel", "status", "provider "]),
     (":stt", &["toggle", "start", "stop", "cancel", "status", "provider "]),
     (":quit", &[]),

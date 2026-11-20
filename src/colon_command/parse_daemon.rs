@@ -3,7 +3,8 @@
 //! Syntax:
 //! - `:daemon` | `:daemon list`
 //! - `:daemon status [name]`
-//! - `:daemon start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE]`
+//! - `:daemon start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] [--host-ptys]`
+//! - `:daemon new [name] [same options]` (creates a NEW daemon; no name = first free `daemon-N`)
 //! - `:daemon stop [name] [--force]`
 //! - `:daemon switch <name>`
 //! - `:daemon prune`
@@ -14,7 +15,7 @@ use crate::action::DaemonSupervisorOp;
 use crate::daemon::limits::MemoryLimits;
 use crate::daemon::restart_policy::RestartMode;
 
-const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] | stop [name] [--force] | switch <name> | prune | host [name] | attach [kick <client-id>|--ro]]";
+const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] [--host-ptys] | new [name] [same options] | stop [name] [--force] | switch <name> | prune | host [name] | attach [kick <client-id>|--ro]]";
 
 /// Parses `:daemon` command invocations into a [`ColonCommand`].
 pub(super) fn parse_daemon_colon_command(
@@ -42,13 +43,16 @@ pub(super) fn parse_daemon_colon_command(
                 DaemonSupervisorOp::Status { name },
             )))
         }
-        "start" => {
+        "start" | "new" => {
             let mut name = None;
             let mut restart = None;
+            let mut host_ptys = false;
             let (mut mem_max, mut mem_high): (Option<&str>, Option<&str>) = (None, None);
             let mut it = parts[2..].iter();
             while let Some(&arg) = it.next() {
-                if arg == "--restart" {
+                if arg == "--host-ptys" {
+                    host_ptys = true;
+                } else if arg == "--restart" {
                     let Some(&v) = it.next() else {
                         return Some(Err(USAGE.to_string()));
                     };
@@ -81,9 +85,12 @@ pub(super) fn parse_daemon_colon_command(
                 Ok(l) => Some(l),
                 Err(e) => return Some(Err(e)),
             };
-            Some(Ok(ColonCommand::DaemonSupervisor(
-                DaemonSupervisorOp::Start { name, restart, limits },
-            )))
+            let op = if sub == "new" {
+                DaemonSupervisorOp::New { name, restart, limits, host_ptys }
+            } else {
+                DaemonSupervisorOp::Start { name, restart, limits, host_ptys }
+            };
+            Some(Ok(ColonCommand::DaemonSupervisor(op)))
         }
         "stop" => {
             let mut name = None;

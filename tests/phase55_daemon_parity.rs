@@ -80,7 +80,7 @@ fn test_daemon_surface_parity() {
             KeyCode::Char('n'),
             "daemon.start",
             "start",
-            Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: None, restart: None, limits: None }),
+            Action::DaemonSupervisor(DaemonSupervisorOp::Start { name: None, restart: None, limits: None, host_ptys: false }),
         ),
         (
             "stop",
