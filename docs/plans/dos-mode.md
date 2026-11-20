@@ -374,6 +374,8 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 | D4 | Fun features (7.1 to 7.8); graphics via `screendump` -> image protocols is a post-v1 item here | per-feature tests |
 | D5 | docs: `docs/DEVELOPER_AND_AGENT_GUIDE.md`, `AGENTS.md` pointer, third-party notices, `--help` text, matrix | `keeping-docs-in-sync` check |
 
+**D2a as built (2026-11-20).** `src/dos/launch.rs` (one path for CLI and pane): `bilterm dos run [--name N | --image FILE] [--drive-c DIR] [--backend ID] [--print-argv]` runs `qemu-system-i386 -display curses` in the current terminal; `Action::DosRun` / `:dos run` (the only DOS Action until D3) opens an ordinary PTY pane whose program is `bilterm dos run ...`, so the wrapper owns the image lock, `.dirty` marker and cleanup (clean exit clears it; a killed pane leaves it, as a crash would). `--drive-c DIR` exposes DIR read-only through vvfat as the drive after C: (UNVERIFIED as a boot drive; "DIR as C:" is D4). Persistent C: needs the image from `dos setup`; `--image FILE` is throwaway (`snapshot=on`). Checks: not root, terminal/pane >= 80x25 (a split is zoomed first), `-nic none`, no USB/audio/chardev leaks (`check_plan_safety`), `TERM`/UTF-8 locale set for curses. Verified: argv snapshots, lock/marker cycle with a fake spawner, headless WM tests, `dos_curses_smoke` (`--ignored`) against QEMU 10.2.1 on Linux; a full FreeDOS boot through `dos run` needs a built image (not run here). macOS: UNVERIFIED.
+
 Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6, D6b, D7a, D7b (parallel, per-OS verification) -> D2c/D2d, D4, D5.
 
 ## 11. Open questions (remaining)

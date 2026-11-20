@@ -55,6 +55,8 @@ pub mod quick_terminal;
 pub mod registry;
 pub mod rename_dialog;
 pub mod session;
+#[cfg(feature = "dos")]
+mod dos_pane;
 pub mod session_empty;
 pub mod session_end;
 pub mod session_manager;

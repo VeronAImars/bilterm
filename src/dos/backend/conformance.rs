@@ -140,3 +140,37 @@ fn resize_validates() {
     b.resize(100, 30).unwrap();
     assert_eq!(b.last_size(), Some((100, 30)));
 }
+
+// ---- Pty-plan backends (qemu-curses, D2a) ---------------------------------------------------
+// Real emulators cannot run offline, so their conformance row covers the pure parts of the
+// contract (`plan`, `caps`, `launch` refusal); the live half is the `#[ignore]` smoke test in
+// `dos::launch::tests::dos_curses_smoke`. Add one row per new Pty/Bridge backend.
+
+type PlanFactory = fn(&std::path::Path) -> Box<dyn DosBackend>;
+
+fn curses(base: &std::path::Path) -> Box<dyn DosBackend> {
+    use super::qemu::{QemuBackend, QemuMode};
+    Box::new(QemuBackend::new(QemuMode::Curses, "/usr/bin/qemu-system-i386".into(), base.to_path_buf()))
+}
+
+const PTY_BACKENDS: &[(&str, PlanFactory, LaunchKind)] = &[("qemu-curses", curses, LaunchKind::Pty)];
+
+#[test]
+fn pty_backends_plan_purely_and_keep_safety_defaults() {
+    for (name, f, kind) in PTY_BACKENDS {
+        let base = tempfile::tempdir().unwrap();
+        let mut b = f(base.path());
+        assert_eq!(b.id(), *name);
+        let s = SessionSpec { c_image: Some("/d/c.img".into()), ..spec() };
+        let p = b.plan(&s).unwrap();
+        assert_eq!(&p.kind, kind, "{name}");
+        assert!(!b.is_running(), "{name}: plan must not spawn");
+        assert!(b.caps().text_pane_native, "{name}");
+        assert!(p.argv.windows(2).any(|w| w == ["-nic", "none"]), "{name}");
+        assert!(crate::dos::launch::check_plan_safety(&p).is_ok(), "{name}");
+        assert!(matches!(b.launch(&s), Err(BackendError::Unsupported(_))), "{name}: Pty backends run in the host PTY");
+        // no boot media is a contract error, not a spawn
+        assert!(b.plan(&SessionSpec { c_image: None, ..spec() }).is_err(), "{name}");
+        b.shutdown().unwrap();
+    }
+}
