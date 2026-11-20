@@ -17,7 +17,7 @@ structured interfaces instead of screen scraping or blind `sleep` loops. This te
   `bilterm://commands` (or `:commands`) lists them all.
 
 ### 2. Daemons and targeting
-- `bilterm daemon list` shows running daemons; `bilterm daemon new [NAME] [--host-ptys]` creates a NEW
+- `bilterm daemon list` shows running daemons; `bilterm daemon new` (optionally `bilterm daemon new --host-ptys`) creates a NEW
   daemon (no NAME = first free `daemon-N`, printed; an existing NAME is refused, never overwritten;
   `--host-ptys` makes it own real PTYs); `bilterm daemon start NAME`, `bilterm daemon stop NAME`
   and `bilterm daemon status NAME` manage one (default name `default`, own socket per name).
