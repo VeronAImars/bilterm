@@ -342,6 +342,8 @@ pub fn resolve(req: &RunRequest, env: &RunEnv) -> Result<Resolved, RunError> {
         None => detect(env.os, &probe, None)
             .ok_or_else(|| RunError::Refused("no usable backend for this host (see `bilterm dos doctor`)".into()))?,
     };
+    // TODO(D3): no Bridge pane source exists yet, so qemu-textbuf (LaunchPlan::Bridge) is refused here;
+    // D3 adds its REGISTRY row once the text-buffer pane bridge lands.
     if !REGISTRY.iter().any(|(k, _)| *k == kind) {
         return refuse(format!(
             "backend {} cannot run as a plain PTY pane yet (it needs the text-buffer pane bridge); use --backend qemu-curses",
