@@ -1009,6 +1009,10 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             false
         }
         ColonCommand::Find(op) => super::execute_find::execute_find_command(wm, op),
+        ColonCommand::DosRun { name, image, drive_c, backend } => {
+            super::execute_dos::execute_dos_run(wm, name, image, drive_c, backend);
+            false
+        }
         ColonCommand::RespawnPaneInPlace => {
             wm.respawn_active_pane();
             false

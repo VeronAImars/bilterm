@@ -8,7 +8,7 @@ use super::verify::Version;
 pub const EMBEDDED: &str = include_str!("manifest.toml");
 
 /// Hosts downloads may come from (HTTPS only).
-pub const HOST_ALLOWLIST: &[&str] = &["download.freedos.org"];
+pub const HOST_ALLOWLIST: &[&str] = &["download.freedos.org", "qemu.weilnetz.de"];
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Manifest {
@@ -179,8 +179,13 @@ mod tests {
         assert!(m.entry("freedos-14-livecd").unwrap().is_pinned());
         assert!(m.entry("freedos-14-floppy").unwrap().is_pinned());
         let w = m.entry("qemu-windows-x64").unwrap();
-        assert!(!w.is_pinned());
-        assert!(w.refusal().unwrap().contains("not pinned"));
+        assert!(w.is_pinned());
+        assert_eq!(w.sha256, "f98a8aeb5f7faea9765b6dee28316c266cd179d80354a2fed8e50176f9a2e59f");
+        let todo = EMBEDDED.replace("f98a8aeb5f7faea9765b6dee28316c266cd179d80354a2fed8e50176f9a2e59f", "TODO");
+        let m2 = Manifest::parse(&todo).unwrap();
+        let w2 = m2.entry("qemu-windows-x64").unwrap();
+        assert!(!w2.is_pinned());
+        assert!(w2.refusal().unwrap().contains("not pinned"));
         assert!(m.freedos.notice.contains("DOS mode -- runs FreeDOS"));
     }
 

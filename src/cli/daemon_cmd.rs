@@ -147,7 +147,14 @@ pub fn run(cmd: &DaemonCmd, runtime_dir: &Path) -> (String, i32) {
             }
             let text = match (row.status, row.pid) {
                 ("running", Some(pid)) => {
-                    format!("daemon '{name}': running (PID {pid}, v{}, socket {})", row.version, row.socket)
+                    let note = if row.host_ptys == Some(false) {
+                        format!(
+                            "\n  WARNING: started without --host-ptys (model-only): panes have no shell and cannot run commands; `bilterm daemon stop {name}` then run `bilterm --headless --host-ptys --name {name}` in the background"
+                        )
+                    } else {
+                        String::new()
+                    };
+                    format!("daemon '{name}': running (PID {pid}, v{}, socket {}, ptys: {}){note}", row.version, row.socket, row.pty_text())
                 }
                 ("crashed", Some(pid)) => format!(
                     "daemon '{name}': crashed (PID {pid} exited without cleanup) — `bilterm daemon start {name}` restarts it"

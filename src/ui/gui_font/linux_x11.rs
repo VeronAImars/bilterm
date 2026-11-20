@@ -736,6 +736,7 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
     let mut left_down = false;
     let mut last_motion_cell: Option<(u16, u16)> = None;
     app.wm.set_gui_surface(true);
+    let mut gui_live = app.start_gui_live();
 
     loop {
         while unsafe { (api.x_pending)(dpy) } > 0 {
@@ -830,6 +831,7 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
             }
         }
 
+        app.pump_gui_live(&mut gui_live);
         if app.poll_all_ptys() {
             app.needs_redraw = true;
         }

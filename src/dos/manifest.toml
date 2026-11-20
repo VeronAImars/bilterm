@@ -47,14 +47,16 @@ license_note = "Collection of separately licensed packages; kernel GPL-2.0-or-la
 source_url = "https://www.freedos.org/download/"
 members = []
 
-# Portable Windows emulator: NOT yet pinned (needs a hash fetched and verified on Windows, PR D6).
+# Windows emulator installer (Stefan Weil build), pinned 2026-11-18. SHA256 computed locally over a fresh
+# download; the vendor publishes only SHA-512 (qemu-w64-setup-20260811.sha512), which also matched.
+# -display curses is compiled in (verified on win-devvm); curses under a real ConPTY is UNVERIFIED.
 [[entry]]
 id = "qemu-windows-x64"
 file = "qemu-w64-setup.exe"
-version = "TODO"
-url = "https://qemu.weilnetz.de/w64/"
-sha256 = "TODO"
-bytes = 0
+version = "11.1.0"
+url = "https://qemu.weilnetz.de/w64/2026/qemu-w64-setup-20260811.exe"
+sha256 = "f98a8aeb5f7faea9765b6dee28316c266cd179d80354a2fed8e50176f9a2e59f"
+bytes = 206615928
 default = false
 platform = "windows"
 license_note = "QEMU is GPL-2.0; Windows builds by Stefan Weil."

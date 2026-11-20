@@ -88,11 +88,16 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
                     ("limit_max_bytes", d.limit_max_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
                     ("limit_high_bytes", d.limit_high_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
             ("limit_backend", backend),
+                    ("host_ptys", d.host_ptys.map_or(JsonValue::Null, JsonValue::Bool)),
                 ]);
                 wm.set_command_data(res.to_json_string());
                 wm.active_pane_mut().set_status_message(Some(format!(
-                    "Daemon '{}': running (PID {}, {} sessions, {} panes)",
-                    d.name, d.pid, d.sessions_count, d.panes_count
+                    "Daemon '{}': running (PID {}, {} sessions, {} panes{})",
+                    d.name,
+                    d.pid,
+                    d.sessions_count,
+                    d.panes_count,
+                    if d.host_ptys == Some(false) { ", MODEL-ONLY: no --host-ptys, panes cannot run commands" } else { "" }
                 )));
             } else if let Some(rec) = lock_rec {
                 let res = JsonValue::obj([

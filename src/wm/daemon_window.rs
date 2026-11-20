@@ -30,6 +30,8 @@ pub struct DaemonMenuEntry {
     pub restarts: u32,
     /// `Some("restarting")` / `Some("failed")` when the supervisor reports the host down.
     pub supervisor_state: Option<&'static str>,
+    /// Whether the daemon owns real PTYs (`Some(false)` = model-only: panes cannot run commands).
+    pub host_ptys: Option<bool>,
 }
 
 impl DaemonMenuEntry {
@@ -242,6 +244,7 @@ impl WindowManager {
                     socket_path: d.socket_path.to_string_lossy().into_owned(),
                     rss_bytes: d.rss_bytes,
                     restarts: d.restart_count,
+                    host_ptys: d.host_ptys,
                     ..Default::default()
                 })
                 .collect();

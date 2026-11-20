@@ -1,4 +1,5 @@
 pub mod execute;
+mod execute_dos;
 pub mod execute_agent_mail;
 mod execute_agents;
 mod execute_agents_hud;
@@ -41,6 +42,7 @@ mod execute_coords;
 pub mod parse_session_map;
 pub mod parse_voice;
 mod parse_visual;
+pub mod parse_dos;
 pub mod parse_web;
 pub mod parse_window;
 
