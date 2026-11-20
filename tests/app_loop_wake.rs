@@ -152,6 +152,10 @@ async fn loop_ends_when_the_only_pane_exits() {
     let pane = CompositePane::spawn(1, sh("printf bye")).unwrap();
     let stats = LoopStats::default();
     let mut app = App::new(pane);
+    // End policy + an empty session dir: hermetic (saved sessions on the host would be switched to).
+    let dir = tempfile::tempdir().unwrap();
+    app.wm.config_mut().session_on_empty = bilterm::config::SessionOnEmpty::End;
+    app.wm.config_mut().session_dir = Some(dir.path().to_string_lossy().into_owned());
     let events = futures::stream::pending::<io::Result<Event>>();
     let looped = app.run_loop(events, |_| Ok(()), None, std::future::pending(), &stats);
     tokio::time::timeout(LONG, looped).await.expect("loop did not end").unwrap();

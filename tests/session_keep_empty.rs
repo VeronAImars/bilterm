@@ -1,6 +1,5 @@
 //! `:session on-empty keep`: a session whose last window exits or is closed stays open, empty.
-//! Pins both modes (`end` is the headless default; `keep-last` the interactive one), the empty canvas, switching to and from
-//! Pins both modes (`end` is the default and unchanged), the empty canvas, switching to and from
+//! Pins both modes (`end` is the headless default, `keep-last` the interactive one), the empty canvas, switching to and from
 //! an empty session, refilling it, the save/restore round trip, ending it explicitly, and that
 //! bilterm does not quit while the only session is empty.
 

@@ -72,7 +72,7 @@ fn end_policy_still_quits_on_last_pane_exit() {
 fn explicit_quit_and_session_kill_of_last_session_still_quit() {
     isolated(|dir| {
         let mut wm = wm_with(dir, SessionOnEmpty::KeepLast);
-        assert!(matches!(colon(&mut wm, ":quit"), AppAction::Quit));
+        assert!(matches!(colon(&mut wm, ":quit!"), AppAction::Quit));
         let mut wm = wm_with(dir, SessionOnEmpty::KeepLast);
         assert!(matches!(colon(&mut wm, ":session kill"), AppAction::Quit));
     });
