@@ -15,6 +15,10 @@ use crate::wm::find_cmd::{FindKind, cap_query};
 use crate::wm::registry::FIND_DEFAULT_LIMIT;
 use crate::wm::traffic::{TrafficEndpoint, TrafficKind};
 
+/// Methods that deliver bytes to a pane's shell/PTY: refused on a daemon without `--host-ptys`.
+const PTY_REQUIRED_METHODS: &[&str] =
+    &["pane.exec", "pane.send_keys", "pane.send", "agent.prompt", "agent.approve", "swarm.run", "swarm.spawn"];
+
 impl AutomationControlPlane {
     /// Dispatches a JSON-RPC 2.0 control plane method against the workspace.
     pub fn dispatch_method(
@@ -22,6 +26,11 @@ impl AutomationControlPlane {
         method: &str,
         params: &JsonValue,
     ) -> std::result::Result<JsonValue, String> {
+        if PTY_REQUIRED_METHODS.contains(&method)
+            && let Some(err) = self.no_pty_error(method)
+        {
+            return Err(err);
+        }
         match method {
             "workspace.status" => Ok(self.workspace_status_json()),
             "workspace.snapshot" => {
@@ -258,6 +267,11 @@ impl AutomationControlPlane {
                 ];
                 if let Some(data) = self.wm.take_command_data().and_then(|d| JsonValue::parse(&d)) {
                     out.push(("data", data));
+                }
+                // "handled" only means the command was accepted: on a PTY-less daemon nothing runs.
+                if let Some(w) = self.no_pty_error("wm.command") {
+                    out.push(("host_ptys", JsonValue::Bool(false)));
+                    out.push(("warning", JsonValue::String(w)));
                 }
                 Ok(JsonValue::obj(out))
             }

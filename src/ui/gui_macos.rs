@@ -478,6 +478,7 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
     let cls_pool = class(c"NSAutoreleasePool");
     let cls_date = class(c"NSDate");
     let cls_ca_transaction = class(c"CATransaction");
+    let mut gui_live = app.start_gui_live();
 
     loop {
         let pool = unsafe { msg_send_id_0(msg_send_id_0(cls_pool, sel_alloc), sel_init) };
@@ -710,6 +711,7 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
             app.needs_redraw = true;
         }
 
+        app.pump_gui_live(&mut gui_live);
         if app.poll_all_ptys() {
             app.needs_redraw = true;
         }

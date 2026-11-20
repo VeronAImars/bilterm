@@ -55,6 +55,10 @@ pub struct DaemonRegistryEntry {
     /// Soft memory limit in bytes (`None` = none): throttle/warn only, never the sole limit.
     #[serde(default)]
     pub limit_high_bytes: Option<u64>,
+    /// Whether this daemon owns real PTYs (`--host-ptys`). `None` = unknown (record from an older
+    /// build); `Some(false)` = model-only: panes have no shell and cannot run commands.
+    #[serde(default)]
+    pub host_ptys: Option<bool>,
 }
 
 impl DaemonRegistryEntry {
@@ -106,6 +110,7 @@ impl DaemonRegistryEntry {
         );
         map.insert("limit_max_bytes".to_string(), opt(self.limit_max_bytes));
         map.insert("limit_high_bytes".to_string(), opt(self.limit_high_bytes));
+        map.insert("host_ptys".to_string(), self.host_ptys.map_or(JsonValue::Null, JsonValue::Bool));
         JsonValue::Object(map).to_json_string()
     }
 
@@ -175,6 +180,7 @@ impl DaemonRegistryEntry {
             last_exit: val.get("last_exit").and_then(crate::daemon::supervise::last_exit_from_json),
             limit_max_bytes: opt_u64("limit_max_bytes"),
             limit_high_bytes: opt_u64("limit_high_bytes"),
+            host_ptys: val.get("host_ptys").and_then(JsonValue::as_bool),
         })
     }
 }

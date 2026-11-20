@@ -536,6 +536,7 @@ pub fn run_native_gui_window(mut app: App) -> Result<()> {
     )));
     app.needs_redraw = true;
     let _ = dpi_init;
+    let mut gui_live = app.start_gui_live();
 
     loop {
         while unsafe { PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) } != 0 {
@@ -583,6 +584,7 @@ pub fn run_native_gui_window(mut app: App) -> Result<()> {
             }
         }
 
+        app.pump_gui_live(&mut gui_live);
         if app.poll_all_ptys() {
             app.needs_redraw = true;
         }
