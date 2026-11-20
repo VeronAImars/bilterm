@@ -16,7 +16,7 @@ ghostty-vt = ["dep:libghostty-vt"]
 gui = []
 # OPT-IN (default OFF, never bundled): "DOS mode -- runs FreeDOS". Compiles `src/dos/` (pinned download
 # manifest, SHA256 verification, `bilterm dos setup|remove|doctor`). See docs/plans/dos-mode.md.
-dos = ["dep:sha2"]
+dos = ["dep:sha2", "dep:fatfs", "dep:fscommon", "dep:flate2"]
 
 [dependencies]
 libghostty-vt = { version = "0.2.2", optional = true }
@@ -40,6 +40,13 @@ nucleo-matcher = "0.3.1"
 serde_json = "1.0.154"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std", "x86", "neon"] }
 sha2 = { version = "0.10.9", optional = true }
+# DOS mode pure-Rust image builder (plan 5.1a, spike D0c): FAT16 writer + partition view + zip inflate. MIT/MIT/MIT-or-Apache.
+# fatfs WITHOUT `alloc`/`chrono`: with `alloc`, 0.3.6 writes LFN entries for the '.' and '..' directory
+# entries (fsck.fat rejects the volume); without it names are 8.3-only (DOS ignores LFN anyway) and
+# timestamps are fixed, so images are byte-reproducible.
+fatfs = { version = "0.3.6", optional = true, default-features = false, features = ["std"] }
+fscommon = { version = "0.1.1", optional = true }
+flate2 = { version = "1.1", optional = true, default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
 insta = "1.42.2"

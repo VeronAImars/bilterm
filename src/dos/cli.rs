@@ -7,17 +7,23 @@ use std::io::BufRead;
 
 use super::doctor::{self, EmulatorProbe, SystemProbe};
 use super::download::{fetch_entry, CurlDownloader, Downloader, FetchOutcome};
+use super::image::cmd::{self as image_cmd, ImgCmd, ImgEnv};
+use super::image::lock::{ProcInfo, SysProc};
+use super::image::provision::{BackendFactory, Provision, QemuFactory, provision};
+use super::image::ImageKind;
 use super::manifest::Manifest;
 use super::paths::{DosPaths, HostOs};
 
 pub const USAGE: &str =
-    "usage: bilterm dos <setup [--yes] [--entry ID]... | remove [--all] [--yes] | doctor>\n";
+    "usage: bilterm dos <setup [--yes] [--full] [--entry ID]... | remove [--all] [--yes] | doctor | reset | snapshot | restore>\n  (reset/snapshot/restore: see `bilterm dos reset --help`-style usage in the error text)\n";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Cmd {
-    Setup { yes: bool, entries: Vec<String> },
+    Setup { yes: bool, full: bool, entries: Vec<String> },
     Remove { all: bool, yes: bool },
     Doctor,
+    /// `reset`, `snapshot`, `restore` (persistent C: image lifecycle, D1c).
+    Image(ImgCmd),
 }
 
 pub fn parse(args: &[String]) -> Result<Cmd, String> {
@@ -25,15 +31,16 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
     match sub.as_str() {
         "doctor" if rest.is_empty() => Ok(Cmd::Doctor),
         "setup" => {
-            let (mut yes, mut entries, mut it) = (false, Vec::new(), rest.iter());
+            let (mut yes, mut full, mut entries, mut it) = (false, false, Vec::new(), rest.iter());
             while let Some(a) = it.next() {
                 match a.as_str() {
                     "--yes" | "-y" => yes = true,
+                    "--full" => full = true,
                     "--entry" => entries.push(it.next().ok_or("--entry needs an ID")?.clone()),
                     other => return Err(format!("unknown option {other:?}\n{USAGE}")),
                 }
             }
-            Ok(Cmd::Setup { yes, entries })
+            Ok(Cmd::Setup { yes, full, entries })
         }
         "remove" => {
             let (mut all, mut yes) = (false, false);
@@ -46,7 +53,10 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
             }
             Ok(Cmd::Remove { all, yes })
         }
-        _ => Err(USAGE.to_string()),
+        other => match image_cmd::parse(other, rest) {
+            Some(r) => r.map(Cmd::Image),
+            None => Err(USAGE.to_string()),
+        },
     }
 }
 
@@ -58,9 +68,13 @@ pub struct Ctx<'a> {
     pub probe: &'a dyn EmulatorProbe,
     pub downloader: &'a dyn Downloader,
     pub is_root: bool,
+    pub procs: &'a dyn ProcInfo,
+    /// Creates the emulator backend for the one-off boot-sector capture; `None` skips image
+    /// provisioning in `setup` (downloads only).
+    pub factory: Option<&'a dyn BackendFactory>,
 }
 
-fn confirm(prompt: &str, input: &mut dyn BufRead, out: &mut String) -> bool {
+pub(crate) fn confirm(prompt: &str, input: &mut dyn BufRead, out: &mut String) -> bool {
     out.push_str(prompt);
     let mut line = String::new();
     input.read_line(&mut line).is_ok()
@@ -75,12 +89,28 @@ pub fn execute(cmd: &Cmd, ctx: &Ctx, input: &mut dyn BufRead, out: &mut String) 
             out.push_str(&doctor::render(&checks));
             doctor::exit_code(&checks)
         }
-        Cmd::Setup { yes, entries } => setup(ctx, *yes, entries, input, out),
+        Cmd::Setup { yes, full, entries } => setup(ctx, *yes, *full, entries, input, out),
+        Cmd::Image(c) => {
+            let env = ImgEnv {
+                paths: ctx.paths.as_ref(),
+                procs: ctx.procs,
+                is_root: ctx.is_root,
+                now_secs: None,
+            };
+            image_cmd::execute(c, &env, input, out)
+        }
         Cmd::Remove { all, yes } => remove(ctx, *all, *yes, input, out),
     }
 }
 
-fn setup(ctx: &Ctx, yes: bool, ids: &[String], input: &mut dyn BufRead, out: &mut String) -> i32 {
+fn setup(
+    ctx: &Ctx,
+    yes: bool,
+    full: bool,
+    ids: &[String],
+    input: &mut dyn BufRead,
+    out: &mut String,
+) -> i32 {
     if ctx.os == HostOs::Other {
         out.push_str("DOS mode is unsupported on this OS; see `bilterm dos doctor`\n");
         return 1;
@@ -157,10 +187,33 @@ fn setup(ctx: &Ctx, yes: bool, ids: &[String], input: &mut dyn BufRead, out: &mu
             }
         }
     }
-    out.push_str(
-        "setup complete (emulator and boot-sector capture are checked by `bilterm dos doctor`)\n",
-    );
-    0
+    let Some(factory) = ctx.factory else {
+        out.push_str("downloads complete (image provisioning skipped)\n");
+        return 0;
+    };
+    if !paths
+        .download_path(&m.entry(super::image::provision::LIVECD_ENTRY).map_or(String::new(), |e| e.file.clone()))
+        .is_ok_and(|p| p.is_file())
+    {
+        out.push_str("downloads complete; the Live CD was not selected, so no C: image was built\n");
+        return 0;
+    }
+    let kind = if full { ImageKind::Full } else { ImageKind::Base };
+    let p = Provision::new(paths, m, factory, ctx.procs);
+    // Progress goes to stderr immediately: the capture step takes about a minute.
+    match provision(&p, kind, &mut |s| eprintln!("bilterm dos: {s}")) {
+        Ok(msg) => {
+            out.push_str(&msg);
+            out.push_str("\nsetup complete (run `bilterm dos doctor` to check the emulator)\n");
+            0
+        }
+        Err(e) => {
+            out.push_str(&format!(
+                "downloads are complete but the C: image was not built: {e}\nfix the problem and rerun `bilterm dos setup`\n"
+            ));
+            1
+        }
+    }
 }
 
 fn remove(ctx: &Ctx, all: bool, yes: bool, input: &mut dyn BufRead, out: &mut String) -> i32 {
@@ -242,13 +295,24 @@ pub fn run(args: &[String]) -> i32 {
     };
     let probe = SystemProbe::new(&manifest.emulator.name);
     let dl = CurlDownloader::default();
+    let paths = DosPaths::from_process();
+    let bp = super::backend::probe_qemu(&probe, manifest.min_version());
+    let factory = QemuFactory {
+        program: probe.locate(),
+        problem: (!bp.usable()).then(|| {
+            if bp.found { format!("emulator unusable: {}", bp.detail) } else { "qemu-system-i386 not found (see `bilterm dos doctor`)".to_string() }
+        }),
+        base: paths.as_ref().map(DosPaths::sessions_dir).unwrap_or_default(),
+    };
     let ctx = Ctx {
         os: HostOs::current(),
-        paths: DosPaths::from_process(),
+        paths,
         manifest: &manifest,
         probe: &probe,
         downloader: &dl,
         is_root: cfg!(unix) && crate::secure_fs::current_euid() == 0,
+        procs: &SysProc,
+        factory: Some(&factory),
     };
     let mut out = String::new();
     let code = execute(&cmd, &ctx, &mut std::io::stdin().lock(), &mut out);
@@ -300,6 +364,7 @@ mod tests {
             parse(&s(&["setup", "-y", "--entry", "a"])).unwrap(),
             Cmd::Setup {
                 yes: true,
+                full: false,
                 entries: vec!["a".into()]
             }
         );
@@ -330,6 +395,8 @@ mod tests {
             probe: &NoProbe,
             downloader: dl,
             is_root: root,
+            procs: &SysProc,
+            factory: None,
         }
     }
 
@@ -343,6 +410,7 @@ mod tests {
         let c = ctx(&t, &m, &dl, false);
         let setup = Cmd::Setup {
             yes: false,
+            full: false,
             entries: vec![],
         };
         let mut out = String::new();
@@ -412,6 +480,7 @@ mod tests {
         let mut out = String::new();
         let cmd = Cmd::Setup {
             yes: true,
+            full: false,
             entries: vec!["qemu-windows-x64".into()],
         };
         assert_eq!(execute(&cmd, &c, &mut "".as_bytes(), &mut out), 1);
@@ -426,6 +495,7 @@ mod tests {
         let dl = MockDownloader::new(vec![]);
         let cmd = Cmd::Setup {
             yes: true,
+            full: false,
             entries: vec![],
         };
         let mut out = String::new();
@@ -436,6 +506,7 @@ mod tests {
         assert!(out.contains("root"));
         let bad = Cmd::Setup {
             yes: true,
+            full: false,
             entries: vec!["nope".into()],
         };
         assert_eq!(
