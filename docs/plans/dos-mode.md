@@ -376,6 +376,17 @@ Per `CLAUDE.md`, every user-triggerable command lowers to `crate::action::Action
 
 **D2a as built (2026-11-20).** `src/dos/launch.rs` (one path for CLI and pane): `bilterm dos run [--name N | --image FILE] [--drive-c DIR] [--backend ID] [--print-argv]` runs `qemu-system-i386 -display curses` in the current terminal; `Action::DosRun` / `:dos run` (the only DOS Action until D3) opens an ordinary PTY pane whose program is `bilterm dos run ...`, so the wrapper owns the image lock, `.dirty` marker and cleanup (clean exit clears it; a killed pane leaves it, as a crash would). `--drive-c DIR` exposes DIR read-only through vvfat as the drive after C: (UNVERIFIED as a boot drive; "DIR as C:" is D4). Persistent C: needs the image from `dos setup`; `--image FILE` is throwaway (`snapshot=on`). Checks: not root, terminal/pane >= 80x25 (a split is zoomed first), `-nic none`, no USB/audio/chardev leaks (`check_plan_safety`), `TERM`/UTF-8 locale set for curses. Verified: argv snapshots, lock/marker cycle with a fake spawner, headless WM tests, `dos_curses_smoke` (`--ignored`) against QEMU 10.2.1 on Linux; a full FreeDOS boot through `dos run` needs a built image (not run here). macOS: UNVERIFIED.
 
+**Real FreeDOS boot VERIFIED end to end (2026-11-20, Linux x86_64, QEMU 10.2.1, SeaBIOS 1.17.0, isolated `XDG_DATA_HOME`/`XDG_RUNTIME_DIR`, built `--features dos` at 156b648).**
+- `dos doctor` -> `dos setup --yes`: curl download + sha256 of FD14-LiveCD.zip (293950337 bytes), FD14BOOT.img/FD14LIVE.iso extracted, boot sector captured via guest `sys c:` (English / proceed / `A:\>` / "System transferred"), 128 MiB C: built (1006 files). Doctor then all `ok`.
+- `dos run` in a 100x30 PTY: SeaBIOS -> FreeDOS kernel 2043 -> HimemX -> FreeCom -> `BILTERM-READY` / `C:\>`. `ver`, `dir c:` (KERNEL.SYS, COMMAND.COM, FREEDOS, FDCONFIG.SYS, AUTOEXEC.BAT) and `echo hi > c:\t.txt` / `type` work.
+- Lock/dirty: while running `default.lock` + `default.dirty` exist; a second `dos run` is refused ("image is in use by another bilterm process"). Closing the PTY (SIGHUP) or SIGKILL leaves `.dirty`+`.lock` files (crash behaviour; next start recovered normally). Clean guest exit via `fdapm poweroff` (APM) exits 0 and removes both. There is no QEMU monitor (`-monitor none`), so the guest `fdapm poweroff` is the only clean-exit path; consider documenting it or adding a bilterm key for it (open question).
+- Persistence: `t.txt` written in guest survived both a killed session and a clean poweroff, and a re-boot read it back.
+- `dos snapshot --tag good`, mutate (delete t.txt, add u.txt), `dos restore --tag good --yes`, re-boot: t.txt present, u.txt gone. `dos reset --yes`: rebuilt, re-boot shows only the 4 base files.
+- Ignored smokes against the real downloaded images: `dos_smoke_builds_and_boots_to_freecom` (with `BILTERM_DOS_SMOKE_DIR` = the images dir), `dos_curses_smoke`, `smoke_boots_and_reads_seabios_banner`: pass. (`dos_curses_smoke` takes no image path; it boots a blank disk.)
+- Fixed: `dos run --print-argv` failed in a non-tty (crossterm size fallback 80x24); it now skips the pane-size check (test `print_argv_ignores_small_terminal`).
+- Noted, not fixed: empty `sessions/run-*` work dirs remain after killed/clean runs (3 left after these runs).
+- macOS, Windows: still UNVERIFIED by this run.
+
 Order: D0b, D0c -> D1 -> D1b -> D1c, D2a, D2b (parallel) -> D3 -> D6, D6b, D7a, D7b (parallel, per-OS verification) -> D2c/D2d, D4, D5.
 
 ## 11. Open questions (remaining)
