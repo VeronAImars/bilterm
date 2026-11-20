@@ -115,7 +115,24 @@ pub struct App {
     pub needs_redraw: bool,
 }
 
+/// The native GUI's live RPC socket (`instances/<pid>.sock`); `None` when unavailable.
+pub struct GuiLiveHandle(Option<crate::api::live::GuiLive>);
+
 impl App {
+    /// Binds the live RPC socket for a synchronous GUI loop (call inside the tokio runtime).
+    pub fn start_gui_live(&self) -> GuiLiveHandle {
+        GuiLiveHandle(crate::api::live::GuiLive::start(self.wm.traffic_meter()))
+    }
+
+    /// Serves queued `ctl`/MCP requests against the live workspace; call once per GUI iteration.
+    pub fn pump_gui_live(&mut self, h: &mut GuiLiveHandle) {
+        if let Some(l) = h.0.as_mut()
+            && l.pump(&mut self.wm)
+        {
+            self.needs_redraw = true;
+        }
+    }
+
     pub fn new(pane: CompositePane) -> Self {
         let (rows, cols) = pane.vt().size();
         let headless = pane.is_headless();

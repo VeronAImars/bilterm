@@ -229,7 +229,7 @@ impl AutomationControlPlane {
         let name = self.no_pty_daemon.as_deref()?;
         Some(format!(
             "no_host_ptys: daemon '{name}' was started without --host-ptys; its panes have no shell, so {method} cannot run anything. \
-             Restart it with PTYs: `bilterm daemon stop {name}` then `bilterm daemon new {name} --host-ptys` (or start a new named host daemon). \
+             Restart it with PTYs: `bilterm daemon stop {name}` then run `bilterm --headless --host-ptys --name {name}` in the background (or use a new name). \
              Check `host_ptys` in daemon.status / workspace.status first."
         ))
     }

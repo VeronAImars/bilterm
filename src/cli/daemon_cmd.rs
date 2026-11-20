@@ -149,7 +149,7 @@ pub fn run(cmd: &DaemonCmd, runtime_dir: &Path) -> (String, i32) {
                 ("running", Some(pid)) => {
                     let note = if row.host_ptys == Some(false) {
                         format!(
-                            "\n  WARNING: started without --host-ptys (model-only): panes have no shell and cannot run commands; `bilterm daemon stop {name}` then `bilterm daemon new {name} --host-ptys`"
+                            "\n  WARNING: started without --host-ptys (model-only): panes have no shell and cannot run commands; `bilterm daemon stop {name}` then run `bilterm --headless --host-ptys --name {name}` in the background"
                         )
                     } else {
                         String::new()
