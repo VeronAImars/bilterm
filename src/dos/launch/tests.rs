@@ -227,6 +227,20 @@ fn print_argv_is_dry() {
     assert_eq!(fs::read_dir(fx.paths.sessions_dir()).unwrap().count(), 0, "work dir cleaned");
 }
 
+#[test]
+fn print_argv_ignores_small_terminal() {
+    let fx = fx();
+    let probe = FakeProbe::good();
+    let mut env = fx.env(&probe);
+    env.term_size = Some((80, 24));
+    let sp = FakeSpawner::new(Ok(true));
+    let mut out = String::new();
+    assert_eq!(cli_run(&req(&[]), true, &env, &sp, &mut out), 0, "{out}");
+    let mut out = String::new();
+    assert_eq!(cli_run(&req(&[]), false, &env, &sp, &mut out), 1);
+    assert!(out.contains("terminal is 80x24"), "{out}");
+}
+
 struct FakeSpawner {
     result: RefCell<Option<std::io::Result<bool>>>,
     calls: RefCell<Vec<LaunchPlan>>,
