@@ -83,13 +83,10 @@ pub fn drive(
     } else if at_clean_prompt(b) {
         // FreeDOS ignores the ACPI power button; typing FDAPM at an idle prompt is how it
         // shuts down cleanly (QEMU then exits 0). Never typed into a running program.
-        if let Ok(keys) = keys_for_text(POWEROFF_CMD) {
-            if b.send_keys(&keys).is_ok() {
-                let start = std::time::Instant::now();
-                while b.is_running() && start.elapsed() < poweroff_wait {
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-            }
+        let typed = keys_for_text(POWEROFF_CMD).is_ok_and(|k| b.send_keys(&k).is_ok());
+        let start = std::time::Instant::now();
+        while typed && b.is_running() && start.elapsed() < poweroff_wait {
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
     let outcome = b.stop(grace).unwrap_or(StopOutcome::Forced);
