@@ -400,7 +400,7 @@ impl WindowManager {
     ) -> Result<String, String> {
         let target_clean = target_session.trim();
         validate_session_path(target_clean)?;
-        let cur_session = self.config.history_session.trim();
+        let cur_session = self.config.history_session.trim().to_string();
         let target_id = window_id.unwrap_or_else(|| self.active_pane_id());
 
         if target_clean == cur_session {
@@ -416,6 +416,10 @@ impl WindowManager {
         if !self.panes.contains_key(&target_id) {
             return Err(format!("Window {target_id} not found in active session"));
         }
+
+        // Hydrate a saved-only target into a live parked session BEFORE touching the source, so a
+        // failure leaves the source session exactly as it was.
+        self.hydrate_saved_session(target_clean)?;
 
         // Capture single-step undo snapshot before mutating
         self.capture_topology_undo(
@@ -525,6 +529,54 @@ impl WindowManager {
                 "Moved window {target_id} to session '{target_clean}' as window {landed_id} (id {target_id} was taken there)"
             ))
         }
+    }
+
+    /// Ensures `target` is a live parked session. A session that exists only as a saved layout is
+    /// restored through the normal restore path into a full [`BackgroundSessionState`], then the
+    /// active session is put back. On any failure the active session is untouched.
+    fn hydrate_saved_session(&mut self, target: &str) -> Result<(), String> {
+        if self
+            .window_manage
+            .background_sessions
+            .get(target)
+            .is_some_and(|bg| !bg.panes.is_empty())
+        {
+            return Ok(());
+        }
+        let on_disk = self
+            .resolve_session_dir()
+            .map(|d| d.join(format!("{target}.toml")).is_file())
+            .unwrap_or(false);
+        if !on_disk && !self.layout_profiles_mem.contains_key(target) {
+            // Known by name only (no layout anywhere): the attach below starts it fresh.
+            return Ok(());
+        }
+        // A stale empty parked entry would block parking the restored panes.
+        self.window_manage.background_sessions.remove(target);
+        let cur_session = self.config.history_session.clone();
+        let cur_profile = self.config.active_layout_profile.clone();
+        self.park_active_session();
+        self.config.history_session = target.to_string();
+        self.config.active_layout_profile = target.to_string();
+        let built = if on_disk {
+            self.restore_session(target).map_err(|e| e.to_string())
+        } else {
+            self.switch_layout_profile(target).map_err(|e| e.to_string())
+        };
+        if built.is_err() || self.panes.is_empty() {
+            self.panes.clear();
+            self.activate_parked_session(&cur_session);
+            self.config.active_layout_profile = cur_profile;
+            self.reflow_default_viewport();
+            return Err(built
+                .err()
+                .unwrap_or_else(|| format!("Target session '{target}' has no windows")));
+        }
+        self.park_active_session();
+        self.activate_parked_session(&cur_session);
+        self.config.active_layout_profile = cur_profile;
+        self.reflow_default_viewport();
+        Ok(())
     }
 
     /// Loads a `SavedWorkspaceSession` from in-memory cache or disk if available.

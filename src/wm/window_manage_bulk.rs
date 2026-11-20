@@ -460,7 +460,7 @@ impl WindowManager {
 
     /// Makes the parked session `name` the active one; `false` when no live session is parked
     /// under that name. The caller parks the outgoing session first.
-    fn activate_parked_session(&mut self, name: &str) -> bool {
+    pub(crate) fn activate_parked_session(&mut self, name: &str) -> bool {
         let Some(bg) = self.window_manage.background_sessions.remove(name) else {
             return false;
         };
