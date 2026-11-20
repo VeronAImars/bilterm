@@ -192,29 +192,33 @@ impl WindowManager {
         let tree = &self.daemon_state.session_tree;
         let active = self.config.history_session.as_str();
         let saved = self.drawer.cached_saved_sessions(|| self.list_sessions());
-        let ctx = WalkCtx { wm: self, active, pane_ids: self.ordered_pane_ids() };
+        let order = self.session_order_view_cached(&saved);
+        let ctx = WalkCtx { wm: self, active, pane_ids: self.ordered_pane_ids(), order: &order };
         let mut rows = Vec::new();
         let mut visited = BTreeSet::new();
 
-        for node in &tree.nodes {
-            let is_root = node.parent.as_deref().is_none_or(|p| tree.node(p).is_none());
-            let explicit = node.parent.is_some() || !node.children.is_empty() || node.name != "main";
-            if is_root && (explicit || node.name == active || saved.contains(&node.name)) {
-                ctx.walk(node, 0, &mut visited, &mut rows);
+        // Row order is the authoritative session order; the tree only groups children under parents.
+        for name in &order {
+            let node = tree.node(name);
+            let is_child = node.is_some_and(|n| n.parent.as_deref().is_some_and(|p| tree.node(p).is_some()));
+            if is_child || visited.contains(name) {
+                continue;
+            }
+            match node {
+                Some(n) => ctx.walk(n, 0, &mut visited, &mut rows),
+                None => {
+                    let mut n = SessionTreeNode::new(name.clone(), SessionNodeKind::Independent, None);
+                    n.pane_count = 0;
+                    ctx.walk(&n, 0, &mut visited, &mut rows);
+                }
             }
         }
-        // Sessions outside the tree (saved, parked, or the active one) follow in a key that does not
-        // depend on which session is active or parked: saved order, then unsaved by name. Selecting or
-        // switching a session therefore never reorders the list.
-        let mut loose: Vec<String> = saved.iter().filter(|n| tree.node(n).is_none()).cloned().collect();
-        let mut unsaved: BTreeSet<String> = self.window_manage.background_sessions.keys().cloned().collect();
-        unsaved.insert(active.to_string());
-        loose.extend(unsaved.into_iter().filter(|n| tree.node(n).is_none() && !saved.contains(n)));
-        for name in loose {
-            if !visited.contains(&name) {
-                let mut node = SessionTreeNode::new(name, SessionNodeKind::Independent, None);
-                node.pane_count = 0;
-                ctx.walk(&node, 0, &mut visited, &mut rows);
+        // Children whose parent was never walked (parent not an order entry) still appear.
+        for name in &order {
+            if !visited.contains(name) {
+                let mut n = SessionTreeNode::new(name.clone(), SessionNodeKind::Independent, None);
+                n.pane_count = 0;
+                ctx.walk(&n, 0, &mut visited, &mut rows);
             }
         }
 
@@ -265,6 +269,8 @@ struct WalkCtx<'a> {
     wm: &'a WindowManager,
     active: &'a str,
     pane_ids: Vec<PaneId>,
+    /// Authoritative session order (children of a tree node are listed in this order).
+    order: &'a [String],
 }
 
 impl WalkCtx<'_> {
@@ -277,7 +283,8 @@ impl WalkCtx<'_> {
         let bg_sess = (!live)
             .then(|| self.wm.window_manage.background_sessions.get(&node.name))
             .flatten();
-        let children: Vec<&SessionTreeNode> = node.children.iter().filter_map(|c| tree.node(c)).collect();
+        let mut children: Vec<&SessionTreeNode> = node.children.iter().filter_map(|c| tree.node(c)).collect();
+        children.sort_by_key(|c| self.order.iter().position(|n| n == &c.name).unwrap_or(usize::MAX));
         let has_children = !children.is_empty()
             || (live && !self.pane_ids.is_empty())
             || bg_sess.is_some_and(|bg| bg.panes.values().any(|p| !p.empty_placeholder));
@@ -368,10 +375,7 @@ impl WalkCtx<'_> {
         rows: &mut Vec<DrawerRow>,
     ) {
         let two_line = self.wm.config.drawer.navigator_row_lines() == 2;
-        let mut ids: Vec<PaneId> =
-            bg.panes.iter().filter(|(_, p)| !p.empty_placeholder).map(|(id, _)| *id).collect();
-        ids.sort_unstable();
-        for id in ids {
+        for id in bg.ordered_window_ids() {
             let Some(pane) = bg.panes.get(&id) else { continue };
             let raw_title = sanitize_display(pane.title(), TITLE_MAX_CHARS);
             rows.push(navigator_row(

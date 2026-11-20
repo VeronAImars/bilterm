@@ -261,6 +261,28 @@ impl SessionTree {
         }
     }
 
+    /// Renames node `old` to `new` in place, keeping its position, parent and children. `false`
+    /// when `old` is absent or `new` already exists.
+    pub fn rename_node(&mut self, old: &str, new: &str) -> bool {
+        if old == new || self.node(old).is_none() || self.node(new).is_some() {
+            return false;
+        }
+        for n in &mut self.nodes {
+            if n.name == old {
+                n.name = new.to_string();
+            }
+            if n.parent.as_deref() == Some(old) {
+                n.parent = Some(new.to_string());
+            }
+            for c in &mut n.children {
+                if c == old {
+                    *c = new.to_string();
+                }
+            }
+        }
+        true
+    }
+
     /// Removes `name` from the tree and re-parents its direct children to `name`'s parent (or `Independent`).
     pub fn remove_session(&mut self, name: &str) -> bool {
         let Some(idx) = self.nodes.iter().position(|n| n.name == name) else {

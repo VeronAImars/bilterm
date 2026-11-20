@@ -252,6 +252,8 @@ pub struct WorkspaceDrawer {
     /// after [`Self::invalidate_saved_sessions`], so one frame or event sees one list and the
     /// directory is not rescanned by every layout helper.
     saved_sessions: std::cell::RefCell<Option<Vec<String>>>,
+    /// Persisted session order snapshot (same lifetime as `saved_sessions`).
+    session_order_cache: std::cell::RefCell<Option<Vec<String>>>,
     /// Pane and tick of a pending Navigator close of a Working pane (WR-06).
     close_armed: Option<(PaneId, usize)>,
     /// Session row last unfolded by `Enter` and when (drawer clock), so a second `Enter` on it within
@@ -279,6 +281,17 @@ impl WorkspaceDrawer {
     /// Drops the saved-session snapshot (any action may create, rename or delete a session).
     pub(crate) fn invalidate_saved_sessions(&self) {
         *self.saved_sessions.borrow_mut() = None;
+        *self.session_order_cache.borrow_mut() = None;
+    }
+
+    /// Persisted session order, filled by `fill` on first use after an invalidation.
+    pub(crate) fn cached_session_order(&self, fill: impl FnOnce() -> Vec<String>) -> Vec<String> {
+        if let Some(list) = self.session_order_cache.borrow().as_ref() {
+            return list.clone();
+        }
+        let list = fill();
+        *self.session_order_cache.borrow_mut() = Some(list.clone());
+        list
     }
 
     /// First visible row: a wheel-set viewport while the selection is unchanged, else pinned to keep `selected` visible.
@@ -466,7 +479,17 @@ impl WindowManager {
 
     /// Returns all active `PaneId`s in their visual layout (`SplitTree` leaf) order (`DRW-02`).
     pub fn ordered_pane_ids(&self) -> Vec<PaneId> {
-        let mut ids = self.split_tree.leaves();
+        let mut ids: Vec<PaneId> = Vec::new();
+        for &id in &self.window_manage.window_order {
+            if self.panes.contains_key(&id) && !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        for id in self.split_tree.leaves() {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
         for &id in self.panes.keys() {
             if !ids.contains(&id) {
                 ids.push(id);

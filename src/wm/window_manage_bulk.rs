@@ -360,6 +360,7 @@ impl WindowManager {
                         panes: panes_vec,
                         selected_windows: bg.selected_windows.clone(),
                         empty_session: bg_empty,
+                        window_order: bg.ordered_window_ids(),
                     };
                     snapshot_before.insert(s.clone(), snap);
                 }
@@ -443,7 +444,10 @@ impl WindowManager {
         if self.panes.is_empty() {
             return;
         }
+        let window_order = self.ordered_pane_ids();
+        self.window_manage.window_order.clear();
         let state = BackgroundSessionState {
+            window_order,
             panes: std::mem::take(&mut self.panes),
             split_tree: self.split_tree.clone(),
             z_stack: self.z_stack.clone(),
@@ -470,6 +474,7 @@ impl WindowManager {
         // Pane ids are per session: the counter must clear this session's ids, or the next split
         // would overwrite one of its live panes.
         self.next_pane_id = max_id + 1;
+        self.window_manage.window_order = bg.window_order;
         self.panes = bg.panes;
         self.split_tree = bg.split_tree;
         self.z_stack = bg.z_stack;
