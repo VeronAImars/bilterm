@@ -385,7 +385,7 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
                     None => Ok(ColonCommand::SessionOnEmpty(None)),
                     Some(v) => match crate::config::SessionOnEmpty::from_name(v) {
                         Some(p) => Ok(ColonCommand::SessionOnEmpty(Some(p))),
-                        None => Err("Usage: :session on-empty [end|keep]".to_string()),
+                        None => Err("Usage: :session on-empty [end|keep-last|keep]".to_string()),
                     },
                 }),
                 Some("kill" | "end" | "close") => Some(Ok(ColonCommand::SessionEnd {
@@ -450,7 +450,7 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
                 }
                 None | Some("list" | "ls") => Some(Ok(ColonCommand::SessionList)),
                 _ => Some(Err(
-                    "Usage: :session new [name] | blank [name] | rename [old] <new> | switch <name> | move [name] <up|down|top|bottom|idx> | reorder <s1> <s2>... | save [name] | restore [name] | processes [on|off] | cmd <command|clear> | shell <prog> [args...] | cwd <path> | relaunch | info | kill [name] | on-empty [end|keep] | delete <name> | list | tree"
+                    "Usage: :session new [name] | blank [name] | rename [old] <new> | switch <name> | move [name] <up|down|top|bottom|idx> | reorder <s1> <s2>... | save [name] | restore [name] | processes [on|off] | cmd <command|clear> | shell <prog> [args...] | cwd <path> | relaunch | info | kill [name] | on-empty [end|keep-last|keep] | delete <name> | list | tree"
                         .to_string(),
                 )),
             }

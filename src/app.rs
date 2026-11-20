@@ -245,7 +245,7 @@ impl App {
 
             self.flush_osc52_to_host()?;
 
-            if self.should_quit || self.all_panes_exited() {
+            if self.should_exit() {
                 break;
             }
 
@@ -309,6 +309,11 @@ impl App {
             self.needs_redraw = true;
         }
         changed
+    }
+
+    /// The one quit decision for every loop (TUI, X11, Windows, macOS GUI).
+    pub fn should_exit(&self) -> bool {
+        self.should_quit || self.wm.should_quit()
     }
 
     pub fn all_panes_exited(&self) -> bool {

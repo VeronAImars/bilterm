@@ -6,9 +6,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionOnEmpty {
-    /// End the session and move to another one; bilterm quits only when none is left (default).
-    #[default]
+    /// End the session and move to another one; bilterm quits only when none is left.
     End,
+    /// Like `end` while other sessions exist; the last session is kept open and empty instead of
+    /// quitting bilterm (default for interactive TUI/GUI; headless runs use `end`).
+    #[default]
+    KeepLast,
     /// Keep the session alive with zero windows (an empty canvas) until it is refilled or ended.
     Keep,
 }
@@ -18,6 +21,7 @@ impl SessionOnEmpty {
     pub fn from_name(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "end" | "close" | "kill" | "quit" => Some(Self::End),
+            "keep-last" | "keep_last" | "keeplast" | "last" => Some(Self::KeepLast),
             "keep" | "empty" | "leave" | "stay" => Some(Self::Keep),
             _ => None,
         }
@@ -27,6 +31,7 @@ impl SessionOnEmpty {
     pub fn label(self) -> &'static str {
         match self {
             Self::End => "end",
+            Self::KeepLast => "keep-last",
             Self::Keep => "keep",
         }
     }
@@ -37,8 +42,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_names_and_defaults_to_end() {
-        assert_eq!(SessionOnEmpty::default(), SessionOnEmpty::End);
+    fn parses_names_and_defaults_to_keep_last() {
+        assert_eq!(SessionOnEmpty::default(), SessionOnEmpty::KeepLast);
+        assert_eq!(SessionOnEmpty::from_name("keep-last"), Some(SessionOnEmpty::KeepLast));
         assert_eq!(SessionOnEmpty::from_name("KEEP"), Some(SessionOnEmpty::Keep));
         assert_eq!(SessionOnEmpty::from_name("end"), Some(SessionOnEmpty::End));
         assert_eq!(SessionOnEmpty::from_name("nope"), None);

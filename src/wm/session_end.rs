@@ -159,6 +159,10 @@ impl WindowManager {
             return true;
         }
         let Some(next) = self.end_active_session_and_move_on() else {
+            if self.keeps_last_session_empty() {
+                self.keep_session_empty_with_status(&ended, false);
+                return true;
+            }
             return false;
         };
         self.active_pane_mut().set_status_message(Some(format!(
@@ -186,6 +190,10 @@ impl WindowManager {
             return true;
         }
         let Some(next) = self.end_active_session_and_move_on() else {
+            if self.keeps_last_session_empty() && !self.is_session_empty() {
+                self.keep_session_empty_with_status(&ended, true);
+                return true;
+            }
             return false;
         };
         self.active_pane_mut().set_status_message(Some(format!(

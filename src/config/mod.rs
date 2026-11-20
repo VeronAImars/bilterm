@@ -148,7 +148,7 @@ pub struct BiltermConfig {
     pub scroll_mode: PaneScrollMode,
     /// Policy for accidental `exit`/`logout`/`Ctrl+D` on the final pane or root session (`"guard"`, `"respawn"`, `"detach"`, `"off"`, `SAFE-01`).
     pub exit_protection: ExitProtectionPolicy,
-    /// What happens when the last window of a session exits or is closed (`"end"` or `"keep"`, `:session on-empty`).
+    /// What happens when the last window of a session exits or is closed (`"end"`, `"keep-last"` (default) or `"keep"`, `:session on-empty`).
     pub session_on_empty: SessionOnEmpty,
     /// Marks this workspace session as a protected Root Session (`SAFE-02`).
     pub is_root_session: bool,

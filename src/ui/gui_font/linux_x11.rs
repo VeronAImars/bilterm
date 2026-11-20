@@ -835,7 +835,7 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
         if app.poll_all_ptys() {
             app.needs_redraw = true;
         }
-        if app.should_quit || app.all_panes_exited() {
+        if app.should_exit() {
             break;
         }
         if app.needs_redraw {
