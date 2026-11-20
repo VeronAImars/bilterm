@@ -241,7 +241,7 @@ pub fn check_plan_safety(plan: &LaunchPlan) -> Result<(), String> {
     let pairs = |flag: &str| -> Vec<&str> {
         a.windows(2).filter(|w| w[0] == flag).map(|w| w[1].as_str()).collect()
     };
-    if !pairs("-nic").iter().any(|v| *v == "none") {
+    if !pairs("-nic").contains(&"none") {
         return Err("plan lacks `-nic none`".into());
     }
     for bad in [
