@@ -28,7 +28,8 @@ Any number of named daemons run side by side. Without `-l/--listen`, each named 
 Manage them from the shell (works with no daemon running, and for daemons started by hand):
 ```bash
 bilterm daemon list [--json]            # NAME / STATUS / PID / VERSION / SOCKET of every daemon
-bilterm daemon start [NAME]             # start NAME in the background (no-op if already running)
+bilterm daemon start [NAME] [--host-ptys]  # start NAME in the background (no-op if already running)
+bilterm daemon new [NAME] [--host-ptys] [--json]  # create a NEW daemon; no NAME = first free daemon-N (printed); existing NAME refused
 bilterm daemon status [NAME] [--json]   # exit 0 when running, 3 when stopped or crashed
 bilterm daemon stop [NAME] [--force]    # SIGTERM (SIGKILL with --force)
 ```
@@ -48,6 +49,7 @@ If a daemon crashes or is killed abruptly (`kill -9`), the kernel immediately re
 - `:daemon` or `:daemon list` — Lists all running daemons, process IDs, session counts, pane counts, and agent statuses.
 - `:daemon status [name]` — Inspects detailed telemetry of the current or named daemon.
 - `:daemon start [name]` — Auto-spawns a background daemon if not already running.
+- `:daemon new [name] [--host-ptys] [--restart ...]` — Creates a NEW daemon. Without a name the first free `daemon-N` is used (returned in the command data); a name that already exists in any state (running, restarting, failed, crashed) is refused, never overwritten. `--host-ptys` makes the daemon own real PTYs (`start` takes it too). In the Daemon window press `n` (or click `[n] New`): type a name (default suggestion is the next free `daemon-N`; empty = auto), `Tab` or click the checkbox to toggle host PTYs, `Enter` creates, `Esc` cancels.
 - `:daemon stop [name] [--force]` — Gracefully terminates daemon PTY child processes, checkpoints session journals, and cleans up sockets and lockfiles.
 - `:daemon switch <name>` — Switches the active client connection context to a named peer daemon.
 - `:daemon prune` — Cleans up dead daemon lock and metadata entries.
@@ -57,11 +59,11 @@ All live peer daemons are indexed by the Unified Registry (`:find`). Searching `
 
 #### 6. Surface Uniformity & Keybindings
 Every daemon operation is fully accessible across:
-- **Leader Key Chords**: `Ctrl+X D L` (List), `Ctrl+X D S` (Status), `Ctrl+X D N` (Start), `Ctrl+X D Q` (Stop), `Ctrl+X D W` (Switch)
-- **Top Menubar**: `Tools > Daemons > [List | Status | Start | Stop | Switch | Prune]`
-- **Command Palette**: `:daemon list`, `:daemon status`, `:daemon start`, `:daemon stop`
-- **JSON-RPC 2.0**: `daemon.list`, `daemon.status`, `daemon.start`, `daemon.stop`, `daemon.switch`
-- **MCP Tool**: `bilterm_daemon` with `action="list" | "status" | "start" | "stop" | "switch"`
+- **Leader Key Chords**: `Ctrl+X D L` (List), `Ctrl+X D S` (Status), `Ctrl+X D N` (Start), `Ctrl+X D C` (New), `Ctrl+X D Q` (Stop), `Ctrl+X D W` (Switch)
+- **Top Menubar**: `Tools > Daemons > [List | Status | Start | New | Stop | Switch | Prune]`
+- **Command Palette**: `:daemon list`, `:daemon status`, `:daemon start`, `:daemon new`, `:daemon stop`
+- **JSON-RPC 2.0**: `daemon.list`, `daemon.status`, `daemon.start`, `daemon.new`, `daemon.stop`, `daemon.switch`
+- **MCP Tool**: `bilterm_daemon` with `action="list" | "status" | "start" | "new" | "stop" | "switch"`
 
 ## Agent instructions: `bilterm agents-md` and `:agent guide` (`AGUIDE-01`)
 

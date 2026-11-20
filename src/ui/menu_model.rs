@@ -159,6 +159,7 @@ pub const MENUBAR_CATEGORIES: &[MenuCategory] = &[
             mi("List Daemons", ":daemon list", 'L'),
             mi("Daemon Status", ":daemon status", 'S'),
             mi("Start Daemon", ":daemon start", 'T'),
+            mi("New Daemon", ":daemon new", 'N'),
             mi("Stop Daemon", ":daemon stop", 'O'),
             mi("Switch Daemon", ":daemon switch default", 'W'),
             mi("Prune Daemons", ":daemon prune", 'P'),

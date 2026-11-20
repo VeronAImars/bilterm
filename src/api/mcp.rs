@@ -115,7 +115,7 @@ impl AutomationControlPlane {
                         } else if tool_name == "bilterm_window_manage" {
                             Err("missing or invalid 'action' parameter: move, rename, rename_session, select, bulk, or undo".to_string())
                         } else if tool_name == "bilterm_daemon" {
-                            Err("missing or invalid 'action' parameter: list, status, start, stop, switch, host_state, attach_clients, attach_kick".to_string())
+                            Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick".to_string())
                         } else if tool_name == "bilterm_web_surface" {
                             Err("invalid 'action' parameter: status, open, port or stop".to_string())
                         } else if tool_name == "bilterm_clipboard" {
@@ -315,16 +315,17 @@ impl AutomationControlPlane {
             ),
             Self::mcp_tool_schema(
                 "bilterm_daemon",
-                "Supervise and inspect Bilterm background daemons (list, status, start, stop, switch, host_state, attach_clients, attach_kick). list/status report rss_bytes, restart_count, last_exit and limits.",
+                "Supervise and inspect Bilterm background daemons (list, status, start, new, stop, switch, host_state, attach_clients, attach_kick). list/status report rss_bytes, restart_count, last_exit and limits.",
                 &[
-                    ("action", "string", "Operation: list | status | start | stop | switch | host_state | attach_clients | attach_kick"),
+                    ("action", "string", "Operation: list | status | start | new | stop | switch | host_state | attach_clients | attach_kick"),
                     ("client_id", "integer", "With action='attach_kick': attach client id to close with Bye{kicked}"),
                     ("ro", "boolean", "With action='attach_kick': kick every read-only attach client instead of one id"),
-                    ("name", "string", "Optional daemon name (defaults to 'default')"),
+                    ("name", "string", "Optional daemon name (defaults to 'default'; with action='new' omitted = first free 'daemon-N', returned as 'name'; an existing name is refused)"),
                     ("force", "boolean", "Optional flag to force stop without graceful shutdown"),
-                    ("restart", "string", "With action='start': restart policy never (default) | on-crash"),
-                    ("memory_max", "string", "With action='start': hard memory limit for the host, e.g. 2G (systemd scope cgroup on Linux, else a userspace RSS watchdog)"),
-                    ("memory_high", "string", "With action='start': soft limit below memory_max (throttle/warn only; requires memory_max)"),
+                    ("host_ptys", "boolean", "With action='start'|'new': the host owns real PTYs (--headless --host-ptys); applies to a new spawn only"),
+                    ("restart", "string", "With action='start'|'new': restart policy never (default) | on-crash"),
+                    ("memory_max", "string", "With action='start'|'new': hard memory limit for the host, e.g. 2G (systemd scope cgroup on Linux, else a userspace RSS watchdog)"),
+                    ("memory_high", "string", "With action='start'|'new': soft limit below memory_max (throttle/warn only; requires memory_max)"),
                 ],
             ),
             Self::mcp_tool_schema(
@@ -576,6 +577,7 @@ impl AutomationControlPlane {
             "list" => Some("daemon.list"),
             "status" => Some("daemon.status"),
             "start" => Some("daemon.start"),
+            "new" => Some("daemon.new"),
             "stop" => Some("daemon.stop"),
             "switch" => Some("daemon.switch"),
             "host_state" => Some("daemon.host_state"),

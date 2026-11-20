@@ -188,14 +188,30 @@ pub fn render_daemon_window(
         }
     }
 
-    put(
-        buf,
-        outer,
-        ix,
-        lay.status_y,
-        &fit_pad(&format!(" {}", state.status_line), inner_w),
-        bg.fg(tokens.warning),
-    );
+    if let Some(p) = &state.new_prompt {
+        let (tx, tw) = lay.prompt_toggle_span();
+        let left_w = usize::from(tx.saturating_sub(ix)).saturating_sub(1);
+        let text = match &p.error {
+            Some(e) => format!(" {e}"),
+            None => format!(" New daemon name: {}_  (Enter=create, Esc=cancel)", p.name),
+        };
+        let style = if p.error.is_some() { bg.fg(tokens.danger) } else { bg.fg(tokens.text_primary) };
+        put(buf, outer, ix, lay.status_y, &fit_pad(&text, inner_w), bg);
+        put(buf, outer, ix, lay.status_y, &fit_pad(&text, left_w), style);
+        let mark = if p.host_ptys { "[x]" } else { "[ ]" };
+        let label = format!("{mark}{}", &crate::wm::daemon_window::PROMPT_TOGGLE_LABEL[3..]);
+        debug_assert_eq!(label.chars().count() as u16, tw);
+        put(buf, outer, tx, lay.status_y, &label, bg.fg(tokens.accent).add_modifier(Modifier::BOLD));
+    } else {
+        put(
+            buf,
+            outer,
+            ix,
+            lay.status_y,
+            &fit_pad(&format!(" {}", state.status_line), inner_w),
+            bg.fg(tokens.warning),
+        );
+    }
 
     for (b, x, _w) in lay.button_spans() {
         put(buf, outer, x, lay.footer_y, b.label(), bg.fg(tokens.accent).add_modifier(Modifier::BOLD));
@@ -256,6 +272,24 @@ mod tests {
             assert_eq!(got, b.label());
         }
         assert!(row_text(&buf, lay.status_y).contains("ready"));
+    }
+
+    #[test]
+    fn prompt_row_shows_name_and_checkbox() {
+        let mut wm = WindowManager::new_headless(100, 30);
+        {
+            let d = wm.daemon_window_mut();
+            d.active = true;
+            d.focused = true;
+            d.new_prompt = Some(crate::wm::daemon_window::DaemonNewPrompt { name: "abc".into(), host_ptys: true, error: None });
+        }
+        let ws = Rect::new(0, 0, 100, 30);
+        let mut buf = Buffer::empty(ws);
+        render_daemon_window(&wm, ws, &BiltermConfig::default(), &ThemePalette::default(), &GlyphSet::default(), &mut buf);
+        let r = wm.daemon_window_rect(ws).unwrap();
+        let row = row_text(&buf, DaemonWindowLayout::new(r).status_y);
+        assert!(row.contains("New daemon name: abc_"), "{row}");
+        assert!(row.contains("[x] host PTYs"), "{row}");
     }
 
     #[test]

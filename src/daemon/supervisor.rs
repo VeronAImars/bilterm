@@ -392,6 +392,11 @@ pub fn spawn_daemon_with(exe: &Path, runtime_dir: &Path, name: &str, mode: Resta
 
 /// [`spawn_daemon_with`] with memory limits handed to the supervisor (P4 / C2).
 pub fn spawn_daemon_limited(exe: &Path, runtime_dir: &Path, name: &str, mode: RestartMode, mem: MemoryLimits) -> io::Result<(u32, PathBuf)> {
+    spawn_daemon_opts(exe, runtime_dir, name, mode, mem, false)
+}
+
+/// [`spawn_daemon_limited`] plus `host_ptys`: the daemon owns real PTYs (`--headless --host-ptys`).
+pub fn spawn_daemon_opts(exe: &Path, runtime_dir: &Path, name: &str, mode: RestartMode, mem: MemoryLimits, host_ptys: bool) -> io::Result<(u32, PathBuf)> {
     let mem = mem.validate().map_err(|e| io::Error::new(ErrorKind::InvalidInput, e))?;
     validate_safe_name(name)
         .map_err(|e| io::Error::new(ErrorKind::InvalidInput, format!("invalid daemon name: {e}")))?;
@@ -408,6 +413,9 @@ pub fn spawn_daemon_limited(exe: &Path, runtime_dir: &Path, name: &str, mode: Re
     }
     if let Some(high) = mem.high_bytes {
         cmd.args(["--memory-high", &high.to_string()]);
+    }
+    if host_ptys {
+        cmd.arg("--host-ptys");
     }
     cmd.arg("--runtime-dir")
         .arg(runtime_dir)
@@ -457,6 +465,16 @@ pub fn ensure_started_exe(exe: &Path, runtime_dir: &Path, name: &str, mode: Rest
 
 /// [`ensure_started_exe`] plus memory limits.
 pub fn ensure_started_exe_limited(exe: &Path, runtime_dir: &Path, name: &str, mode: RestartMode, mem: MemoryLimits) -> io::Result<DaemonStartResult> {
+    ensure_started_exe_opts(exe, runtime_dir, name, mode, mem, false)
+}
+
+/// [`ensure_started_limited`] plus `host_ptys` (the host owns real PTYs; applies to a new spawn only).
+pub fn ensure_started_opts(runtime_dir: &Path, name: &str, mode: RestartMode, mem: MemoryLimits, host_ptys: bool) -> io::Result<DaemonStartResult> {
+    ensure_started_exe_opts(&std::env::current_exe()?, runtime_dir, name, mode, mem, host_ptys)
+}
+
+/// [`ensure_started_exe_limited`] plus `host_ptys`.
+pub fn ensure_started_exe_opts(exe: &Path, runtime_dir: &Path, name: &str, mode: RestartMode, mem: MemoryLimits, host_ptys: bool) -> io::Result<DaemonStartResult> {
     mem.validate().map_err(|e| io::Error::new(ErrorKind::InvalidInput, e))?;
     validate_safe_name(name)
         .map_err(|e| io::Error::new(ErrorKind::InvalidInput, format!("invalid daemon name: {e}")))?;
@@ -495,7 +513,7 @@ pub fn ensure_started_exe_limited(exe: &Path, runtime_dir: &Path, name: &str, mo
             format!("daemon '{name}' is restarting after a crash (supervisor PID {}); `daemon stop {name}` cancels it", rec.supervisor_pid),
         ));
     }
-    spawn_daemon_limited(exe, runtime_dir, name, mode, mem)?;
+    spawn_daemon_opts(exe, runtime_dir, name, mode, mem, host_ptys)?;
     let start = Instant::now();
     while start.elapsed() < Duration::from_millis(3000) {
         std::thread::sleep(Duration::from_millis(25));

@@ -287,6 +287,7 @@ pub struct ProcessRunner {
     poll_ms: u64,
     grace_ms: u64,
     cause: Option<ExitCause>,
+    host_ptys: bool,
 }
 
 impl ProcessRunner {
@@ -303,7 +304,14 @@ impl ProcessRunner {
             poll_ms: env_ms("BILTERM_LIMIT_POLL_MS", limits::DEFAULT_POLL_MS),
             grace_ms: env_ms("BILTERM_LIMIT_GRACE_MS", limits::DEFAULT_GRACE_MS),
             cause: None,
+            host_ptys: false,
         }
+    }
+
+    /// The spawned host owns real PTYs (`--host-ptys`).
+    pub fn with_host_ptys(mut self, on: bool) -> Self {
+        self.host_ptys = on;
+        self
     }
 
     /// Enforces `limits` through `backend` (ignored when `limits` sets no max).
@@ -381,7 +389,10 @@ impl HostRunner for ProcessRunner {
         // The previous host (if any) is dead: a leftover socket file must not block the new bind.
         let _ = crate::daemon::process::probe_or_cleanup_stale_socket(&sock);
         let listen = format!("unix:{}", sock.display());
-        let host_args = ["--daemon".to_string(), "--name".to_string(), self.name.clone(), "-l".to_string(), listen];
+        let mut host_args = vec!["--daemon".to_string(), "--name".to_string(), self.name.clone(), "-l".to_string(), listen];
+        if self.host_ptys {
+            host_args.push("--host-ptys".to_string());
+        }
         let limited = self.limits.max_bytes.is_some();
         let mut cmd = if limited && self.backend == LimitBackend::SystemdScope {
             self.spawns += 1;
@@ -476,6 +487,7 @@ pub fn run_cli(args: &[String]) -> i32 {
     let mut dir: Option<PathBuf> = None;
     let mut mode = RestartMode::Never;
     let (mut mem_max, mut mem_high) = (None, None);
+    let mut host_ptys = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let v = |it: &mut std::slice::Iter<String>| it.next().cloned();
@@ -487,6 +499,7 @@ pub fn run_cli(args: &[String]) -> i32 {
                 Some(Err(e)) => return fail(&e),
                 None => return fail("--restart needs a value"),
             },
+            "--host-ptys" => host_ptys = true,
             "--memory-max" => mem_max = v(&mut it),
             "--memory-high" => mem_high = v(&mut it),
             other => return fail(&format!("unknown supervisor option '{other}'")),
@@ -507,7 +520,7 @@ pub fn run_cli(args: &[String]) -> i32 {
         Ok(l) => l,
         Err(e) => return fail(&e),
     };
-    let mut runner = ProcessRunner::new(&runtime_dir, &name, exe);
+    let mut runner = ProcessRunner::new(&runtime_dir, &name, exe).with_host_ptys(host_ptys);
     if !mem.is_unlimited() {
         let sel = limits::select_backend_for_host();
         tracing::info!(daemon = %name, backend = sel.backend.as_str(), note = %sel.note, "memory limits");

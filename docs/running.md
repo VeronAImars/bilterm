@@ -53,6 +53,7 @@ bilterm -d -l 127.0.0.1:7370 -t ~/.config/bilterm/token # Run headless daemon on
 bilterm -d -l 0.0.0.0:7370 -r -t ~/.config/bilterm/token # Listen on remote TCP (requires -r and 0600 token file)
 bilterm -d --name alpha                         # Named daemon on its own socket (daemons/daemon-alpha.sock); run as many as you like
 bilterm daemon list                             # List daemons (name, status, PID, version, socket); --json for scripts
+bilterm daemon new                          # Create a NEW daemon (first free daemon-N; refuses existing names; --host-ptys)
 bilterm daemon start alpha                      # Start named daemon in the background (no-op if running)
 bilterm daemon status alpha                     # Exit 0 running, 3 stopped/crashed
 bilterm daemon stop alpha [--force]             # Stop a daemon by name

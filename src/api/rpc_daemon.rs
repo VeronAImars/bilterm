@@ -7,7 +7,7 @@ use crate::daemon::limits::MemoryLimits;
 use crate::daemon::restart_policy::RestartMode;
 use crate::daemon::supervise::last_exit_to_json;
 use crate::daemon::supervisor::{
-    daemon_lock_path_in, ensure_started_limited, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
+    daemon_lock_path_in, ensure_started_opts, resolve_runtime_dir, stop_daemon, DaemonLockRecord, DaemonStartResult,
 };
 
 /// Handles `daemon.list`. Rows come from the same view model as the CLI, `:daemon list` and the
@@ -91,22 +91,9 @@ pub fn handle_daemon_start(params: &JsonValue) -> Result<JsonValue, String> {
         .and_then(JsonValue::as_str)
         .unwrap_or("default");
 
-    let restart = match params.get("restart").and_then(JsonValue::as_str) {
-        Some(v) => RestartMode::parse(v)?,
-        None => RestartMode::Never,
-    };
+    let (restart, limits, host_ptys) = parse_start_params(params)?;
 
-    // memory_max / memory_high: "2G" strings or plain byte counts (high requires max).
-    let size = |k: &str| -> Option<String> {
-        match params.get(k) {
-            Some(JsonValue::String(s)) => Some(s.clone()),
-            Some(JsonValue::Number(n)) => Some(n.to_string()),
-            _ => None,
-        }
-    };
-    let limits = MemoryLimits::from_args(size("memory_max").as_deref(), size("memory_high").as_deref())?;
-
-    match ensure_started_limited(&runtime_dir, name, restart, limits) {
+    match ensure_started_opts(&runtime_dir, name, restart, limits, host_ptys) {
         Ok(DaemonStartResult::Started { pid, socket_path }) => Ok(JsonValue::obj([
             ("status", JsonValue::String("started".to_string())),
             ("name", JsonValue::String(name.to_string())),
@@ -164,4 +151,46 @@ pub fn handle_daemon_switch(params: &JsonValue) -> Result<JsonValue, String> {
         ("status", JsonValue::String("switched".to_string())),
         ("name", JsonValue::String(name.to_string())),
     ]))
+}
+
+/// Shared `restart` / `memory_max` / `memory_high` / `host_ptys` parsing for `daemon.start` and
+/// `daemon.new`. `memory_*` accept "2G" strings or plain byte counts (high requires max).
+fn parse_start_params(params: &JsonValue) -> Result<(RestartMode, MemoryLimits, bool), String> {
+    let restart = match params.get("restart").and_then(JsonValue::as_str) {
+        Some(v) => RestartMode::parse(v)?,
+        None => RestartMode::Never,
+    };
+    let size = |k: &str| -> Option<String> {
+        match params.get(k) {
+            Some(JsonValue::String(s)) => Some(s.clone()),
+            Some(JsonValue::Number(n)) => Some(n.to_string()),
+            _ => None,
+        }
+    };
+    let limits = MemoryLimits::from_args(size("memory_max").as_deref(), size("memory_high").as_deref())?;
+    let host_ptys = params.get("host_ptys").and_then(JsonValue::as_bool).unwrap_or(false);
+    Ok((restart, limits, host_ptys))
+}
+
+impl super::rpc::AutomationControlPlane {
+    /// `daemon.new {name?, restart?, memory_max?, memory_high?, host_ptys?}`: creates a NEW daemon,
+    /// lowered through `Action::Daemon(DaemonSupervisorOp::New)`. Without `name` the first free
+    /// `daemon-N` is used; the chosen `name` is in the result. An existing name is an error.
+    pub(super) fn rpc_daemon_new(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        use crate::action::{Action, DaemonSupervisorOp};
+        let (restart, limits, host_ptys) = parse_start_params(params)?;
+        let name = match params.get("name") {
+            None | Some(JsonValue::Null) => None,
+            Some(JsonValue::String(s)) => Some(s.clone()),
+            Some(_) => return Err("'name' must be a string".to_string()),
+        };
+        let op = DaemonSupervisorOp::New { name, restart: Some(restart), limits: Some(limits).filter(|l| !l.is_unlimited()), host_ptys };
+        self.apply_with_policy(Action::Daemon(op), super::rpc::SnapshotPolicy::Trusted)?;
+        let data = self.wm.take_command_data().ok_or_else(|| "no daemon.new data".to_string())?;
+        let v = JsonValue::parse(&data).ok_or_else(|| "invalid daemon.new data".to_string())?;
+        if v.get("status").and_then(JsonValue::as_str) == Some("error") {
+            return Err(v.get("error").and_then(JsonValue::as_str).unwrap_or("daemon.new failed").to_string());
+        }
+        Ok(v)
+    }
 }
