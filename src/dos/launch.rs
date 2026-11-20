@@ -257,7 +257,7 @@ pub fn check_plan_safety(plan: &LaunchPlan) -> Result<(), String> {
                 }
             }
             _ => {
-                if a.iter().any(|x| x == bad) {
+                if a.contains(&bad.to_string()) {
                     return Err(format!("plan contains forbidden option {bad}"));
                 }
             }

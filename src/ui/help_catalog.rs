@@ -31,6 +31,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":daemon prune", "—", "Prune dead background daemon locks and socket records"),
     (":daemon host", "—", "Show a session host's persisted state file (live or stale; read-only)"),
     (":web status", "Ctrl+X @ / Ctrl+Alt+W", "Show Web UI server status: port, URL, active clients"),
+    (":dos run", "—", "Open a FreeDOS pane (feature `dos`; qemu-curses): [--name N | --image FILE] [--drive-c DIR]"),
     (":web open", "—", "Open the Web UI in the default browser"),
     (":web port <N>", "—", "Set the Web UI server port"),
     (":web stop", "—", "Stop the Web UI server"),
