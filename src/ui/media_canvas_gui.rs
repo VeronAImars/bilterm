@@ -155,6 +155,19 @@ fn resize_or_crop_rgba(
             let s_idx = (sy * src_w + sx) * 4;
             let d_idx = (y * dst_w + x) * 4;
             out[d_idx..d_idx + 4].copy_from_slice(&src[s_idx..s_idx + 4]);
+            // Shrinking: average the covered block so thin strokes (text) survive.
+            if src_w > dst_w || src_h > dst_h {
+                let [r, g, b] = crate::ui::frame_sample::average_block(
+                    src,
+                    src_w,
+                    src_h,
+                    sx,
+                    sy,
+                    ((x + 1) * src_w) / dst_w,
+                    ((y + 1) * src_h) / dst_h,
+                );
+                out[d_idx..d_idx + 3].copy_from_slice(&[r, g, b]);
+            }
         }
     }
     out
