@@ -19,8 +19,8 @@ fn cp437_table() -> &'static [char; 256] {
         for (i, c) in CP437_LOW.chars().enumerate().take(32) {
             t[i] = c;
         }
-        for b in 0x20..=0x7eusize {
-            t[b] = b as u8 as char;
+        for (b, slot) in t.iter_mut().enumerate().take(0x7f).skip(0x20) {
+            *slot = b as u8 as char;
         }
         t[0x7f] = '⌂';
         for (i, c) in CP437_HIGH.chars().enumerate().take(128) {

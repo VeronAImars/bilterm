@@ -101,13 +101,14 @@ pub fn render_ansi(cur: &TextScreen, prev: Option<&TextScreen>) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::dos::backend::screen::{BDA_LEN, TEXT_BUF_LEN};
+    use crate::vt::snapshot::{CellColor, GridSnapshot};
 
-    fn paint(frames: &[Vec<u8>]) -> vt100_ctt::Parser {
-        let mut p = vt100_ctt::Parser::new(25, 80, 0);
+    fn paint(frames: &[Vec<u8>]) -> GridSnapshot {
+        let mut p = crate::vt::VtParser::new(25, 80, 0);
         for f in frames {
             p.process(f);
         }
-        p
+        p.snapshot()
     }
 
     fn fixture(name: &str) -> TextScreen {
@@ -130,18 +131,18 @@ mod tests {
         for name in ["boot", "installer"] {
             let s = fixture(name);
             let p = paint(&[render_ansi(&s, None)]);
-            let g = p.screen();
+            let g = &p;
             for r in 0..25u16 {
                 for c in 0..80u16 {
                     let want = s.cell(c, r).unwrap();
                     let got = g.cell(r, c).unwrap();
-                    assert_eq!(got.contents().trim(), want.ch.to_string().trim(), "{name} {c},{r}");
+                    assert_eq!(got.grapheme.trim(), want.ch.to_string().trim(), "{name} {c},{r}");
                     let (fr, fg, fb) = fg_rgb(want);
                     if want.ch != ' ' {
-                        assert_eq!(got.fgcolor(), vt100_ctt::Color::Rgb(fr, fg, fb), "{name} {c},{r}");
+                        assert_eq!(got.fg, CellColor::Rgb(fr, fg, fb), "{name} {c},{r}");
                     }
                     let (br, bg, bb) = bg_rgb(want);
-                    assert_eq!(got.bgcolor(), vt100_ctt::Color::Rgb(br, bg, bb), "{name} {c},{r}");
+                    assert_eq!(got.bg, CellColor::Rgb(br, bg, bb), "{name} {c},{r}");
                 }
             }
         }
@@ -154,13 +155,13 @@ mod tests {
         assert!(!s.cursor_visible, "installer hides the cursor (BDA 0x461 bit 5)");
         assert!(!s.odd_geometry);
         let p = paint(&[render_ansi(&s, None)]);
-        assert!(p.screen().hide_cursor());
+        assert!(!p.cursor.visible);
         let b = fixture("boot");
         assert!(b.cursor_visible);
         assert_eq!(b.cursor, Some((0, 24)));
         let p = paint(&[render_ansi(&b, None)]);
-        assert!(!p.screen().hide_cursor());
-        assert_eq!(p.screen().cursor_position(), (24, 0));
+        assert!(p.cursor.visible);
+        assert_eq!((p.cursor.row, p.cursor.col), (24, 0));
     }
 
     #[test]
@@ -182,12 +183,11 @@ mod tests {
         let mut b = a.clone();
         b.cells[3 * 80 + 5] = TextCell::from_raw(b'Z', 0x07);
         let d = String::from_utf8(render_ansi(&b, Some(&a))).unwrap();
-        assert_eq!(d.matches("H").count() >= 1, true);
         assert!(d.contains("\x1b[4;1H"));
         assert!(!d.contains("\x1b[5;1H"));
         assert!(!d.contains("\x1b[2J"));
         let p = paint(&[render_ansi(&a, None), render_ansi(&b, Some(&a))]);
-        assert_eq!(p.screen().cell(3, 5).unwrap().contents(), "Z");
+        assert_eq!(p.cell(3, 5).unwrap().grapheme, "Z");
         // cursor-only change still emits a (tiny) frame
         let mut c = a.clone();
         c.cursor = Some((9, 9));
