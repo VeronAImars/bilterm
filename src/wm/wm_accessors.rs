@@ -42,6 +42,16 @@ impl WindowManager {
             return (!self.config.api.allow_config_write)
                 .then(|| "key and mode changes over the API are disabled; set [api] allow_config_write = true in config.toml".to_string());
         }
+        // DOS lifecycle verbs that download, delete or overwrite images are mutations too.
+        let dos_mutates = match action {
+            Action::DosSetup { .. } | Action::DosRemove { .. } | Action::DosReset { .. } | Action::DosRestore { .. } => true,
+            Action::DosSnapshot { args } => args.first().map(String::as_str) != Some("list"),
+            _ => false,
+        };
+        if dos_mutates {
+            return (!self.config.api.allow_config_write)
+                .then(|| "DOS setup/remove/reset/snapshot/restore over the API are disabled; set [api] allow_config_write = true in config.toml".to_string());
+        }
         let writes = matches!(action, Action::ConfigSet(..) | Action::ConfigSave | Action::AppearanceSave);
         if !writes {
             return None;

@@ -1013,6 +1013,16 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             super::execute_dos::execute_dos_run(wm, name, image, drive_c, backend);
             false
         }
+        a @ (ColonCommand::DosSetup { .. }
+        | ColonCommand::DosDoctor
+        | ColonCommand::DosRemove { .. }
+        | ColonCommand::DosStatus
+        | ColonCommand::DosReset { .. }
+        | ColonCommand::DosSnapshot { .. }
+        | ColonCommand::DosRestore { .. }) => {
+            super::execute_dos::execute_dos_op(wm, a);
+            false
+        }
         ColonCommand::RespawnPaneInPlace => {
             wm.respawn_active_pane();
             false

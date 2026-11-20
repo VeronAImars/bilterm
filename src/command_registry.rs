@@ -42,7 +42,7 @@ pub(crate) const EXTRA: &[(&str, &str, &str)] = &[
     (":blockselect", ":rect", "Alias of :rect."),
     (":border", ":outline", "Alias of :outline."),
     (":box-select", ":rect", "Alias of :rect."),
-    (":dos", "", "DOS mode (feature `dos`): `:dos run [--name N | --image FILE] [--drive-c DIR]` opens a FreeDOS pane running QEMU (qemu-curses)."),
+    (":dos", "", "DOS mode (feature `dos`): `:dos run [--name N | --image FILE] [--drive-c DIR]` opens a FreeDOS pane running QEMU (qemu-curses); `:dos setup|doctor|status|remove|reset|snapshot|restore` manage the host image (same verbs as `bilterm dos`, `dos.*` RPC, `bilterm_dos` MCP)."),
     (":clear", "", "Clear the focused pane's screen and scrollback and reset the page anchor."),
     (":clipboard", "", "List clipboard history, or run a clipboard subcommand."),
     (":clip", ":clipboard", "Alias of :clipboard."),

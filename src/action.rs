@@ -291,13 +291,27 @@ pub enum Action {
     /// `:style [classic|snazzy|glass|both|cycle]` / `:snazzy [on|off]` / `:glass [on|off]` / `F11`: Visual style (`STYLE-01`).
     VisualStyleCommand(Option<String>),
     /// `:dos run [--name N | --image FILE] [--drive-c DIR] [--backend ID]`: opens a DOS pane (feature `dos`,
-    /// PR D2a). Deliberately the only DOS action until the full `Dos*` set lands in D3.
+    /// PR D2a). Part of the `Dos*` set (D3a) that mirrors `bilterm dos ...`, `dos.*` RPC and `bilterm_dos` MCP.
     DosRun {
         name: Option<String>,
         image: Option<String>,
         drive_c: Option<String>,
         backend: Option<String>,
     },
+    /// `:dos setup [--yes] [--full] [--entry ID]...`: download + verify + build the DOS image (long: runs off the UI thread).
+    DosSetup { yes: bool, full: bool, entries: Vec<String> },
+    /// `:dos doctor`: host readiness checks.
+    DosDoctor,
+    /// `:dos remove [--all] [--yes]`: delete downloaded DOS data.
+    DosRemove { all: bool, yes: bool },
+    /// `:dos status`: emulator, downloads, images, snapshots, locks, running DOS job.
+    DosStatus,
+    /// `:dos reset [--name N] [--full] [--yes]` (`args` = the CLI flags, validated by the shared parser).
+    DosReset { args: Vec<String> },
+    /// `:dos snapshot [list|rm] [--name N] [--tag T]`.
+    DosSnapshot { args: Vec<String> },
+    /// `:dos restore --tag T [--name N] [--yes]`.
+    DosRestore { args: Vec<String> },
     /// `:agent [name|send|broadcast|inbox|ack|list|enable]` (`AGT-01..03`, Phase 52).
     AgentMail(crate::wm::agent_mail::AgentMailOp),
     /// `:window <move|rename|select|bulk|undo>` (`SES-01..05`).
@@ -455,6 +469,19 @@ impl Action {
                 }
                 s
             }
+            Self::DosSetup { yes, full, entries } => {
+                let mut s = String::from(":dos setup");
+                if *yes { s.push_str(" --yes"); }
+                if *full { s.push_str(" --full"); }
+                for e in entries { s.push_str(&format!(" --entry {e}")); }
+                s
+            }
+            Self::DosDoctor => ":dos doctor".to_string(),
+            Self::DosStatus => ":dos status".to_string(),
+            Self::DosRemove { all, yes } => format!(":dos remove{}{}", if *all { " --all" } else { "" }, if *yes { " --yes" } else { "" }),
+            Self::DosReset { args } => format!(":dos reset {}", args.join(" ")).trim_end().to_string(),
+            Self::DosSnapshot { args } => format!(":dos snapshot {}", args.join(" ")).trim_end().to_string(),
+            Self::DosRestore { args } => format!(":dos restore {}", args.join(" ")).trim_end().to_string(),
             Self::AgentMail(op) => op.colon_form(),
             Self::AgentsHud(op) => op.colon_form(),
             Self::AgentsReplay(op) => op.colon_form(),

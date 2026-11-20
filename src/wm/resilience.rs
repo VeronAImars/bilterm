@@ -43,6 +43,9 @@ enum CheckpointJob {
 #[derive(Default)]
 pub struct ResilienceState {
     daemon_jobs: Vec<Receiver<String>>,
+    /// The one in-flight `dos` job and the last finished one (`dos_jobs.rs`).
+    pub(super) dos_job: Option<(String, Receiver<super::dos_jobs::DosJobDone>)>,
+    pub(super) dos_last: Option<super::dos_jobs::DosJobDone>,
     restore_note: Option<String>,
     worker: Option<Sender<CheckpointJob>>,
     worker_errors: Option<Receiver<String>>,
@@ -243,6 +246,7 @@ impl WindowManager {
     /// Returns `true` when something user-visible changed.
     pub fn resilience_tick(&mut self, now: Instant) -> bool {
         let mut changed = self.poll_daemon_jobs();
+        changed |= self.poll_dos_job();
         if let Some(err) = self.resilience.worker_errors.as_ref().and_then(|rx| rx.try_iter().last()) {
             self.active_pane_mut().set_status_message(Some(format!("Checkpoint write failed: {err}")));
             changed = true;

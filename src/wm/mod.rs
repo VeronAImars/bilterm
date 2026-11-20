@@ -47,6 +47,7 @@ pub mod key_mode;
 pub mod which_key_state;
 pub mod layout_profile;
 pub mod lightcycle;
+pub mod dos_jobs;
 pub mod link_cmd;
 pub mod pane_hold;
 pub mod panel_dock;
