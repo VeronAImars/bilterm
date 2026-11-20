@@ -395,6 +395,31 @@ impl PtySession {
 /// How long the reaper lets already-accepted input reach the child before killing it.
 const CLOSE_FLUSH_PATIENCE: std::time::Duration = std::time::Duration::from_millis(250);
 
+/// How long a child gets between SIGHUP and the final kill when its pane closes. A DOS pane
+/// wrapper uses it to power the guest down over QMP and clear the image's dirty marker.
+pub const CLOSE_HUP_GRACE: std::time::Duration = std::time::Duration::from_secs(24);
+
+/// Unix: SIGHUP, then wait up to [`CLOSE_HUP_GRACE`] for the child to exit. Well-behaved
+/// children (shells) leave at once, so closing stays instant for them. No-op elsewhere.
+fn hang_up_with_grace(child: &mut Box<dyn Child + Send + Sync>) {
+    #[cfg(unix)]
+    if let Some(pid) = child.process_id() {
+        // SAFETY: plain signal delivery to a pid we own.
+        if unsafe { libc::kill(pid as libc::pid_t, libc::SIGHUP) } != 0 {
+            return;
+        }
+        let start = std::time::Instant::now();
+        while start.elapsed() < CLOSE_HUP_GRACE {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = child;
+}
+
 impl Drop for PtySession {
     fn drop(&mut self) {
         self.output_rx.close();
@@ -410,6 +435,7 @@ impl Drop for PtySession {
                 writer.wait_drained(CLOSE_FLUSH_PATIENCE);
                 writer.close();
                 if let Some(mut c) = child {
+                    hang_up_with_grace(&mut c);
                     let _ = c.kill();
                     let _ = c.wait();
                 }

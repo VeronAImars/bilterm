@@ -227,6 +227,11 @@ impl<R: Read, W: Write> Qmp<R, W> {
             .map(|_| ())
     }
 
+    /// ACPI power button: a guest with a power-management driver shuts down and QEMU exits.
+    pub fn system_powerdown(&mut self) -> Result<()> {
+        self.execute(&cmd_simple("system_powerdown")).map(|_| ())
+    }
+
     pub fn quit(&mut self) -> Result<()> {
         // QEMU may close the socket right after replying; either outcome means it is going away.
         match self.execute(&cmd_simple("quit")) {

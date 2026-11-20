@@ -233,6 +233,16 @@ pub fn detect(os: HostOs, probe: &Probe, want: Option<BackendKind>) -> Option<Ba
         .find(|k| *k != BackendKind::QemuCurses || probe.curses)
 }
 
+/// How a [`DosBackend::stop`] ended. Only `Clean` may clear the image's dirty marker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StopOutcome {
+    /// The guest shut the emulator down itself (powered off in response to a QMP
+    /// `system_powerdown`, or exited on its own with status 0).
+    Clean,
+    /// The emulator had to be quit or killed, or exited abnormally.
+    Forced,
+}
+
 /// The backend contract. Methods other than `id`/`caps` may fail with
 /// [`BackendError::Unsupported`] when the matching [`BackendCaps`] flag is false.
 pub trait DosBackend: Send {
@@ -253,6 +263,13 @@ pub trait DosBackend: Send {
     fn restore(&mut self, tag: &str) -> Result<()>;
     fn is_running(&mut self) -> bool;
     fn shutdown(&mut self) -> Result<()>;
+    /// Graceful stop: ask the guest to power down and wait up to `timeout`, then fall back to
+    /// [`DosBackend::shutdown`] (quit/kill). Backends without a guest channel just force.
+    fn stop(&mut self, timeout: std::time::Duration) -> Result<StopOutcome> {
+        let _ = timeout;
+        self.shutdown()?;
+        Ok(StopOutcome::Forced)
+    }
 }
 
 /// Lowercase hex from the OS CSPRNG where available (unix `/dev/urandom`); elsewhere a SHA256 of
