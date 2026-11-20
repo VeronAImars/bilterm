@@ -15,13 +15,15 @@ use super::manifest::Manifest;
 use super::paths::{DosPaths, HostOs};
 
 pub const USAGE: &str =
-    "usage: bilterm dos <setup [--yes] [--full] [--entry ID]... | remove [--all] [--yes] | doctor | reset | snapshot | restore>\n  (reset/snapshot/restore: see `bilterm dos reset --help`-style usage in the error text)\n";
+    "usage: bilterm dos <setup [--yes] [--full] [--entry ID]... | remove [--all] [--yes] | doctor | run [--name N | --image FILE] [--drive-c DIR] [--print-argv] | reset | snapshot | restore>\n  (reset/snapshot/restore: see `bilterm dos reset --help`-style usage in the error text)\n";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Cmd {
     Setup { yes: bool, full: bool, entries: Vec<String> },
     Remove { all: bool, yes: bool },
     Doctor,
+    /// `run` (D2a): start the emulator in this terminal; `print_argv` only prints the command.
+    Run { req: super::launch::RunRequest, print_argv: bool },
     /// `reset`, `snapshot`, `restore` (persistent C: image lifecycle, D1c).
     Image(ImgCmd),
 }
@@ -30,6 +32,7 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
     let (sub, rest) = args.split_first().ok_or_else(|| USAGE.to_string())?;
     match sub.as_str() {
         "doctor" if rest.is_empty() => Ok(Cmd::Doctor),
+        "run" => super::launch::RunRequest::parse(rest).map(|(req, print_argv)| Cmd::Run { req, print_argv }),
         "setup" => {
             let (mut yes, mut full, mut entries, mut it) = (false, false, Vec::new(), rest.iter());
             while let Some(a) = it.next() {
@@ -88,6 +91,23 @@ pub fn execute(cmd: &Cmd, ctx: &Ctx, input: &mut dyn BufRead, out: &mut String) 
             let checks = doctor::run_doctor(ctx.os, ctx.paths.as_ref(), ctx.manifest, ctx.probe);
             out.push_str(&doctor::render(&checks));
             doctor::exit_code(&checks)
+        }
+        Cmd::Run { req, print_argv } => {
+            let Some(paths) = ctx.paths.as_ref() else {
+                out.push_str("cannot determine the per-user data directory\n");
+                return 1;
+            };
+            let env = super::launch::RunEnv {
+                os: ctx.os,
+                paths,
+                manifest: ctx.manifest,
+                probe: ctx.probe,
+                procs: ctx.procs,
+                is_root: ctx.is_root,
+                term_size: crossterm::terminal::size().ok(),
+                term_env: super::launch::TermEnv::from_process(),
+            };
+            super::launch::cli_run(req, *print_argv, &env, &super::launch::SystemSpawner, out)
         }
         Cmd::Setup { yes, full, entries } => setup(ctx, *yes, *full, entries, input, out),
         Cmd::Image(c) => {
@@ -378,7 +398,7 @@ mod tests {
         assert!(
             parse(&s(&[])).is_err()
                 && parse(&s(&["setup", "--bogus"])).is_err()
-                && parse(&s(&["run"])).is_err()
+                && parse(&s(&["run", "--bogus"])).is_err()
         );
     }
 

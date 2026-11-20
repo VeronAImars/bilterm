@@ -1,0 +1,16 @@
+---
+source: src/dos/launch/tests.rs
+expression: "normalize(&prep, &fx)"
+---
+/usr/bin/qemu-system-i386
+ -name bilterm-dos
+ -display curses
+ -m 32
+ -monitor none
+ -serial none
+ -parallel none
+ -nic none
+ -qmp unix:<SESSION>/qmp.sock,server=on,wait=off
+ -drive 'file=<TMP>/my disk,,v1.img,format=raw,if=ide,index=0,snapshot=on'
+ -boot order=c
+ -drive file=fat:ro:<TMP>/share,format=raw,if=ide,index=1,readonly=on
