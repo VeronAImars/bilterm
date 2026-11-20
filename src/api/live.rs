@@ -28,6 +28,13 @@ impl LiveRpcRx {
     }
 }
 
+impl LiveRpcRx {
+    /// Non-blocking receive for synchronous (GUI) event loops.
+    pub fn try_recv(&mut self) -> Option<RpcRequest> {
+        self.rx.try_recv().ok()
+    }
+}
+
 /// Handling half: owns the lent-out control plane, parked waiters and the registry guard.
 pub struct LiveRpcHandler {
     plane: AutomationControlPlane,
@@ -89,6 +96,43 @@ impl LiveRpc {
     #[cfg(not(unix))]
     pub fn start(_meter: crate::traffic::TrafficMeter) -> Option<(LiveRpcRx, LiveRpcHandler)> {
         None
+    }
+}
+
+/// Live RPC for the native GUI windows, whose event loops are synchronous: start it once before
+/// the loop (inside the tokio runtime) and call [`GuiLive::pump`] every iteration. Without this
+/// a GUI instance announced `BILTERM_SOCKET` to its panes but never bound the socket.
+pub struct GuiLive {
+    rx: LiveRpcRx,
+    handler: LiveRpcHandler,
+}
+
+impl GuiLive {
+    /// Binds `instances/<pid>.sock`; on failure clears the announced socket so panes do not
+    /// inherit a `BILTERM_SOCKET` that points nowhere.
+    pub fn start(meter: crate::traffic::TrafficMeter) -> Option<Self> {
+        match LiveRpc::start(meter) {
+            Some((rx, handler)) => Some(Self { rx, handler }),
+            None => {
+                crate::pty::set_live_socket(None);
+                None
+            }
+        }
+    }
+
+    pub fn socket_path(&self) -> &std::path::Path {
+        self.handler.socket_path()
+    }
+
+    /// Serves every queued request against the live `wm`; true when any ran (caller redraws).
+    pub fn pump(&mut self, wm: &mut WindowManager) -> bool {
+        self.handler.poll_waiters(wm);
+        let mut any = false;
+        while let Some((line, reply)) = self.rx.try_recv() {
+            self.handler.handle(wm, &line, reply);
+            any = true;
+        }
+        any
     }
 }
 

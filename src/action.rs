@@ -290,6 +290,14 @@ pub enum Action {
     FkeyModeCommand(Option<String>),
     /// `:style [classic|snazzy|glass|both|cycle]` / `:snazzy [on|off]` / `:glass [on|off]` / `F11`: Visual style (`STYLE-01`).
     VisualStyleCommand(Option<String>),
+    /// `:dos run [--name N | --image FILE] [--drive-c DIR] [--backend ID]`: opens a DOS pane (feature `dos`,
+    /// PR D2a). Deliberately the only DOS action until the full `Dos*` set lands in D3.
+    DosRun {
+        name: Option<String>,
+        image: Option<String>,
+        drive_c: Option<String>,
+        backend: Option<String>,
+    },
     /// `:agent [name|send|broadcast|inbox|ack|list|enable]` (`AGT-01..03`, Phase 52).
     AgentMail(crate::wm::agent_mail::AgentMailOp),
     /// `:window <move|rename|select|bulk|undo>` (`SES-01..05`).
@@ -438,6 +446,15 @@ impl Action {
     /// Canonical colon form or string summary of this action for script recording and logs.
     pub fn colon_form_or_summary(&self) -> String {
         match self {
+            Self::DosRun { name, image, drive_c, backend } => {
+                let mut s = String::from(":dos run");
+                for (flag, v) in [("--name", name), ("--image", image), ("--drive-c", drive_c), ("--backend", backend)] {
+                    if let Some(v) = v {
+                        s.push_str(&format!(" {flag} {v}"));
+                    }
+                }
+                s
+            }
             Self::AgentMail(op) => op.colon_form(),
             Self::AgentsHud(op) => op.colon_form(),
             Self::AgentsReplay(op) => op.colon_form(),

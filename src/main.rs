@@ -248,6 +248,12 @@ async fn real_main() -> color_eyre::Result<()> {
             }
         };
         let runtime = bilterm::secure_fs::private_runtime_dir().ok();
+        if target_endpoint().is_none()
+            && let Some(msg) = bilterm::cli::stale_env_socket(&cli_env)
+        {
+            eprintln!("{msg}");
+            std::process::exit(1);
+        }
         let endpoint = target_endpoint()
             .or_else(|| bilterm::cli::resolve_endpoint(&cli_env, runtime.as_deref()))
             .or_else(|| default_socket_path().ok().map(|p| format!("unix:{}", p.display())))
@@ -285,6 +291,14 @@ async fn real_main() -> color_eyre::Result<()> {
 
         let ctl_env = bilterm::cli::CliEnv::from_process();
         let ctl_runtime = bilterm::secure_fs::private_runtime_dir().ok();
+        // An explicit endpoint as the first argument overrides the environment entirely.
+        if target_endpoint().is_none()
+            && !rest.first().is_some_and(|f| f.contains(':'))
+            && let Some(msg) = bilterm::cli::stale_env_socket(&ctl_env)
+        {
+            eprintln!("{msg}");
+            std::process::exit(1);
+        }
         let default_ep = target_endpoint()
             .or_else(|| bilterm::cli::resolve_endpoint(&ctl_env, ctl_runtime.as_deref()))
             .or_else(|| default_socket_path().ok().map(|p| format!("unix:{}", p.display())))
@@ -430,7 +444,8 @@ async fn real_main() -> color_eyre::Result<()> {
             AutomationControlPlane::new(wm, ratatui::layout::Rect::new(0, 0, 80, 24))
                 .with_host_state_file(daemon_name, state_path)
         } else {
-            AutomationControlPlane::new_headless(24, 80)
+            // Model-only daemon: panes have no shell, so command-sending RPCs say so (never silent).
+            AutomationControlPlane::new_headless(24, 80).with_no_pty_daemon(daemon_name)
         };
         if let Some(sess_name) = switch_value(&args, &["-s", "--session"]) {
             let _ = plane.wm.restore_session(sess_name);
@@ -476,6 +491,7 @@ async fn real_main() -> color_eyre::Result<()> {
             sock_path,
             plane.wm.list_sessions().len(),
             plane.wm.panes().len(),
+            plane.wm.is_host(),
         )?;
         // Heartbeat: refresh this daemon's registry record with its resident size for `daemon list`.
         {

@@ -590,6 +590,7 @@ pub fn register_current_daemon(
     socket_path: PathBuf,
     sessions: usize,
     panes: usize,
+    host_ptys: bool,
 ) -> io::Result<RegistrationGuard> {
     let pid = std::process::id();
     crate::daemon::registry::DaemonRegistry::register(
@@ -606,6 +607,7 @@ pub fn register_current_daemon(
             agents_count: 0,
             last_heartbeat_ms: now_ms(),
             rss_bytes: crate::daemon::rss::current_rss_bytes(),
+            host_ptys: Some(host_ptys),
             ..Default::default()
         },
     )?;

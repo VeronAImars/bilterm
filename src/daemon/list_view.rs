@@ -37,6 +37,8 @@ pub struct DaemonRow {
     pub last_exit_cause: Option<&'static str>,
     /// Epoch ms of the next respawn while `restarting`.
     pub next_restart_at_ms: Option<u64>,
+    /// Whether the daemon owns real PTYs; `Some(false)` means panes cannot run commands.
+    pub host_ptys: Option<bool>,
 }
 
 impl DaemonRow {
@@ -61,7 +63,17 @@ impl DaemonRow {
             ("limit_backend", self.limit_backend.map_or(JsonValue::Null, |s| JsonValue::String(s.to_string()))),
             ("last_exit_cause", self.last_exit_cause.map_or(JsonValue::Null, |s| JsonValue::String(s.to_string()))),
             ("next_restart_at_ms", opt(self.next_restart_at_ms)),
+            ("host_ptys", self.host_ptys.map_or(JsonValue::Null, JsonValue::Bool)),
         ])
+    }
+
+    /// `pty` (runs commands), `model-only` (no shells; started without `--host-ptys`) or `-`.
+    pub fn pty_text(&self) -> &'static str {
+        match self.host_ptys {
+            Some(true) => "pty",
+            Some(false) => "model-only",
+            None => "-",
+        }
     }
 
     /// `12.3M` or `-`.
@@ -112,6 +124,7 @@ pub fn collect_rows(runtime_dir: &Path, include_crashed: bool) -> Vec<DaemonRow>
             limit_backend: None,
             last_exit_cause: None,
             next_restart_at_ms: None,
+            host_ptys: d.host_ptys,
         })
         .collect();
     // Enforcement facts live in the supervisor's record, not the heartbeat.
@@ -191,13 +204,13 @@ pub fn table(rows: &[DaemonRow]) -> String {
     }
     let w = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
     let mut out = format!(
-        "{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:>7}  {:<16}  SOCKET",
-        "NAME", "STATUS", "PID", "VERSION", "RSS", "RESTARTS", "LIMIT", "LAST-EXIT"
+        "{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:>7}  {:<16}  {:<10}  SOCKET",
+        "NAME", "STATUS", "PID", "VERSION", "RSS", "RESTARTS", "LIMIT", "LAST-EXIT", "PTY"
     );
     for r in rows {
         let pid = r.pid.map_or_else(|| "-".to_string(), |p| p.to_string());
         out.push_str(&format!(
-            "\n{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:>7}  {:<16}  {}",
+            "\n{:<w$}  {:<10}  {:>8}  {:<9}  {:>7}  {:>8}  {:>7}  {:<16}  {:<10}  {}",
             r.name,
             r.status,
             pid,
@@ -206,6 +219,7 @@ pub fn table(rows: &[DaemonRow]) -> String {
             r.restart_count,
             r.limit_text(),
             r.last_exit_text(),
+            r.pty_text(),
             r.socket
         ));
     }
@@ -222,6 +236,7 @@ pub fn summary(rows: &[DaemonRow]) -> String {
         .map(|d| {
             let pid = d.pid.map_or_else(|| "-".to_string(), |p| p.to_string());
             let flag = if d.status == "running" { String::new() } else { format!(" {}", d.status.to_uppercase()) };
+            let flag = if d.host_ptys == Some(false) { format!("{flag}, MODEL-ONLY no PTYs") } else { flag };
             format!("{}(pid {pid}, {} sess, {} panes, rss {}, {} restarts{flag})", d.name, d.sessions, d.panes, d.rss_text(), d.restart_count)
         })
         .collect();

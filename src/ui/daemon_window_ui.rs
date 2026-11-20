@@ -124,15 +124,16 @@ pub fn render_daemon_window(
     let inner_w = outer.width.saturating_sub(2) as usize;
     let ix = outer.x + 1;
     let name_w = 14usize;
-    let line = |name: &str, status: &str, pid: &str, sp: &str, rss: &str, rst: &str, sock: &str| -> String {
+    let line = |name: &str, status: &str, pid: &str, sp: &str, rss: &str, rst: &str, pty: &str, sock: &str| -> String {
         let head = format!(
-            "{} {} {} {} {} {} ",
+            "{} {} {} {} {} {} {} ",
             fit_pad(name, name_w),
             fit_pad(status, 10),
             fit_pad(pid, 7),
             fit_pad(sp, 9),
             fit_pad(rss, 6),
-            fit_pad(rst, 3)
+            fit_pad(rst, 3),
+            fit_pad(pty, 5)
         );
         let used = head.chars().count();
         format!("{head}{}", fit_pad(sock, inner_w.saturating_sub(used)))
@@ -143,7 +144,7 @@ pub fn render_daemon_window(
         outer,
         ix,
         lay.header_y,
-        &fit_pad(&format!(" {}", line("NAME", "STATUS", "PID", "SESS/PANES", "RSS", "RST", "SOCKET")), inner_w),
+        &fit_pad(&format!(" {}", line("NAME", "STATUS", "PID", "SESS/PANES", "RSS", "RST", "PTY", "SOCKET")), inner_w),
         bg.fg(tokens.text_muted).add_modifier(Modifier::BOLD),
     );
 
@@ -167,7 +168,13 @@ pub fn render_daemon_window(
         let pid = e.pid.map_or_else(|| "-".to_string(), |p| p.to_string());
         let sp = format!("{}/{}", e.sessions, e.panes);
         let rss = crate::daemon::rss::format_bytes(e.rss_bytes);
-        let text = format!(" {}", line(&name, badge_txt, &pid, &sp, &rss, &e.restarts.to_string(), &e.socket_path));
+        // `none` = model-only daemon (no --host-ptys): its panes cannot run commands.
+        let pty = match e.host_ptys {
+            Some(true) => "yes",
+            Some(false) => "none",
+            None => "-",
+        };
+        let text = format!(" {}", line(&name, badge_txt, &pid, &sp, &rss, &e.restarts.to_string(), pty, &e.socket_path));
         let row_style = if selected {
             Style::default().fg(palette.window_frame_bg).bg(tokens.accent).add_modifier(Modifier::BOLD)
         } else {

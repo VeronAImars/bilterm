@@ -24,6 +24,13 @@ structured interfaces instead of screen scraping or blind `sleep` loops. This te
 - Target a named daemon with `--daemon-name NAME` (after `ctl`, `agent`, `pane`, `workspace`,
   `coords`, `daemon`) or `BILTERM_DAEMON=NAME`. A named target is never auto-started or swapped
   for another daemon; if it is not running, start it or report that.
+- Check `host_ptys` BEFORE sending anything (`daemon status NAME`, `daemon list --json`, or
+  `workspace.status`). `host_ptys: false` means the daemon is model-only: its panes have no shell,
+  so `pane.exec`, `pane.send_keys`, `pane.send`, `agent.prompt` and `swarm.*` fail with
+  `no_host_ptys` and `wm.command` carries a `warning`. Restart it as a PTY host
+  (`bilterm daemon stop NAME`, then `bilterm daemon new [NAME] --host-ptys` or `:daemon new --host-ptys`) instead of retrying.
+- If `BILTERM_SOCKET` names a socket that no longer exists, the CLI says it is stale and refuses to
+  fall back to the `default` daemon (a different target). Unset it or pass `--daemon-name NAME`.
 - In-app: `:daemon list`, `:daemon status`, `:daemon start`, `:daemon new [NAME]`, `:daemon stop`, `:daemon switch NAME`.
   RPC `daemon.new` / MCP `bilterm_daemon` `action="new"` return the chosen `name`.
 - Never stop a daemon or close panes you did not create unless told to.

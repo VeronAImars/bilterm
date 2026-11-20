@@ -55,6 +55,7 @@ pub fn handle_daemon_status(params: &JsonValue) -> Result<JsonValue, String> {
             ("limit_max_bytes", d.limit_max_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
             ("limit_high_bytes", d.limit_high_bytes.map_or(JsonValue::Null, |n| JsonValue::Number(n as i64))),
             ("limit_backend", backend),
+            ("host_ptys", d.host_ptys.map_or(JsonValue::Null, JsonValue::Bool)),
         ]));
     }
 
