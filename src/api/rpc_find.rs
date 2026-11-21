@@ -60,7 +60,12 @@ pub fn op_from_params(method: &str, params: &JsonValue) -> Result<SessionFindOp,
 impl AutomationControlPlane {
     pub(super) fn dispatch_session_find(&mut self, method: &str, params: &JsonValue) -> Result<JsonValue, String> {
         let op = op_from_params(method, params)?;
-        self.apply_with_policy(Action::SessionFind(op), SnapshotPolicy::Trusted)?;
+        // The RPC is not the local user: attribute any injected text to `api` (traffic graph, pane-mail envelope).
+        let prev = self.wm.is_api_origin();
+        self.wm.set_api_origin(true);
+        let applied = self.apply_with_policy(Action::SessionFind(op), SnapshotPolicy::Trusted);
+        self.wm.set_api_origin(prev);
+        applied?;
         let data = self.wm.take_command_data().unwrap_or_default();
         let value = JsonValue::parse(&data).ok_or_else(|| "find produced no result".to_string())?;
         match value.get("error").and_then(JsonValue::as_str) {

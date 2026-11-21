@@ -978,6 +978,7 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             false
         }
         ColonCommand::AgentMail(op) => super::execute_agent_mail::execute_agent_mail_command(wm, op),
+        ColonCommand::PaneMail(op) => super::execute_agent_mail::execute_pane_mail_command(wm, op),
         ColonCommand::FontsWindow(op) => {
             let msg = wm.fonts_window_apply(&op);
             if let Some(msg) = msg {

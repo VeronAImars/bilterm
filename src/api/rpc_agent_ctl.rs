@@ -198,6 +198,7 @@ impl AutomationControlPlane {
                 ("profile", st.and_then(|x| x.profile.clone()).map_or(JsonValue::Null, JsonValue::String)),
                 ("name", st.map_or(JsonValue::Null, |x| JsonValue::String(x.name.clone()))),
                 ("mode", s(pane.prompt_injection_kind().as_str())),
+                ("mail", self.wm.pane_mail_json(id, Instant::now())),
                 ("rows", JsonValue::Number(i64::from(rows))),
                 ("cols", JsonValue::Number(i64::from(cols))),
             ]));

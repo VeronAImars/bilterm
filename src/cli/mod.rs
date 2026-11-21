@@ -64,7 +64,7 @@ pub(crate) struct Parsed {
 }
 
 const VALUE_FLAGS: &[&str] = &["timeout-ms", "until", "answer", "direction", "max-bytes", "name", "op", "turn", "lines", "pane", "style", "pid", "pgid", "sid", "pty", "cwd", "cmd", "user", "env", "title", "text", "session", "limit", "act", "send"];
-const BOOL_FLAGS: &[&str] = &["force", "enter", "allow-echo-lock", "blank", "print", "clear"];
+const BOOL_FLAGS: &[&str] = &["force", "enter", "allow-echo-lock", "blank", "print", "clear", "all"];
 
 pub(crate) fn split_args(args: &[String]) -> Result<Parsed, String> {
     let mut pos = Vec::new();
@@ -141,6 +141,8 @@ Usage:
   bilterm pane focus <SELECTOR>
   bilterm pane zoom [SELECTOR]
   bilterm pane send <SELECTOR> <TEXT...> [--enter]
+  bilterm pane mail [SELECTOR]
+  bilterm pane mail-ack [SELECTOR | --all]
   bilterm workspace list
   bilterm workspace select <NAME|wN>
   bilterm workspace new <NAME>
@@ -191,6 +193,14 @@ fn parse_pane(p: &Parsed, env: &CliEnv) -> Result<RpcCall, String> {
         }
         "focus" => Ok(call("pane.focus", base_params(env, vec![sel(0).ok_or("pane focus needs a SELECTOR")?]))),
         "zoom" => Ok(call("pane.zoom", base_params(env, sel(0).into_iter().collect()))),
+        "mail" => Ok(call("pane.mail_state", base_params(env, sel(0).into_iter().collect()))),
+        "mail-ack" => {
+            let mut e: Vec<(&str, JsonValue)> = sel(0).into_iter().collect();
+            if p.has("all") {
+                e.push(("all", JsonValue::Bool(true)));
+            }
+            Ok(call("pane.mail_ack", base_params(env, e)))
+        }
         "send" => {
             let selector = rest.first().ok_or("pane send needs SELECTOR and TEXT")?;
             if rest.len() < 2 {

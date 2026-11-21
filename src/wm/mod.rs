@@ -3,6 +3,9 @@ pub mod agent_mail;
 pub mod resilience;
 pub mod swarm_cmd;
 mod agent_mail_apply;
+pub mod pane_mail;
+#[cfg(test)]
+mod pane_mail_tests;
 mod session_order;
 mod recording_cap;
 pub mod agent_state;
@@ -278,6 +281,8 @@ pub struct WindowManager {
     pub(crate) script_studio: script_studio::ScriptStudioState,
     /// In-memory agent mailbox & coordination registry (`AGT-01..03`, Phase 52).
     pub(crate) agent_mail: agent_mail::AgentMailRegistry,
+    /// Pane-mail envelope state (unread/sender per pane); private per `ARCH-R02`.
+    pane_mail: pane_mail::PaneMailTracker,
     /// Shared artifact scratchpad (`BEYOND-02`, Phase 68).
     context_bus: context_bus::ContextBus,
     /// Per-pane prompt queues (`BEYOND-03`, Phase 68).
@@ -423,6 +428,7 @@ impl WindowManager {
             traffic_monitor: traffic_monitor::TrafficMonitorState::default(),
             script_studio: script_studio::ScriptStudioState::default(),
             agent_mail: agent_mail::AgentMailRegistry::new(false),
+            pane_mail: pane_mail::PaneMailTracker::default(),
             context_bus: context_bus::ContextBus::new(),
             prompt_queue: prompt_queue::PromptQueue::new(),
             swarm_surface: swarm_surface::SwarmSurface::default(),
@@ -769,6 +775,7 @@ impl WindowManager {
         }
         self.fleet.remove_pane_references(target_id);
         self.agent_mail.remove_pane(target_id);
+        self.pane_mail.remove(target_id);
         self.prompt_queue.remove_pane(target_id);
         self.reflow_default_viewport();
         self.rebalance_scrollback(Instant::now());

@@ -30,3 +30,15 @@ pub(super) fn execute_agent_guide(wm: &mut WindowManager, op: AgentGuideOp) -> b
     }
     false
 }
+
+/// Executes `:mail status|ack`; always returns `false` (never quits).
+pub(super) fn execute_pane_mail_command(wm: &mut WindowManager, op: crate::wm::pane_mail::PaneMailOp) -> bool {
+    match wm.pane_mail_apply(&op) {
+        Ok(msg) => wm.active_pane_mut().set_status_message(Some(msg)),
+        Err(err) => {
+            wm.record_automation_error(err.clone());
+            wm.active_pane_mut().set_status_message(Some(format!("Pane mail error: {err}")));
+        }
+    }
+    false
+}

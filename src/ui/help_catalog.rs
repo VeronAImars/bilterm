@@ -143,6 +143,8 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":drawer fold-up", "Left (Navigator drawer)", "Fold the open session, or select the session row of the selected window"),
     (":navigator add window", "a (Navigator drawer)", "Add a window to the selected session (alias of :drawer add window)"),
     (":navigator add pane", "A (Navigator drawer)", "Split the selected pane (alias of :drawer add pane)"),
+    (":mail status", "—", "Pane mail: which panes have unread messages from another session, tool or agent (envelope on the pane title; data over RPC pane.mail_state)"),
+    (":mail ack", "—", "Mark the active pane's mail read (:mail ack PANE | all); the closed envelope turns open (RPC pane.mail_ack)"),
     (":agents list", "—", "Agent state per pane: working / blocked / idle / done / errored (data over RPC)"),
     (":agents zoom", "Leader a", "Open the agent traffic window (graph + conversation)"),
     (":agents toggle", "Ctrl+Alt+A", "Open the agent traffic window, or close it when it is open (also menu View, Navigator footer @ agents)"),

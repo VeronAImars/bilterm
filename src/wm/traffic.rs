@@ -237,6 +237,18 @@ impl WindowManager {
         &self.traffic
     }
 
+    /// Pane-mail choke point: text injected into a pane by a non-local source (`pane.send`,
+    /// `pane.send_keys`, `pane.exec`, `find send` over RPC/MCP/CLI) raises the pane's envelope.
+    fn mail_on_traffic(&mut self, from: &TrafficEndpoint, to: &TrafficEndpoint, kind: TrafficKind, now: Instant) {
+        if let TrafficEndpoint::Pane(id) = to
+            && matches!(kind, TrafficKind::Exec | TrafficKind::Keys)
+            && *from != TrafficEndpoint::User
+            && from != to
+        {
+            self.note_pane_message(*id, &from.label(), now);
+        }
+    }
+
     /// Records an event, auto-redacting when `to` is a pane in a password / `!ECHO` prompt.
     pub fn record_traffic(
         &mut self,
@@ -250,6 +262,7 @@ impl WindowManager {
             TrafficEndpoint::Pane(id) => self.panes.get(id).is_some_and(|p| p.is_password_prompt()),
             _ => false,
         };
+        self.mail_on_traffic(&from, &to, kind, now);
         self.traffic.record(from, to, kind, raw, redact, now)
     }
 
@@ -263,6 +276,7 @@ impl WindowManager {
         redact: bool,
         now: Instant,
     ) -> u64 {
+        self.mail_on_traffic(&from, &to, kind, now);
         self.traffic.record(from, to, kind, raw, redact, now)
     }
 

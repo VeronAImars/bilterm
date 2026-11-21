@@ -319,6 +319,8 @@ pub enum Action {
     DosRestore { args: Vec<String> },
     /// `:agent [name|send|broadcast|inbox|ack|list|enable]` (`AGT-01..03`, Phase 52).
     AgentMail(crate::wm::agent_mail::AgentMailOp),
+    /// `:mail status|ack` / `pane.mail_state` / `pane.mail_ack`: pane-mail envelope state.
+    PaneMail(crate::wm::pane_mail::PaneMailOp),
     /// `:window <move|rename|select|bulk|undo>` (`SES-01..05`).
     WindowManage(crate::wm::window_manage::WindowManageOp),
     /// `:session <rename|move|undo>` (`SES-02`, `SES-04`).
@@ -502,6 +504,7 @@ impl Action {
             Self::DosSnapshot { args } => format!(":dos snapshot {}", args.join(" ")).trim_end().to_string(),
             Self::DosRestore { args } => format!(":dos restore {}", args.join(" ")).trim_end().to_string(),
             Self::AgentMail(op) => op.colon_form(),
+            Self::PaneMail(op) => op.colon_form(),
             Self::AgentsHud(op) => op.colon_form(),
             Self::AgentsReplay(op) => op.colon_form(),
             Self::AgentsWatchdog(_) => ":agents watchdog status".to_string(),
