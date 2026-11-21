@@ -95,6 +95,7 @@ impl AutomationControlPlane {
                     "bilterm_agent_mail" => Some(Self::agent_mail_method(&args).unwrap_or("")),
                     "bilterm_window_manage" => Some(Self::window_manage_method(&args).unwrap_or("")),
                     "bilterm_daemon" => Some(Self::daemon_method(&args).unwrap_or("")),
+                    "bilterm_dos" => Some(Self::dos_method(&args).unwrap_or("")),
                     "bilterm_web_surface" => Some(Self::web_surface_method(&args).unwrap_or("")),
                     "bilterm_drawer_preview" => Some("drawer.preview"),
                     "bilterm_clipboard" => Some(Self::clipboard_method(&args).unwrap_or("")),
@@ -116,6 +117,8 @@ impl AutomationControlPlane {
                             Err("missing or invalid 'action' parameter: move, rename, rename_session, select, bulk, or undo".to_string())
                         } else if tool_name == "bilterm_daemon" {
                             Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick".to_string())
+                        } else if tool_name == "bilterm_dos" {
+                            Err("missing or invalid 'action' parameter: run, setup, doctor, remove, status, reset, snapshot, restore".to_string())
                         } else if tool_name == "bilterm_web_surface" {
                             Err("invalid 'action' parameter: status, open, port or stop".to_string())
                         } else if tool_name == "bilterm_clipboard" {
@@ -326,6 +329,23 @@ impl AutomationControlPlane {
                     ("restart", "string", "With action='start'|'new': restart policy never (default) | on-crash"),
                     ("memory_max", "string", "With action='start'|'new': hard memory limit for the host, e.g. 2G (systemd scope cgroup on Linux, else a userspace RSS watchdog)"),
                     ("memory_high", "string", "With action='start'|'new': soft limit below memory_max (throttle/warn only; requires memory_max)"),
+                ],
+            ),
+            Self::mcp_tool_schema(
+                "bilterm_dos",
+                "DOS mode (feature `dos`): run a FreeDOS pane or manage its host setup. Same verbs as `:dos ...` and `bilterm dos ...`. setup/remove/reset/restore need yes=true and [api] allow_config_write; setup/reset/restore/remove/snapshot run in the background (returns status 'started'; poll action='status', field job).",
+                &[
+                    ("action", "string", "Operation: run | setup | doctor | remove | status | reset | snapshot | restore"),
+                    ("yes", "boolean", "Consent for setup (downloads ~290 MB), remove, reset, restore"),
+                    ("full", "boolean", "With setup|reset: the larger full image"),
+                    ("entries", "array", "With setup: extra manifest entry IDs (strings)"),
+                    ("all", "boolean", "With remove: also delete downloads and images"),
+                    ("name", "string", "Image/session name (default 'default')"),
+                    ("tag", "string", "Snapshot tag (snapshot create/rm, restore)"),
+                    ("op", "string", "With action='snapshot': create (default) | list | rm"),
+                    ("image", "string", "With run: throwaway image path (refused over the API)"),
+                    ("drive_c", "string", "With run: host dir exposed read-only (refused over the API)"),
+                    ("backend", "string", "With run: backend id (qemu-curses)"),
                 ],
             ),
             Self::mcp_tool_schema(
@@ -583,6 +603,21 @@ impl AutomationControlPlane {
             "host_state" => Some("daemon.host_state"),
             "attach_clients" => Some("attach.clients"),
             "attach_kick" => Some("attach.kick"),
+            _ => None,
+        }
+    }
+
+    /// `bilterm_dos` `action` argument -> the `dos.*` RPC method; `None` when missing or unknown.
+    fn dos_method(args: &JsonValue) -> Option<&'static str> {
+        match args.get("action").and_then(JsonValue::as_str)? {
+            "run" => Some("dos.run"),
+            "setup" => Some("dos.setup"),
+            "doctor" => Some("dos.doctor"),
+            "remove" => Some("dos.remove"),
+            "status" => Some("dos.status"),
+            "reset" => Some("dos.reset"),
+            "snapshot" => Some("dos.snapshot"),
+            "restore" => Some("dos.restore"),
             _ => None,
         }
     }

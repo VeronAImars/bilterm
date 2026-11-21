@@ -1,6 +1,6 @@
-//! `bilterm dos setup|remove|doctor`. Logic lives here; `main.rs` only dispatches. These are
-//! host-setup commands that run before/outside any WindowManager, so they do not lower to
-//! `Action` (the pane-facing `dos run` surface gets `Action::Dos*` in D3).
+//! `bilterm dos setup|remove|doctor|status|run|reset|snapshot|restore`. Logic lives here; `main.rs`
+//! only dispatches. The same [`Cmd`] values are executed by `Action::Dos*` (colon, RPC, MCP) via
+//! [`super::ops`], so every surface shares one grammar and one implementation (UNI-R01).
 
 use std::fs;
 use std::io::BufRead;
@@ -15,13 +15,15 @@ use super::manifest::Manifest;
 use super::paths::{DosPaths, HostOs};
 
 pub const USAGE: &str =
-    "usage: bilterm dos <setup [--yes] [--full] [--entry ID]... | remove [--all] [--yes] | doctor | run [--name N | --image FILE] [--drive-c DIR] [--print-argv] | reset | snapshot | restore>\n  (reset/snapshot/restore: see `bilterm dos reset --help`-style usage in the error text)\n";
+    "usage: bilterm dos <setup [--yes] [--full] [--entry ID]... | remove [--all] [--yes] | doctor | status | run [--name N | --image FILE] [--drive-c DIR] [--print-argv] | reset | snapshot | restore>\n  (reset/snapshot/restore: see `bilterm dos reset --help`-style usage in the error text)\n";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Cmd {
     Setup { yes: bool, full: bool, entries: Vec<String> },
     Remove { all: bool, yes: bool },
     Doctor,
+    /// `status`: read-only summary (emulator, downloads, images, snapshots, locks).
+    Status,
     /// `run` (D2a): start the emulator in this terminal; `print_argv` only prints the command.
     Run { req: super::launch::RunRequest, print_argv: bool },
     /// `reset`, `snapshot`, `restore` (persistent C: image lifecycle, D1c).
@@ -32,6 +34,7 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
     let (sub, rest) = args.split_first().ok_or_else(|| USAGE.to_string())?;
     match sub.as_str() {
         "doctor" if rest.is_empty() => Ok(Cmd::Doctor),
+        "status" if rest.is_empty() => Ok(Cmd::Status),
         "run" => super::launch::RunRequest::parse(rest).map(|(req, print_argv)| Cmd::Run { req, print_argv }),
         "setup" => {
             let (mut yes, mut full, mut entries, mut it) = (false, false, Vec::new(), rest.iter());
@@ -91,6 +94,11 @@ pub fn execute(cmd: &Cmd, ctx: &Ctx, input: &mut dyn BufRead, out: &mut String) 
             let checks = doctor::run_doctor(ctx.os, ctx.paths.as_ref(), ctx.manifest, ctx.probe);
             out.push_str(&doctor::render(&checks));
             doctor::exit_code(&checks)
+        }
+        Cmd::Status => {
+            let st = super::status::gather(ctx);
+            out.push_str(&super::status::render(&st));
+            0
         }
         Cmd::Run { req, print_argv } => {
             let Some(paths) = ctx.paths.as_ref() else {
@@ -297,22 +305,9 @@ fn remove(ctx: &Ctx, all: bool, yes: bool, input: &mut dyn BufRead, out: &mut St
     code
 }
 
-/// Process entry point used by `main.rs`: returns the exit code.
-pub fn run(args: &[String]) -> i32 {
-    let cmd = match parse(args) {
-        Ok(c) => c,
-        Err(msg) => {
-            eprint!("{msg}");
-            return 2;
-        }
-    };
-    let manifest = match Manifest::embedded() {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("bilterm: {e}");
-            return 1;
-        }
-    };
+/// Builds the real-host [`Ctx`] and hands it to `f` (shared by the CLI and `Action::Dos*`).
+pub fn with_host_ctx<R>(f: impl FnOnce(&Ctx) -> R) -> Result<R, String> {
+    let manifest = Manifest::embedded().map_err(|e| e.to_string())?;
     let probe = SystemProbe::new(&manifest.emulator.name);
     let dl = CurlDownloader::default();
     let paths = DosPaths::from_process();
@@ -334,14 +329,37 @@ pub fn run(args: &[String]) -> i32 {
         procs: &SysProc,
         factory: Some(&factory),
     };
-    let mut out = String::new();
-    let code = execute(&cmd, &ctx, &mut std::io::stdin().lock(), &mut out);
-    if code == 0 {
-        print!("{out}");
-    } else {
-        eprint!("{out}");
+    Ok(f(&ctx))
+}
+
+/// Process entry point used by `main.rs`: returns the exit code.
+pub fn run(args: &[String]) -> i32 {
+    let cmd = match parse(args) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprint!("{msg}");
+            return 2;
+        }
+    };
+    let res = with_host_ctx(|ctx| {
+        let mut out = String::new();
+        let code = execute(&cmd, ctx, &mut std::io::stdin().lock(), &mut out);
+        (code, out)
+    });
+    match res {
+        Ok((0, out)) => {
+            print!("{out}");
+            0
+        }
+        Ok((code, out)) => {
+            eprint!("{out}");
+            code
+        }
+        Err(e) => {
+            eprintln!("bilterm: {e}");
+            1
+        }
     }
-    code
 }
 
 #[cfg(test)]

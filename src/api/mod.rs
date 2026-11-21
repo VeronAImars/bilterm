@@ -29,6 +29,7 @@ pub mod rpc_agent_hud;
 pub mod selector;
 pub mod rpc_clipboard;
 pub mod rpc_daemon;
+mod rpc_dos;
 pub mod rpc_handlers;
 pub mod rpc_keys;
 pub mod rpc_link;

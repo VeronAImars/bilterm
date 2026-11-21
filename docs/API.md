@@ -182,6 +182,23 @@ bilterm ctl -t ~/.bilterm.token 127.0.0.1:7370 workspace.status
 
 | `agent.guide` | `op` (`get` default, `inject`, `print`), `selector` or `pane_id`, `target` (`"all"`) | `get`: `{"text", "bytes", "uri":"bilterm://agents-md"}`, the agent control guide (a pure read). `inject`: hands the guide to the selected pane (default: the focused pane) or, with `target:"all"`, to every detected agent pane; returns `{"status":"injected", "path", "bytes", "injected":[{pane_id, mode}], "refused":[{pane_id, reason}]}`. `mode` is `raw_bracketed_paste`, `raw_plain` or `shell_comment`. `print`: writes the guide file only, returns `{"status":"written", "path", "bytes", "text"}`. `inject` and `print` run `:agent guide` (`Action::AgentGuide`); read-only and `!ECHO LOCK` panes are an error. CLI: `bilterm agent guide [SELECTOR\|all] [--print]`; without a daemon, `bilterm agents-md`. |
 
+### DOS mode (`dos.*`, feature `dos`)
+
+Every verb lowers to `Action::Dos*` and runs the same code as `:dos ...` and `bilterm dos ...`. MCP: one tool, `bilterm_dos`, with `action` = the verb. Built without the `dos` feature, each call returns an error.
+
+| Method | Params | Result |
+|---|---|---|
+| `dos.run` | `name`, `backend` (strings). `image`/`drive_c` are refused over the API | `{"status":"ok","message"}`; opens a DOS pane |
+| `dos.setup` | `yes` (bool, required), `full` (bool), `entries` (string array) | Long: `{"op":"setup","status":"started"}`; finishes on a worker, poll `dos.status` |
+| `dos.doctor` | none | `{op, status, exit_code, output}` (a failing doctor is a report, not an error) |
+| `dos.status` | none | `{data_dir, emulator:{found,usable,version,detail}, downloads, boot_sector_cached, images:[{name,snapshots,in_use_by}], job:{pending,last}}` |
+| `dos.remove` | `all`, `yes` | Long job, as `dos.setup` |
+| `dos.reset` | `name`, `full`, `yes` | Long job |
+| `dos.snapshot` | `op` (`create` default, `list`, `rm`), `name`, `tag` | `list` is synchronous; create/rm run as a long job |
+| `dos.restore` | `tag` (required), `name`, `yes` | Long job |
+
+Setup, remove, reset, restore and snapshot create/rm are mutations: they need `[api] allow_config_write = true` and `yes: true` where a confirmation exists (there is no terminal to confirm on). One DOS job runs at a time; a second is refused until the first finishes.
+
 Named daemons listen on `daemons/daemon-<name>.sock` in the runtime directory. Pick one from the client with `bilterm ctl --daemon-name NAME <METHOD>` or `BILTERM_DAEMON=NAME`; the shell equivalents of these methods are `bilterm daemon list|start|stop|status`.
 
 `daemon.list` rows (and `bilterm daemon list --json`, `:daemon list`, MCP `bilterm_daemon` `list`) carry `status` (`running`, `crashed`, `restarting`, `failed`), `rss_bytes`, `restart_count`, `last_exit` (`{code, signal, at_ms}`), `limit_max_bytes`, `limit_high_bytes` and `next_restart_at_ms`; unknown values are `null`. `daemon.start` takes `restart` (`never` default, or `on-crash`: respawn with 1s..60s capped backoff; 5 crashes in 120s mark the host `failed` until the next `daemon start`/`daemon stop`). A deliberate `daemon stop` is never a crash. `daemon.start` also takes `memory_max` (e.g. `"2G"` or bytes) and `memory_high` (must be below `memory_max`; it only throttles/warns and is rejected without a max). On Linux the supervisor spawns the host in a `systemd-run --user --scope` with `MemoryMax`, `MemorySwapMax=0` and `OOMPolicy=kill` (kernel-enforced, covers PTY children) when a runtime probe succeeds; otherwise it falls back to a best-effort userspace RSS watchdog (SIGTERM, grace, SIGKILL, only for the lock-verified pid). Rows report `limit_backend` (`systemd-scope`, `watchdog` or `null`) and `last_exit_cause` (`limit` when the last exit was a limit kill). A limit kill, or an external kill such as systemd-oomd, is an ordinary crash for the restart policy. `BILTERM_LIMIT_BACKEND=auto|systemd|watchdog` overrides the backend choice.
