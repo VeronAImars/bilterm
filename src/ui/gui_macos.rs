@@ -716,7 +716,7 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
             app.needs_redraw = true;
         }
 
-        if app.should_quit || app.all_panes_exited() {
+        if app.should_exit() {
             unsafe { msg_send_void_0(pool, sel_drain) };
             break;
         }

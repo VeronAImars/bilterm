@@ -1,6 +1,5 @@
 //! `:session on-empty keep`: a session whose last window exits or is closed stays open, empty.
-//!
-//! Pins both modes (`end` is the default and unchanged), the empty canvas, switching to and from
+//! Pins both modes (`end` is the headless default, `keep-last` the interactive one), the empty canvas, switching to and from
 //! an empty session, refilling it, the save/restore round trip, ending it explicitly, and that
 //! bilterm does not quit while the only session is empty.
 
@@ -63,10 +62,10 @@ fn rendered(wm: &WindowManager) -> String {
 }
 
 #[test]
-fn default_is_end_and_the_setting_round_trips() {
+fn default_is_keep_last_and_the_setting_round_trips() {
     isolated(|dir| {
         let mut wm = headless(dir, SessionOnEmpty::End);
-        assert_eq!(bilterm::config::BiltermConfig::default().session_on_empty, SessionOnEmpty::End);
+        assert_eq!(bilterm::config::BiltermConfig::default().session_on_empty, SessionOnEmpty::KeepLast);
         colon(&mut wm, ":session on-empty keep");
         assert_eq!(wm.config().session_on_empty, SessionOnEmpty::Keep);
         colon(&mut wm, ":session on-empty end");

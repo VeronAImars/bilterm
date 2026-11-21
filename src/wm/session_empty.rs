@@ -81,6 +81,21 @@ impl WindowManager {
         self.config.session_on_empty == SessionOnEmpty::Keep
     }
 
+    /// `keep-last`: the last session may not end by itself, so it is kept empty (called after
+    /// `end_active_session_and_move_on` found no other session).
+    pub(crate) fn keeps_last_session_empty(&self) -> bool {
+        self.config.session_on_empty == SessionOnEmpty::KeepLast
+    }
+
+    /// Empties the active session and says so. `via_close` words the status for `:close`.
+    pub(crate) fn keep_session_empty_with_status(&mut self, ended: &str, via_close: bool) {
+        self.enter_empty_session();
+        let how = if via_close { "Closed the last window of" } else { "Last window of" };
+        self.active_pane_mut().set_status_message(Some(format!(
+            "{how} session '{ended}' (session kept empty, the last one): :new / :split to open a window, :quit to leave"
+        )));
+    }
+
     /// `:session on-empty [end|keep]`: sets or reports what happens when a session's last window goes.
     pub fn set_session_on_empty_command(&mut self, policy: Option<SessionOnEmpty>) {
         let msg = match policy {
@@ -90,13 +105,16 @@ impl WindowManager {
                     SessionOnEmpty::End => {
                         "Session on-empty: end (the last window ends the session and moves to another)".to_string()
                     }
+                    SessionOnEmpty::KeepLast => {
+                        "Session on-empty: keep-last (the last window ends the session, except the only session, which stays empty)".to_string()
+                    }
                     SessionOnEmpty::Keep => {
                         "Session on-empty: keep (the last window leaves the session open and empty)".to_string()
                     }
                 }
             }
             None => format!(
-                "Session on-empty: {} (:session on-empty end|keep)",
+                "Session on-empty: {} (:session on-empty end|keep-last|keep)",
                 self.config.session_on_empty.label()
             ),
         };

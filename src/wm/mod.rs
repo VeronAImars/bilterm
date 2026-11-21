@@ -351,6 +351,8 @@ impl WindowManager {
                 if headless_mode {
                     // Headless workspaces (tests, daemons) keep the pre-Phase-63 tables bit-for-bit.
                     cfg.keys.profile = crate::config::keys::KeyProfileName::Legacy;
+                    // Headless runs quit when their last window exits; only interactive UIs keep it.
+                    cfg.session_on_empty = crate::config::SessionOnEmpty::End;
                 }
                 cfg
             },
@@ -825,6 +827,12 @@ impl WindowManager {
         self.poll_recording_caps();
         changed |= self.resilience_tick(Instant::now());
         changed
+    }
+
+    /// The single quit decision shared by the TUI and GUI loops: every pane of the active session
+    /// has exited and nothing (another session, or an empty kept session) took its place.
+    pub fn should_quit(&self) -> bool {
+        self.all_panes_exited()
     }
 
     /// Returns `true` when every workspace pane has exited.

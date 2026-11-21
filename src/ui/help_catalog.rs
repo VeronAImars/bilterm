@@ -237,7 +237,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":session relaunch", "—", "Relaunch saved running commands across all writable session panes"),
     (":session list", "—", "List all saved workspace sessions"),
     (":session kill", "Exit Guard K", "End the active (or named) session and switch to another (quits only on the last); saved layout kept, :session delete <name> also removes it"),
-    (":session on-empty", "—", "Set what happens when a session's last window exits: end (default, move to another session) or keep (leave it open and empty; :new / :split refill it)"),
+    (":session on-empty", "—", "Set what happens when a session's last window exits: end (move to another session), keep-last (default: like end, but the only session stays empty instead of quitting) or keep (leave it open and empty; :new / :split refill it)"),
     (":session tree", "—", "Show hierarchical SessionTree in floating/push window"),
     (":session checkpoint", "—", "Persist crash-safe WorkspaceJournal checkpoint"),
     (":record start", "Ctrl+X R", "Start Asciicast v2 (.cast) terminal recording"),

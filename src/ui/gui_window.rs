@@ -589,7 +589,7 @@ pub fn run_native_gui_window(mut app: App) -> Result<()> {
             app.needs_redraw = true;
         }
 
-        if app.should_quit || app.all_panes_exited() {
+        if app.should_exit() {
             break;
         }
 

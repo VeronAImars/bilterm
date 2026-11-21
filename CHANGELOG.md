@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Exiting the last shell no longer quits bilterm.** `session_on_empty` gains `keep-last`, the new default for the TUI and GUI: it ends a session and moves on while others exist, but the only session is kept open and empty instead of quitting (`:new` / `:split` refill it; `:quit` and `:session kill` on it still leave). `end` and `keep` behave as before, headless daemons stay on `end`, and `:session on-empty [end|keep-last|keep]` / `:set session_on_empty` accept it. The four duplicated quit checks (TUI, X11, Windows, macOS loops) are now one `WindowManager::should_quit()`.
 - **Memory growth from unbounded queues and histories.** The VT worker command queue is capped at 8 MiB of `WritePty`/`FeedOutput` payload (excess is dropped with a warning, the sender never blocks) and its droppable event queue at 1024; tmux control lines now back-pressure the `tmux -CC` / ssh pipe at a 16 MiB backlog instead of queueing without limit. The clipboard registry has a 16 MiB total-byte cap (oldest unpinned entries evicted first, in addition to the 200-entry cap), the prompt yank history a 4 MiB cap, each pane's pending clipboard and media records a 256-entry cap, each terminal's image placements a 16 MiB decoded-byte cap, and PTY input now has a 32 MiB process-wide budget on top of the 4 MiB per-pane limit (an over-budget write is refused whole, as before). See `docs/DEVELOPER_AND_AGENT_GUIDE.md` section 3.3b.
 
 ### Added
