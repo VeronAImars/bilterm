@@ -114,7 +114,7 @@ impl AutomationControlPlane {
                         if tool_name == "bilterm_agent_mail" {
                             Err("missing or invalid 'action' parameter: send, broadcast, inbox, ack, list, name or wait".to_string())
                         } else if tool_name == "bilterm_window_manage" {
-                            Err("missing or invalid 'action' parameter: move, rename, rename_session, select, bulk, or undo".to_string())
+                            Err("missing or invalid 'action' parameter: move, reorder, session_move, session_reorder, rename, rename_session, select, bulk, or undo".to_string())
                         } else if tool_name == "bilterm_daemon" {
                             Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick".to_string())
                         } else if tool_name == "bilterm_dos" {
@@ -295,11 +295,14 @@ impl AutomationControlPlane {
                 "bilterm_window_manage",
                 "Manage Bilterm windows and sessions: move, rename, select, bulk operations (close, move, rename-prefix, tile, pin), and undo.",
                 &[
-                    ("action", "string", "Operation: move | rename | rename_session | select | bulk | undo (required)"),
+                    ("action", "string", "Operation: move | reorder | session_move | session_reorder | rename | rename_session | select | bulk | undo (required)"),
                     ("window_id", "integer", "Optional window (pane) ID (defaults to active window)"),
                     ("target_session", "string", "Target session for move or bulk move"),
                     ("new_name", "string", "New window or session name"),
                     ("old_name", "string", "Old session name for rename_session"),
+                    ("to", "string", "Position for reorder/session_move: up | down | top | bottom | 1..N"),
+                    ("name", "string", "Session to move for session_move (default: active session)"),
+                    ("names", "array", "Session names for session_reorder, in desired order"),
                     ("switch", "boolean", "Switch active session after window move"),
                     ("select_action", "string", "Selection action for select: toggle | range | all | none | invert | explicit"),
                     ("bulk_action", "string", "Bulk action: move | close | rename_prefix | tile | pin"),
@@ -643,6 +646,9 @@ impl AutomationControlPlane {
         match action {
             "move" => Some("window.move"),
             "rename" => Some("window.rename"),
+            "reorder" => Some("window.reorder"),
+            "session_move" => Some("session.move"),
+            "session_reorder" => Some("session.reorder"),
             "rename_session" => Some("session.rename"),
             "select" | "toggle" | "range" | "all" | "none" | "invert" | "explicit" => {
                 Some("window.select")

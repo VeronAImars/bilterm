@@ -407,20 +407,9 @@ impl WindowManager {
         }
         let cur_idx = order.iter().position(|x| x == &target).unwrap_or(0);
         let len = order.len();
-        let new_idx = match target_pos.trim().to_ascii_lowercase().as_str() {
-            "up" | "-1" | "prev" | "previous" | "k" => cur_idx.saturating_sub(1),
-            "down" | "+1" | "next" | "j" => (cur_idx + 1).min(len.saturating_sub(1)),
-            "top" | "first" | "start" => 0,
-            "bottom" | "last" | "end" => len.saturating_sub(1),
-            num_str => match num_str.parse::<usize>() {
-                Ok(n) if n >= 1 => (n - 1).min(len.saturating_sub(1)),
-                _ => {
-                    return Err(
-                        "Usage: :session move [name] <up|down|top|bottom|1..N>".to_string(),
-                    );
-                }
-            },
-        };
+        let new_idx = crate::wm::session_order::resolve_move_index(cur_idx, len, target_pos).ok_or_else(|| {
+            "Usage: :session move [name] <up|down|top|bottom|1..N>".to_string()
+        })?;
         let item = order.remove(cur_idx);
         order.insert(new_idx, item);
         self.save_session_order(order.clone());

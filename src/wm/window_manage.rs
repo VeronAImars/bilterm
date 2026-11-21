@@ -34,6 +34,12 @@ pub enum WindowManageOp {
         window_id: Option<PaneId>,
         new_name: String,
     },
+    /// Reorders a window within its own session (`up|down|top|bottom|1..N`; default: active window).
+    Reorder {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window_id: Option<PaneId>,
+        to: String,
+    },
     /// Updates the multi-selection state for windows.
     Select(WindowSelectTarget),
     /// Executes an atomic bulk operation on currently selected windows.
@@ -57,6 +63,8 @@ pub enum SessionManageOp {
         name: Option<String>,
         target_pos: String,
     },
+    /// Sets the session order: `names` first in the given order, the rest keep their relative order.
+    Reorder { names: Vec<String> },
     /// Reverts the last session topology mutation.
     Undo,
 }
@@ -343,6 +351,7 @@ impl WindowManager {
                 self.window_manage.inline_rename = None;
                 self.rename_window(*window_id, new_name)
             }
+            WindowManageOp::Reorder { window_id, to } => self.reorder_window(*window_id, to),
             WindowManageOp::Select(spec) => {
                 let count = self.select_window(spec)?;
                 Ok(format!("Selected {count} window(s)"))
@@ -387,6 +396,13 @@ impl WindowManager {
             SessionManageOp::MoveOrder { name, target_pos } => self
                 .move_session_in_order(name.as_deref(), target_pos)
                 .map(|order| format!("Session order: {}", order.join(", "))),
+            SessionManageOp::Reorder { names } => {
+                if names.is_empty() {
+                    return Err("Usage: :session reorder <session1> <session2> ...".to_string());
+                }
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                Ok(format!("Session order: {}", self.reorder_sessions(&refs).join(", ")))
+            }
             SessionManageOp::Undo => {
                 self.window_manage.rename_dialog = None;
                 self.window_manage.inline_rename = None;
