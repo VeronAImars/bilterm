@@ -152,6 +152,14 @@ pub fn handle_mouse_event(
         && row >= canvas_rect.y
         && row < canvas_rect.y + canvas_rect.height;
 
+    // The browser nav bar is chrome, not terminal content: it works with the prompt hidden too.
+    if in_canvas
+        && !pane.is_prompt_visible()
+        && let Some(act) = super::mouse_media::handle_media_canvas_mouse(pane, mouse, canvas_rect, false)
+    {
+        return Ok(act);
+    }
+
     if !pane.is_prompt_visible() {
         if let Some(scroll_bytes) = encode_alternate_scroll_wheel(pane, mouse.kind) {
             pane.write_to_pty(&scroll_bytes)?;
@@ -907,7 +915,9 @@ pub(super) fn route_wm_mouse_event(
         override_policy,
     );
 
+    let on_browser_nav = pane.browser_canvas().is_some() && pane_mouse.row == pane.canvas_rect(pane_inner).y;
     if !on_pane_status_bar
+        && !on_browser_nav
         && route == crate::input::mouse_select::MouseRoute::ToChild
         && pane.effective_routing_mode() == InputRoutingMode::RawPtyPassthrough
     {

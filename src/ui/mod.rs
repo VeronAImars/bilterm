@@ -3,6 +3,7 @@ pub mod agents_hud_ui;
 pub mod agents_list_ui;
 pub mod agents_ui;
 pub mod clipboard_window_gui;
+pub mod frame_sample;
 pub mod coord_badge;
 pub mod clipboard_window_ui;
 pub mod traffic_monitor_gui;
@@ -259,11 +260,18 @@ fn rasterize_frame_halfblocks(
         return;
     }
     let (cols, prows) = (area.width as usize, area.height as usize * 2);
+    // Average the source block under each half-cell: nearest-neighbour sampling drops text.
     let px = |cx: usize, py: usize| {
-        let x = (cx * fw / cols).min(fw - 1);
-        let y = (py * fh / prows).min(fh - 1);
-        let i = (y * fw + x) * 4;
-        Color::Rgb(f.rgba[i], f.rgba[i + 1], f.rgba[i + 2])
+        let [r, g, b] = frame_sample::average_block(
+            &f.rgba,
+            fw,
+            fh,
+            cx * fw / cols,
+            py * fh / prows,
+            (cx + 1) * fw / cols,
+            (py + 1) * fh / prows,
+        );
+        Color::Rgb(r, g, b)
     };
     for r in 0..area.height as usize {
         for c in 0..cols {
