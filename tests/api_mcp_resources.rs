@@ -151,6 +151,7 @@ fn tools_list_only_gains_find() {
             "bilterm_agent_control",
             "bilterm_coords_resolve",
             "bilterm_coords_format",
+            "bilterm_session_find",
         ]
     );
 }

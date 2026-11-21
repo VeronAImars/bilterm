@@ -258,6 +258,9 @@ impl App {
                         handler.poll_waiters(&mut self.wm);
                     }
                     self.wm.drain_stt_events();
+                    if self.wm.find_flash_tick() {
+                        self.needs_redraw = true;
+                    }
                     if self.poll_all_ptys() {
                         pacer.output_arrived();
                     }
@@ -334,6 +337,10 @@ impl App {
             if let Some(t) = HOST_OUT_TAP.get() {
                 t.tx(wire.len());
             }
+            wrote = true;
+        }
+        if self.wm.take_host_bell() {
+            out.write_all(b"\x07")?;
             wrote = true;
         }
         if wrote {

@@ -1,4 +1,5 @@
 pub mod agents_gui;
+pub mod find_flash;
 pub mod agents_hud_ui;
 pub mod agents_list_ui;
 pub mod agents_ui;
@@ -601,6 +602,7 @@ impl Widget for WorkspaceWidget<'_> {
                     _ => shell::effective_display_mode(cfg) != DisplayMode::Focus,
                 };
                 let frame_title = if show_title { frame_title } else { String::new() };
+                let frame_title = if self.wm.find_is_selected(id) { format!("{frame_title} [FOUND]") } else { frame_title };
                 let mut frame_palette = pane_palette.clone();
                 if non_legacy && cfg.appearance.focus_ring {
                     frame_palette.active_border_fg = design::DesignTokens::from_palette(&pane_palette).accent;
@@ -609,6 +611,9 @@ impl Widget for WorkspaceWidget<'_> {
                     outer, &frame_title, is_active, chrome_style.resolve_outline(cfg),
                     chrome_style.resolve_bold(cfg), &frame_palette, &glyphs, buf,
                 );
+                if self.wm.find_is_flashing(id) {
+                    crate::ui::find_flash::highlight_border(buf, outer);
+                }
                 if is_active && frame_palette.is_tron() && let Some(phase) = self.wm.lightcycle_phase() {
                     lightcycle::render_lightcycles(buf, outer, phase, &frame_palette);
                 }

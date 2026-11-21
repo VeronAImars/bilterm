@@ -11,3 +11,15 @@ impl CompositePane {
         }
     }
 }
+
+impl CompositePane {
+    /// Raw PTY master descriptor of a local pane (Unix); `None` for remote/none transports.
+    /// Read-only use: `tcgetpgrp` / `ptsname` for `:find --pty` / `--pid` (session find).
+    #[cfg(unix)]
+    pub fn pty_master_fd(&self) -> Option<std::os::fd::RawFd> {
+        match &self.transport {
+            super::transport::PaneTransport::Local(p) => p.master_raw_fd(),
+            _ => None,
+        }
+    }
+}

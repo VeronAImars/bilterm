@@ -9,6 +9,7 @@
 pub mod agent_cmd;
 mod coords_cmd;
 mod editor_cmd;
+mod find_cmd;
 pub mod daemon_cmd;
 pub mod leading_opts;
 
@@ -18,7 +19,7 @@ use std::path::Path;
 use crate::api::JsonValue;
 
 /// Subcommand words owned by this module.
-pub const CLI_COMMANDS: &[&str] = &["agent", "pane", "workspace", "coords", "editor"];
+pub const CLI_COMMANDS: &[&str] = &["agent", "pane", "workspace", "coords", "editor", "find"];
 
 /// True when `first` is one of [`CLI_COMMANDS`].
 pub fn is_cli_command(first: Option<&str>) -> bool {
@@ -62,8 +63,8 @@ pub(crate) struct Parsed {
     pub flags: BTreeMap<String, Option<String>>,
 }
 
-const VALUE_FLAGS: &[&str] = &["timeout-ms", "until", "answer", "direction", "max-bytes", "name", "op", "turn", "lines", "pane", "style"];
-const BOOL_FLAGS: &[&str] = &["force", "enter", "allow-echo-lock", "blank", "print"];
+const VALUE_FLAGS: &[&str] = &["timeout-ms", "until", "answer", "direction", "max-bytes", "name", "op", "turn", "lines", "pane", "style", "pid", "pgid", "sid", "pty", "cwd", "cmd", "user", "env", "title", "text", "session", "limit", "act", "send"];
+const BOOL_FLAGS: &[&str] = &["force", "enter", "allow-echo-lock", "blank", "print", "clear"];
 
 pub(crate) fn split_args(args: &[String]) -> Result<Parsed, String> {
     let mut pos = Vec::new();
@@ -147,6 +148,7 @@ Usage:
   bilterm editor open [PATH] | scratch [NAME] | save [--force] | saveas <PATH> [--force] | wrap [on|off] | find|findprev <TEXT> | undo | redo | goto <LINE> | revert | insert <TEXT> | text | status | close [--force]
   bilterm coords resolve <COORD>   (e.g. d0:w1:main:y2)
   bilterm coords format [--pane N] [--style verbose|compact|daemon|off]
+  bilterm find [--pid N --pgid N --sid N --pty P --cwd D --cmd C --name N --user U --env K[=V] --title T --text T --session S --pane N --limit N] [--act locate|focus|send|beep|flash|select] [--send TEXT [--enter]] [--clear]
 
 SELECTOR: w<N>:p<M> | p<M> | <id> | @claude | @agy | @idle | @working | @blocked | @done | @errored | @focused
 Options: --daemon-name NAME   talk to the named daemon (see `bilterm daemon list`); may come before or after the subcommand
@@ -165,6 +167,7 @@ pub fn parse(args: &[String], env: &CliEnv) -> Result<RpcCall, String> {
         "workspace" => parse_workspace(&p),
         "coords" => coords_cmd::parse_coords(&p, env),
         "editor" => editor_cmd::parse_editor(&p, env),
+        "find" => find_cmd::parse_find(&p, env),
         other => Err(format!("unknown command '{other}'\n{}", usage())),
     }
 }

@@ -506,6 +506,12 @@ const COLON_COMMANDS: &[(&str, &[&str])] = &[
     (":fkeybar", &["on", "off"]),
     (":search", &["next", "prev", "off", "prefill"]),
     (":find", &["next", "prev", "off", "agent", "session", "history"]),
+    (":find-focus", &[]),
+    (":find-send", &[]),
+    (":find-beep", &[]),
+    (":find-flash", &[]),
+    (":find-select", &[]),
+    (":find-prefill", &[]),
     (":finder", &["kind ", "query ", "move ", "select ", "enter", "prefill", "close"]),
     (
         ":copy",

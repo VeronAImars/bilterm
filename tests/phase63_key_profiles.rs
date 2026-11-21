@@ -148,7 +148,7 @@ fn legacy_profile_matches_current_tables() {
     assert_eq!(pane, DEFAULT_PANE_BINDINGS.to_vec());
     assert_eq!(km.leader_rows(), DEFAULT_LEADER_BINDINGS.to_vec());
     // Sentinels against accidental edits of the shipped legacy tables.
-    assert_eq!(DEFAULT_GLOBAL_BINDINGS.len(), 123, "legacy global table row count"); // +2: Ctrl+Alt+E/e scratchpad editor (EDIT-01); // +2: Ctrl+Alt+U/u system-browser offer; +2: Ctrl+Alt+G/g agent guide (AGUIDE-01); +10: Ctrl+Tab, Ctrl+Alt+Tab and Ctrl+Alt+X/Z focus chords
+    assert_eq!(DEFAULT_GLOBAL_BINDINGS.len(), 125, "legacy global table row count"); // +2: Ctrl+Alt+D/q session find prefill; +2: Ctrl+Alt+E/e scratchpad editor (EDIT-01); // +2: Ctrl+Alt+U/u system-browser offer; +2: Ctrl+Alt+G/g agent guide (AGUIDE-01); +10: Ctrl+Tab, Ctrl+Alt+Tab and Ctrl+Alt+X/Z focus chords
     for env in all_envs() {
         let legacy = keymap(KeyProfileName::Legacy, env, LegacyAlt::Off);
         assert_eq!(legacy.global_rows().count(), DEFAULT_GLOBAL_BINDINGS.len(), "{env:?}");

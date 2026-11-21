@@ -24,6 +24,10 @@ pub(super) fn parse_find_colon_command(
     parts: &[&str],
 ) -> Option<Result<ColonCommand, String>> {
     match head {
+        "find" if parts.get(1).is_some_and(|p| p.starts_with("--")) => parse_session_find(None, &parts[1..]),
+        "find-focus" | "find-send" | "find-beep" | "find-flash" | "find-select" | "find-prefill" => {
+            parse_session_find(Some(head), &parts[1..])
+        }
         "find" => {
             let kind = parts.get(1).copied().and_then(FindKind::parse)?;
             find(FindOp::Open { kind, query: cap_query(&parts[2..].join(" ")) })
@@ -62,4 +66,32 @@ fn parse_finder(args: &[&str]) -> Option<Result<ColonCommand, String>> {
         (Some("close"), 1) => find(FindOp::Close),
         _ => usage(),
     }
+}
+
+/// `:find --pid N ...` (`act == None`) and `:find-<act> [filters] [--send TEXT] [--enter]`.
+fn parse_session_find(act: Option<&str>, words: &[&str]) -> Option<Result<ColonCommand, String>> {
+    use crate::wm::session_find::{FindAct, SessionFindOp, Tokens};
+    let t = match Tokens::parse(words) {
+        Ok(t) => t,
+        Err(e) => return Some(Err(e)),
+    };
+    let op = match act {
+        None => SessionFindOp::Locate(Box::new(t.query)),
+        Some("find-prefill") => SessionFindOp::Prefill,
+        Some("find-select") if t.clear => SessionFindOp::ClearSelection,
+        Some(head) => {
+            let act = match head {
+                "find-focus" => FindAct::Focus,
+                "find-beep" => FindAct::Beep,
+                "find-flash" => FindAct::Flash,
+                "find-select" => FindAct::Select,
+                _ => match t.send {
+                    Some(text) => FindAct::Send { text, enter: t.enter },
+                    None => return Some(Err("Usage: :find-send [filters] --send TEXT [--enter]".to_string())),
+                },
+            };
+            SessionFindOp::Act { act, query: Box::new(t.query) }
+        }
+    };
+    Some(Ok(Action::SessionFind(op)))
 }
