@@ -4,7 +4,7 @@
 
 Bilterm combines **IBM 3270 block-mode command isolation**, **Borland Turbo Vision tiling + Z-stacking**, **per-pane typography scaling**, and a **JSON-RPC 2.0 + MCP automation control plane** into a single binary. Below are six production workflows showing how these capabilities fit together.
 
-![4-Pane Multi-Agent Coding Swarm](../assets/screenshot-multi-agent-swarm.svg)
+![Agent, build and log windows with the navigator drawer](../assets/screenshot-drawer.png)
 
 ---
 

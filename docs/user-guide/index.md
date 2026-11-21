@@ -6,7 +6,7 @@ Welcome to the official User Guide for **Bilterm (`v3.2.0`)** — the Rust + Rat
 
 > **Quick Interactive Help (`<F1>`)**: At any time inside Bilterm, press **`F1`** or run **`:help`** to open the scrollable Borland Turbo Vision Help Modal directly on screen (`Up`/`Down`/`PageUp`/`PageDown` to scroll, `F1`/`Esc` to close).
 
-![Bilterm Multi-Pane Composite Workspace & SSH Fleet](../assets/screenshot-workspace.svg)
+![Bilterm Multi-Pane Composite Workspace & SSH Fleet](../assets/screenshot-workspace.png)
 
 ---
 

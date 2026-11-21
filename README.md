@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bsommers/bilterm/releases/tag/v3.3.0"><img src="https://img.shields.io/badge/version-v3.3.0-blue" alt="Version v3.3.0" /></a>
+  <a href="https://github.com/bsommers/bilterm/releases/tag/v3.4.0"><img src="https://img.shields.io/badge/version-v3.4.0-blue" alt="Version v3.4.0" /></a>
   <img src="https://img.shields.io/badge/rust-1.88%2B%20(2024)-orange" alt="Rust 1.88+ Edition 2024" />
   <img src="https://img.shields.io/badge/tests-31%2F31%20suites%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/coverage-84%2B%25-brightgreen" alt="Coverage" />
@@ -28,12 +28,26 @@
 | **Platforms & Stack** | Linux, macOS, Windows · Rust `1.88+` (Edition 2024), `ratatui 0.30`, `crossterm`, `portable-pty`, `tokio` · License: `Apache-2.0` |
 
 <p align="center">
-  <img src="docs/assets/screenshot-multi-agent-swarm.svg" alt="Bilterm Multi-Agent AI Swarm & Navigator Sidebar" width="920" />
+  <img src="docs/assets/screenshot-drawer.png" alt="Bilterm tiled windows with the navigator drawer (Turbo Blue)" width="920" />
 </p>
 
 <p align="center">
-  <em>Live interactive site &amp; visual showcase: <strong><a href="https://bsommers.github.io/bilterm/">https://bsommers.github.io/bilterm/</a></strong> &bull; See <strong><a href="docs/VISUAL_GALLERY.md">Full Visual Gallery (5 SVG Workspace Renders)</a></strong> for Turbo Blue, Font Zoom, IBM 3278 Phosphor Green, and IBM 3279 Amber CRT screenshots.</em>
+  <em>Live site: <strong><a href="https://bsommers.github.io/bilterm/">https://bsommers.github.io/bilterm/</a></strong> &bull; <strong><a href="docs/VISUAL_GALLERY.md">Visual Gallery</a></strong> (session find, editor menu bar, pane mail, remote badge, drag and drop, DOS mode, browser pane and themes). Screenshots are generated from the current build by <code>scripts/gen-screenshots.sh</code>.</em>
 </p>
+
+---
+
+## What's New in Bilterm v3.4
+
+- **Drawer reorder and drag and drop**: sessions and windows reorder from the keyboard (`Alt+Up`/`Alt+Down`, `J`/`K` in the drawer), colon (`:window reorder`, `:session reorder`), RPC and MCP, or by dragging a drawer row (`Esc` cancels). Session and window order is now authoritative and saved. The last window of the only session no longer quits bilterm (`session_on_empty = keep-last`).
+- **Window drag handle and drop zones**: every title bar has a grip; dragging it outlines each drop zone (swap, split edge, drawer session, float) and lowers to `:window place`. `:drag zones on|off`.
+- **Session find (`Ctrl+X &`, `:find --pid/--pty/--cwd/--cmd/--text ...`)**: locate panes by OS attributes, then `:find-focus`, `-send`, `-beep`, `-flash` or `-select`. Linux `/proc` is first class, macOS uses `ps`/`lsof` (not yet verified on a Mac), Windows degrades to the attributes bilterm already holds.
+- **Built-in editor and scratchpad (`:edit`, `Ctrl+X _`)** with a DOS EDIT style menu bar (`F10` or `Alt+F/E/S/V/H`, `:editor menu`). Plain text and markdown, atomic saves, scratchpad autosave.
+- **Pane-mail envelope and `[R:host]` badge**: a closed (blinking) or open envelope on a pane title shows unread messages from other sessions, tools or agents (`:mail status|ack`); `[R:host]` marks windows that live on another machine (`:remote status`).
+- **Live session handover (Linux)**: `:session transfer` / `bilterm daemon transfer` move running sessions between `--host-ptys` hosts with the shells' PIDs intact, and `bilterm daemon restart --live` swaps in a new binary without killing a terminal. Linux only for now.
+- **DOS mode (opt-in)**: `:dos setup|run|status|doctor|snapshot|restore|reset|remove` runs FreeDOS in a pane (QEMU, pinned and checksummed downloads, persistent C: image). Built only with `--features dos`; not in the release binaries.
+- **Browser pane**: follows the active theme, a nav bar that works with the prompt hidden, and `Ctrl+Alt+U` / `:web external` opens the URL in your system browser. It is a headless Chrome screencast drawn into the pane (Chromium-family browser required on Linux/macOS), not a full browser: downloads are denied and only `http(s)` and `about:blank` URLs load.
+- **Also**: `bilterm daemon new`, `attach.kick`, `bilterm agents-md`, TRON light cycles, `Ctrl+Alt+X`/`Ctrl+Alt+Z` focus walk. See the [Changelog](CHANGELOG.md#340---2026-11-21).
 
 ---
 
@@ -67,7 +81,7 @@
 # One-line installer (Linux / macOS) — downloads a prebuilt binary (no Rust needed), manpage & completions.
 # It never builds from source unless you pass --from-source (needs Rust).
 curl -fsSL https://raw.githubusercontent.com/bsommers/bilterm/main/scripts/install.sh | bash
-# Pin a release:  ... | bash -s -- --tag v3.1.0     Build instead: ... | bash -s -- --from-source
+# Pin a release:  ... | bash -s -- --tag v3.4.0     Build instead: ... | bash -s -- --from-source
 
 # Or build & install from source (Rust 1.88+, Edition 2024)
 cargo build --release && install -m 0755 target/release/bilterm ~/.local/bin/bilterm
@@ -103,6 +117,11 @@ bilterm run starter-packs/01-multi-agent-swarm/playbook.toml
 | **Help / Palette / Inspector** | `F1` (`<L> ?`) / `Ctrl+P` / `F9` (`<L> i`) | `:help` / `:palette` / `:inspector` | Command catalog, search & 3270 state inspection |
 | **Workspace Navigator Drawer** | `F7` (`<L> d`) / Click OIA | `:drawer [toggle \| navigator \| classic]` | Slide-out sidebar with agent state dots & hierarchy |
 | **Global Fuzzy Finder** | `Ctrl+Alt+F` | `:find [agent \| session \| history] <q>` | Unified registry search with secret masking |
+| **Session Find (OS attributes)** | `Ctrl+X &` | `:find --pid N --cwd P --text T` / `:find-flash` | Locate panes by pid, pty, cwd, command or screen text; focus, send, beep, flash |
+| **Editor / Scratchpad** | `Ctrl+X _` / `F10` (menu) | `:edit <file>` / `:scratch` / `:editor menu` | Built-in text and markdown editor window with a DOS EDIT style menu bar |
+| **Drag a Window** | Drag the title-bar grip | `:window place` / `:drag zones on\|off` | Swap, split, drawer or float drop zones; `Esc` cancels |
+| **Pane Mail / Remote Badge** | — | `:mail status\|ack` / `:remote status` | Unread envelope on the title; `[R:host]` marks remote windows |
+| **External Browser** | `Ctrl+Alt+U` | `:web external [url]` | Open the browser pane's URL in the system browser |
 | **Agent Messaging & Swarms** | `Alt+]` (next blocked) | `:agent [name \| send \| inbox \| list \| snoop]` | Inter-agent messaging, mailboxes & packet telemetry |
 | **Appearance & Display Modes** | `F11` / `F4` (`<L> e`) | `:appearance [obsidian \| legacy \| ...]` / `:mode [standard \| zen]` | 9 visual profiles (incl. TRON: `--tron` / `:tron`) & distraction-free Zen mode |
 | **Detach & Re-Attach Workspace** | `Ctrl+X D` / Exit Guard `[d]` | `:detach [name]` / `:attach [name]` | Saves the layout; shells and commands are restarted on attach (not kept running) |
@@ -126,7 +145,7 @@ bilterm run starter-packs/01-multi-agent-swarm/playbook.toml
   - **[12-Chapter User Guide (`docs/user-guide/README.md`)](docs/user-guide/README.md)** — End-to-end interactive manual (including Navigator, Agent Traffic & Unified Find)
   - **[API & JSON-RPC 2.0 Specification (`docs/API.md`)](docs/API.md)** — Methods, parameters, error codes, HTTP SSE streaming & MCP contracts
   - **[MCP Use Cases & Agent Scenarios (`docs/mcp-usecases/`)](docs/mcp-usecases/)** — Automated test harnesses, AI code reviewers & swarm orchestration
-  - **[Visual Gallery (`docs/VISUAL_GALLERY.md`)](docs/VISUAL_GALLERY.md)** — All 5 SVG workspace renders
+  - **[Visual Gallery (`docs/VISUAL_GALLERY.md`)](docs/VISUAL_GALLERY.md)** — Current screenshots, generated by `scripts/gen-screenshots.sh`
   - **[Starter Packs (`starter-packs/README.md`)](starter-packs/README.md)** — 5 ready-to-run configs & playbooks (Multi-Agent Swarm, Remote Fleet, Robot QA, Incident War Room, Retro CRT)
   - **[System Architecture (`docs/architecture.md`)](docs/architecture.md)** & **[Threat Model (`docs/purpose.md`)](docs/purpose.md)**
   - **[Developer & AI Agent Guide (`docs/DEVELOPER_AND_AGENT_GUIDE.md`)](docs/DEVELOPER_AND_AGENT_GUIDE.md)** & **[Compounded Lessons Learned (`docs/LESSONS_LEARNED_COMPOUNDED.md`)](docs/LESSONS_LEARNED_COMPOUNDED.md)**

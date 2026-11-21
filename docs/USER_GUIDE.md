@@ -99,3 +99,43 @@ Every window title bar carries a drag handle at its left end, before the title: 
 While you drag, every valid drop zone is outlined (dashed or single lines; the zone under the pointer gets heavy lines, a reversed fill and a label). Zones: the centre of each other window (`SWAP #n`), its four edge bands (`SPLIT LEFT/RIGHT/TOP/BOTTOM`, with arrows), a drawer session row (`MOVE TO SESSION`), and the `FLOAT` tray in the bottom-right corner. The source window is marked `MOVING #n`. The bottom row always states what a release does, or `NO DROP HERE` when the pointer is over nothing valid. Nothing is rearranged until release; `Esc` cancels. Meaning is carried by line weight, glyphs and text, not colour alone.
 
 `:drag zones on|off` (config `[appearance] drag_zones`) toggles the outlines; the drop itself is `:window place` / RPC `window.place`.
+
+
+## Session find: locate a pane by what it runs (`Ctrl+X &`)
+
+`Ctrl+X &` (alias `Ctrl+Alt+D`) prefills the prompt with `:find`. Filters combine with AND: `--pid`, `--pgid`, `--sid`, `--pty`, `--cwd`, `--cmd`, `--name`, `--user`, `--env`, `--title`, `--text` (searches the visible screen and returns only a hit count, never the text), `--all`.
+
+```text
+:find --cwd /srv/app --cmd cargo      panes running cargo in /srv/app
+:find --text "connection refused"     which window printed it
+:find-focus --pid 4242                jump to the pane that owns pid 4242
+:find-flash --title build             highlight it without moving focus
+```
+
+Actions: `:find-focus`, `:find-send <text>` (obeys the `pane.send` gates and a size cap), `:find-beep`, `:find-flash`, `:find-select`. Also `bilterm find`, RPC `find.*`, MCP `bilterm_session_find`. Platform support: Linux reads `/proc` (full), macOS uses `ps`/`lsof` (not yet verified on a Mac), Windows and others fall back to the attributes bilterm already tracks, and results say which probe ran (`platform`).
+
+## Editor and scratchpad (`:edit`, `:scratch`, `Ctrl+X _`)
+
+The editor is a normal window (tile, float, close, belongs to a session, saved with it) for plain UTF-8 text and markdown. `:edit <file>` opens a file, `:scratch [name]` (or `Ctrl+X _`) opens or focuses an autosaved scratchpad that survives a restart; `Save As` promotes it to a file. Saves are atomic and refuse to overwrite without confirmation; files over 4 MiB are refused.
+
+The DOS EDIT style menu bar (File, Edit, Search, View, Help) is always visible. `F10` opens File, `Alt+F`/`Alt+E`/`Alt+S`/`Alt+V`/`Alt+H` open a given menu, arrows move, `Enter` runs, `Esc` closes; `Help > Keys` lists every editor key. `:editor menu open [name]` does the same from the prompt and `editor.*` over RPC/MCP.
+
+## Pane-mail envelope and the `[R:host]` badge
+
+An envelope on a pane title means something other than your own typing wrote to it (another session, an RPC/MCP/CLI caller, an attached client, agent mail). Closed and blinking is unread (with a count); open is read. It clears when you focus the pane for a moment, type in it, or run `:mail ack [pane|all]`. `:mail status` lists it. Config: `[ui] pane_mail_indicator`, `pane_mail_flash`.
+
+`[R:host]` on a title, in the drawer and on the status line marks a window that lives on another machine (ssh, `:ssh-tmux`, an attach client, a remote daemon). `:remote status [pane]` gives the kind and host.
+
+## Drawer reorder and moving sessions between hosts
+
+In the drawer, `Alt+Up`/`Alt+Down` or `J`/`K` move the selected session or window; `:window reorder`, `:session reorder` and the RPC/MCP twins do the same, and dragging a row reorders or moves it (`Esc` cancels). Order is saved with the layout.
+
+`:session transfer` / `bilterm daemon transfer [SESSION...|--all] --to DEST` move live sessions to another `--host-ptys` host with the shells' PIDs intact, and `bilterm daemon restart --live` replaces a host with a new binary without killing a terminal. Linux only. See user guide chapter 15.
+
+## DOS mode (opt-in)
+
+Build with `--features dos` (never part of the release binaries). `:dos setup` downloads a pinned, checksummed emulator and FreeDOS image on request; `:dos run` opens a DOS window (text mode only; a program that switches to graphics shows a notice). `:dos status|doctor|snapshot|restore|reset|remove` manage it. All verbs are also `bilterm dos ...`, RPC `dos.*` and MCP `bilterm_dos`.
+
+## Browser pane
+
+`:browser open <url>` draws a headless Chrome screencast into a window; it follows the active theme. `Ctrl+Alt+U` / `:web external` opens the same URL in your system browser. Only `http(s)` and `about:blank` load; downloads are denied. See chapter 14.

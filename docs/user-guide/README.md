@@ -6,7 +6,7 @@ Welcome to the official User Guide for **Bilterm (`v3.2.0`)** — the Rust + Rat
 
 > **Quick Interactive Help (`<F1>`)**: At any time inside Bilterm, press **`F1`** or run **`:help`** to open the scrollable Borland Turbo Vision Help Modal directly on screen (`Up`/`Down`/`PageUp`/`PageDown` to scroll, `F1`/`Esc` to close).
 
-![Bilterm Multi-Pane Composite Workspace & SSH Fleet](../assets/screenshot-workspace.svg)
+![Bilterm Multi-Pane Composite Workspace & SSH Fleet](../assets/screenshot-workspace.png)
 
 ---
 
@@ -111,16 +111,14 @@ For deep dives into each subsystem, browse the dedicated chapters in [`docs/user
 
 ## Screen Renders & Visual Gallery
 
-### 1. Per-Pane Independent Font Scaling & 3-Way Sysadmin Incident War Room (`v1.12.0`)
-![Bilterm Per-Pane Independent Font Scaling & 3-Way Split](../assets/screenshot-per-pane-scaling.svg)
+### Current screenshots
+The full set (workspace, navigator drawer, session find, editor menu bar, pane-mail envelope, remote `[R:host]` badge, drag-and-drop zones, DOS mode, browser pane and themes) is in the [Visual Gallery](../VISUAL_GALLERY.md). Regenerate it with `scripts/gen-screenshots.sh`.
 
-### 2. Multi-Agent AI Coding Swarm & Slide-Out Fleet Drawer (`cyberpunk-neon`)
-![Bilterm Multi-Agent AI Coding Swarm](../assets/screenshot-multi-agent-swarm.svg)
+![Navigator drawer](../assets/screenshot-drawer.png)
 
-### 3. IBM 3278 Phosphor Green (`F9` Inspector) & IBM 3279 Amber (`Ctrl+P` Command Palette)
-| IBM 3278 Phosphor Green + `F9` 3270 Inspector | IBM 3279 Amber + Z-Order Cascade + `Ctrl+P` Palette |
+| IBM 3278 phosphor green | IBM 3279 amber |
 | :---: | :---: |
-| ![IBM 3278 Phosphor Green + F9 Inspector](../assets/screenshot-3278-inspector.svg) | ![IBM 3279 Amber + Z-Order Cascade + Command Palette](../assets/screenshot-3279-palette.svg) |
+| ![IBM 3278 phosphor green](../assets/screenshot-theme-3278.png) | ![IBM 3279 amber](../assets/screenshot-theme-3279.png) |
 
 ---
 
