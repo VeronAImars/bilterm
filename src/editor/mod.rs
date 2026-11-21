@@ -9,6 +9,8 @@ pub mod buffer;
 pub mod highlight;
 pub mod io;
 mod keys;
+pub mod menu;
+mod menu_render;
 pub mod op;
 mod render;
 
@@ -16,7 +18,8 @@ use std::path::{Path, PathBuf};
 
 use buffer::{Pos, TextBuffer};
 pub use io::SaveError;
-pub use op::EditorOp;
+pub use menu::{MenuCmd, MenuState};
+pub use op::{EditorOp, MenuOp};
 
 /// What the buffer is backed by.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +60,8 @@ pub struct EditorState {
     /// Keys go to the editor (`Ctrl+]` hands them back to the pane prompt).
     pub focused: bool,
     pub mode: Mode,
+    /// Menu bar state (`F10`, `Alt+letter`).
+    pub menu: MenuState,
     pub message: Option<String>,
     pub(crate) search: String,
     /// Base for relative save-as paths (the pane's working directory).
@@ -87,6 +92,7 @@ impl EditorState {
             markdown: true,
             focused: true,
             mode: Mode::Edit,
+            menu: MenuState::default(),
             message: None,
             search: String::new(),
             cwd: PathBuf::from("."),
@@ -260,7 +266,7 @@ impl EditorState {
     pub fn status_json(&self) -> String {
         let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
         format!(
-            "{{\"kind\":\"{}\",\"name\":\"{}\",\"path\":{},\"dirty\":{},\"lines\":{},\"line\":{},\"col\":{},\"wrap\":{},\"markdown\":{},\"focused\":{}}}",
+            "{{\"kind\":\"{}\",\"name\":\"{}\",\"path\":{},\"dirty\":{},\"lines\":{},\"line\":{},\"col\":{},\"wrap\":{},\"markdown\":{},\"focused\":{},\"menu\":{}}}",
             if self.is_scratch() { "scratch" } else { "file" },
             esc(&self.display_name()),
             self.path.as_ref().map_or("null".into(), |p| format!("\"{}\"", esc(&p.to_string_lossy()))),
@@ -270,7 +276,8 @@ impl EditorState {
             self.buf.cursor.col + 1,
             self.wrap,
             self.markdown,
-            self.focused
+            self.focused,
+            self.menu.open.map_or("null".into(), |i| format!("\"{}\"", menu::MENUS[i].title.to_ascii_lowercase()))
         )
     }
 }

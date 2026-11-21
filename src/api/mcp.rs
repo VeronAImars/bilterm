@@ -367,7 +367,7 @@ impl AutomationControlPlane {
                 "bilterm_editor",
                 "Built-in text/markdown editor window and scratchpad. Same verbs as `:edit`, `:scratch` and `:editor ...`. open (with path), save, save_as and revert touch host files and need [api] allow_config_write; overwriting needs force=true. Plain UTF-8 text only, regular files only, 4 MiB max.",
                 &[
-                    ("action", "string", "Operation: open | scratch | save | save_as | wrap | find | undo | redo | goto | revert | insert | text | status | close"),
+                    ("action", "string", "Operation: open | scratch | save | save_as | wrap | find | undo | redo | goto | revert | insert | text | status | close | menu"),
                     ("path", "string", "With open (optional; omitted = new unnamed buffer) or save_as"),
                     ("name", "string", "With scratch: scratchpad name (default 'scratch')"),
                     ("force", "boolean", "With save|save_as|close: overwrite an existing/changed file, or discard unsaved changes"),
@@ -376,6 +376,9 @@ impl AutomationControlPlane {
                     ("backward", "boolean", "With find: search backward"),
                     ("line", "integer", "With goto: 1-based line"),
                     ("text", "string", "With insert: text inserted at the cursor"),
+                    ("op", "string", "With menu: open (default) | close | do"),
+                    ("menu", "string", "With menu open: file | edit | search | view | help"),
+                    ("item", "string", "With menu do: item name (new save save-as revert close undo redo cut copy paste select-all find find-next find-prev goto wrap keys)"),
                 ],
             ),
             Self::mcp_tool_schema(

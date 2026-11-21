@@ -49,6 +49,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":editor text", "—", "Report the editor buffer text (RPC/MCP command data)"),
     (":editor status", "—", "Report editor file, dirty flag, cursor and options"),
     (":editor close", "—", "Close the editor window (--force discards unsaved changes)"),
+    (":editor menu", "F10 / Alt+F", "Open the editor's DOS-style menu bar (:editor menu open <file|edit|search|view|help>, close, do <item>)"),
     (":dos run", "—", "Open a FreeDOS pane (feature `dos`; qemu-curses): [--name N | --image FILE] [--drive-c DIR]"),
     (":dos setup", "—", "Download, verify and build the FreeDOS image in the background: --yes [--full] [--entry ID]"),
     (":dos doctor", "—", "Check the host for QEMU and DOS prerequisites"),

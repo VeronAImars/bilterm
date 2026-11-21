@@ -63,6 +63,7 @@ const VERBS: &[(&str, &str, &str)] = &[
     ("text", ":editor text", ":editor text"),
     ("status", ":editor status", ":editor status"),
     ("close", ":editor close", ":editor close"),
+    ("menu", ":editor menu open file", ":editor menu"),
 ];
 
 #[test]
@@ -90,6 +91,8 @@ fn every_editor_verb_has_colon_palette_rpc_mcp_and_cli() {
         (vec!["editor", "text"], "editor.text"),
         (vec!["editor", "status"], "editor.status"),
         (vec!["editor", "close"], "editor.close"),
+        (vec!["editor", "menu"], "editor.menu"),
+        (vec!["editor", "menu", "do", "cut"], "editor.menu"),
     ] {
         let a: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         let call = bilterm::cli::parse(&a, &env).unwrap_or_else(|e| panic!("{args:?}: {e}"));

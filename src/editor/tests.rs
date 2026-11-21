@@ -286,10 +286,10 @@ fn click_and_drag_position_cursor_and_select() {
     let mut e = EditorState::new_file();
     e.buf.insert("hello\nworld");
     e.render(6, 20);
-    e.click(1, 3);
+    e.click(2, 3);
     assert_eq!(e.buf.cursor, Pos { line: 1, col: 3 });
-    e.click(0, 1);
-    e.drag(0, 4);
+    e.click(1, 1);
+    e.drag(1, 4);
     assert_eq!(e.buf.selected_text().as_deref(), Some("ell"));
     e.scroll(1);
 }
@@ -336,6 +336,7 @@ fn op_parse_and_colon_form_roundtrip() {
         ":editor saveas /tmp/x.md", ":editor saveas /tmp/x.md --force", ":editor wrap", ":editor wrap on", ":editor wrap off",
         ":editor find two words", ":editor findprev x", ":editor undo", ":editor redo", ":editor goto 7", ":editor revert",
         ":editor insert hello world", ":editor text", ":editor status", ":editor close", ":editor close --force",
+        ":editor menu open", ":editor menu open file", ":editor menu close", ":editor menu do save-as",
     ];
     for c in all {
         let rest = c.trim_start_matches(':');

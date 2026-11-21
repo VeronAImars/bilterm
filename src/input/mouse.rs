@@ -904,6 +904,7 @@ pub(super) fn route_wm_mouse_event(
         return Ok(AppAction::Continue);
     };
     if let Some(action) = super::editor_keys::editor_mouse(pane, pane_mouse, pane_inner) {
+        wm.editor_menu_pending();
         return Ok(action);
     }
     let route = crate::input::mouse_select::route(

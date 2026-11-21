@@ -65,6 +65,7 @@ pub mod rename_dialog;
 pub mod session;
 #[cfg(feature = "dos")]
 mod dos_pane;
+mod editor_menu;
 mod editor_pane;
 pub mod session_empty;
 pub mod session_end;
