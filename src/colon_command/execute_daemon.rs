@@ -246,6 +246,9 @@ pub fn execute_daemon_command(wm: &mut WindowManager, op: &DaemonSupervisorOp) -
             super::execute_daemon_host::execute_host_state(wm, &runtime_dir, name.as_deref());
         }
         DaemonSupervisorOp::AttachClients => crate::attach::view::execute_attach_clients(wm),
+        DaemonSupervisorOp::SessionTransfer { .. } | DaemonSupervisorOp::RestartLive { .. } => {
+            super::execute_daemon_transfer::execute_transfer_op(wm, &runtime_dir, op);
+        }
         DaemonSupervisorOp::AttachKick { client_id, all_ro } => crate::attach::view::execute_attach_kick(wm, *client_id, *all_ro),
     }
     match op {

@@ -161,3 +161,129 @@ fn fdpass_round_trips_a_descriptor_and_rejects_empty_payload() {
     let got = raw_read(r.as_raw_fd(), Duration::from_secs(1));
     assert_eq!(got, b"hi");
 }
+
+fn counter_shell(n: u32) -> PtySession {
+    sh(&format!("i=0; while [ $i -lt {n} ]; do echo CNT $i; i=$((i+1)); sleep 0.01; done; echo DONE; sleep 30"))
+}
+
+/// Rollback: the new host never acks, the old session takes everything back and still works.
+#[test]
+fn reclaim_after_unacked_export_loses_nothing_and_session_stays_usable() {
+    const N: u32 = 200;
+    let mut a = counter_shell(N);
+    let pid = a.child_pid().unwrap();
+    let mut stream = Vec::new();
+    collect(&mut a, &mut stream, |b| counters(b).len() >= 30);
+
+    let mut released = a.release(T).expect("release");
+    push(&mut stream, released.take_pending()); // the sender feeds these to its VT
+    let (tx, _rx_never_adopts) = UnixStream::pair().unwrap();
+    released.export(tx.as_raw_fd(), b"H").unwrap();
+    std::thread::sleep(Duration::from_millis(150)); // child keeps writing into the kernel buffer
+
+    released.reclaim(&mut a).expect("reclaim");
+    assert_eq!(a.child_pid(), Some(pid));
+    collect(&mut a, &mut stream, |s| String::from_utf8_lossy(s).contains("DONE"));
+    assert_eq!(counters(&stream), (0..N).collect::<Vec<_>>(), "gap or duplicate across rollback");
+    assert!(a.write_all(b"x\n").is_ok(), "writer must work after reclaim");
+    assert!(a.resize(30, 100).unwrap());
+    // And it can be released again.
+    let r2 = a.release(T).expect("second release");
+    r2.reclaim(&mut a).expect("second reclaim");
+    assert_eq!(unsafe { libc::kill(pid as i32, 0) }, 0);
+}
+
+/// Events the old reader consumed but nobody took are re-queued IN FRONT of new output.
+#[test]
+fn reclaim_requeues_untaken_events_in_order() {
+    const N: u32 = 120;
+    let mut a = counter_shell(N);
+    let mut stream = Vec::new();
+    collect(&mut a, &mut stream, |b| counters(b).len() >= 20);
+    let released = a.release(T).expect("release");
+    released.reclaim(&mut a).expect("reclaim");
+    collect(&mut a, &mut stream, |s| String::from_utf8_lossy(s).contains("DONE"));
+    assert_eq!(counters(&stream), (0..N).collect::<Vec<_>>());
+}
+
+/// An adopter that is also the parent gets the real exit status.
+#[test]
+fn adopted_session_reports_exit_status_when_we_are_the_parent() {
+    let mut a = sh("sleep 0.4; exit 7");
+    let released = a.release(T).expect("release");
+    let (tx, rx) = UnixStream::pair().unwrap();
+    released.export(tx.as_raw_fd(), b"H").unwrap();
+    let mut buf = [0u8; 4];
+    let (_, mut b) = PtySession::adopt_from_socket(rx.as_raw_fd(), released.meta(), &mut buf).unwrap();
+    let end = Instant::now() + T;
+    let mut code = None;
+    while code.is_none() {
+        assert!(Instant::now() < end, "no exit reported");
+        for ev in b.drain_events() {
+            if let PtyEvent::Exited(c) = ev {
+                code = Some(c);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(code, Some(Some(7)));
+    assert_eq!(b.exit_code(Duration::from_millis(50)), Some(7));
+    drop(released);
+}
+
+#[test]
+fn child_watch_sees_unreaped_zombie_of_a_non_child() {
+    use bilterm::pty::child_watch::{ChildState, ChildWatch};
+    let out = std::process::Command::new("perl")
+        .args(["-e", "my $p=fork; if(!$p){exit 3} print \"$p\\n\"; sleep 4"])
+        .stdout(std::process::Stdio::piped())
+        .spawn();
+    let Ok(mut perl) = out else {
+        eprintln!("\nSKIPPED child_watch_sees_unreaped_zombie_of_a_non_child: no perl");
+        return;
+    };
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(perl.stdout.take().unwrap()), &mut line).unwrap();
+    let pid: u32 = line.trim().parse().unwrap();
+    let w = ChildWatch::new(pid);
+    let end = Instant::now() + T;
+    while w.poll() == ChildState::Running {
+        assert!(Instant::now() < end, "zombie not detected");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(w.poll(), ChildState::Exited(None));
+    let _ = perl.kill();
+    let _ = perl.wait();
+}
+
+/// Releasing must not make the old writer send `\n^D` (portable-pty's EOF-on-drop): `cat` would exit.
+#[test]
+fn release_does_not_inject_eof_into_the_child() {
+    let mut a = sh("cat");
+    let pid = a.child_pid().unwrap();
+    a.write_all(b"one\n").unwrap();
+    let mut got = Vec::new();
+    collect(&mut a, &mut got, |b| String::from_utf8_lossy(b).matches("one").count() >= 2);
+    let released = a.release(T).expect("release");
+    std::thread::sleep(Duration::from_millis(300)); // the old writer thread has ended by now
+    released.reclaim(&mut a).expect("reclaim");
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(unsafe { libc::kill(pid as i32, 0) }, 0, "cat must still be running after release+reclaim");
+    a.write_all(b"two\n").unwrap();
+    collect(&mut a, &mut got, |b| String::from_utf8_lossy(b).matches("two").count() >= 2);
+    assert!(!String::from_utf8_lossy(&got).contains('\u{4}'), "no ^D echo expected");
+
+    // And through a full handover to an adopter.
+    let released = a.release(T).expect("release 2");
+    let (tx, rx) = UnixStream::pair().unwrap();
+    released.export(tx.as_raw_fd(), b"H").unwrap();
+    let mut buf = [0u8; 2];
+    let (_, mut b) = PtySession::adopt_from_socket(rx.as_raw_fd(), released.meta(), &mut buf).unwrap();
+    released.ack();
+    drop(a);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(unsafe { libc::kill(pid as i32, 0) }, 0, "cat must survive the old session being dropped");
+    b.write_all(b"three\n").unwrap();
+    collect(&mut b, &mut got, |s| String::from_utf8_lossy(s).matches("three").count() >= 2);
+    unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+}

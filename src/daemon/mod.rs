@@ -22,6 +22,10 @@ pub use types::*;
 
 pub mod host;
 pub mod host_inspect;
+#[cfg(unix)]
+pub mod transfer;
+#[cfg(unix)]
+pub mod restart_live;
 
 pub mod liveness;
 

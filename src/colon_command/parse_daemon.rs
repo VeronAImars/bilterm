@@ -9,13 +9,15 @@
 //! - `:daemon switch <name>`
 //! - `:daemon prune`
 //! - `:daemon host [name]`
+//! - `:daemon transfer [<session>...|--all] --to <daemon> [--takeover] [--retire]`
+//! - `:daemon restart --live [name]`
 
 use super::ColonCommand;
 use crate::action::DaemonSupervisorOp;
 use crate::daemon::limits::MemoryLimits;
 use crate::daemon::restart_policy::RestartMode;
 
-const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] [--host-ptys] | new [name] [same options] | stop [name] [--force] | switch <name> | prune | host [name] | attach [kick <client-id>|--ro]]";
+const USAGE: &str = "Usage: :daemon [list | status [name] | start [name] [--restart never|on-crash] [--memory-max SIZE] [--memory-high SIZE] [--host-ptys] | new [name] [same options] | stop [name] [--force] | switch <name> | prune | host [name] | attach [kick <client-id>|--ro] | transfer [<session>...|--all] --to <daemon> | restart --live [name]]";
 
 /// Parses `:daemon` command invocations into a [`ColonCommand`].
 pub(super) fn parse_daemon_colon_command(
@@ -108,6 +110,47 @@ pub(super) fn parse_daemon_colon_command(
                 DaemonSupervisorOp::Stop { name, force },
             )))
         }
+        "transfer" => {
+            let (mut sessions, mut all, mut to, mut takeover, mut retire) = (Vec::new(), false, None, false, false);
+            let mut it = parts[2..].iter();
+            while let Some(&a) = it.next() {
+                match a {
+                    "--all" => all = true,
+                    "--takeover" => takeover = true,
+                    "--retire" => retire = true,
+                    "--to" => match it.next() {
+                        Some(&n) if to.is_none() => to = Some(n.to_string()),
+                        _ => return Some(Err(USAGE.to_string())),
+                    },
+                    s if s.starts_with('-') => return Some(Err(USAGE.to_string())),
+                    s => sessions.push(s.to_string()),
+                }
+            }
+            let Some(to) = to else {
+                return Some(Err(format!("missing --to <daemon>; {USAGE}")));
+            };
+            if all && !sessions.is_empty() {
+                return Some(Err("use either session names or --all, not both".to_string()));
+            }
+            Some(Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::SessionTransfer { sessions, all, to, takeover, retire })))
+        }
+        "restart" => {
+            let mut live = false;
+            let mut name = None;
+            for &arg in &parts[2..] {
+                if arg == "--live" {
+                    live = true;
+                } else if name.is_none() && !arg.starts_with('-') {
+                    name = Some(arg.to_string());
+                } else {
+                    return Some(Err(USAGE.to_string()));
+                }
+            }
+            if !live {
+                return Some(Err("only a live restart exists: :daemon restart --live [name] (use stop + start to restart without keeping sessions)".to_string()));
+            }
+            Some(Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::RestartLive { name })))
+        }
         "switch" => {
             let Some(name) = parts.get(2) else {
                 return Some(Err(
@@ -156,5 +199,30 @@ pub(super) fn parse_daemon_colon_command(
             Some(Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::AttachClients)))
         }
         _ => Some(Err(USAGE.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod transfer_tests {
+    use super::*;
+
+    fn p(parts: &[&str]) -> Result<ColonCommand, String> {
+        parse_daemon_colon_command("daemon", parts).expect("daemon head")
+    }
+
+    #[test]
+    fn transfer_and_live_restart_parse() {
+        assert_eq!(
+            p(&["daemon", "transfer", "a", "b", "--to", "z"]),
+            Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::SessionTransfer { sessions: vec!["a".into(), "b".into()], all: false, to: "z".into(), takeover: false, retire: false }))
+        );
+        assert_eq!(
+            p(&["daemon", "transfer", "--all", "--to", "z", "--retire"]),
+            Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::SessionTransfer { sessions: vec![], all: true, to: "z".into(), takeover: false, retire: true }))
+        );
+        assert!(p(&["daemon", "transfer", "a"]).unwrap_err().contains("--to"));
+        assert!(p(&["daemon", "transfer", "a", "--all", "--to", "z"]).is_err());
+        assert_eq!(p(&["daemon", "restart", "--live", "w"]), Ok(ColonCommand::DaemonSupervisor(DaemonSupervisorOp::RestartLive { name: Some("w".into()) })));
+        assert!(p(&["daemon", "restart"]).unwrap_err().contains("--live"));
     }
 }

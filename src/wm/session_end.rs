@@ -58,6 +58,10 @@ impl WindowManager {
     /// Makes the best candidate session active and drops the outgoing (active) session's panes,
     /// which ends its programs. Saved layouts are not touched. Returns the new active session, or
     /// `None` when no other session could be brought up (the active session is then unchanged).
+    pub(crate) fn end_active_session_and_move_on_pub(&mut self) -> Option<String> {
+        self.end_active_session_and_move_on()
+    }
+
     fn end_active_session_and_move_on(&mut self) -> Option<String> {
         let ended = self.config.history_session.clone();
         for next in self.session_end_candidates(&ended) {

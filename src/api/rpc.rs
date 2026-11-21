@@ -93,6 +93,8 @@ pub const RPC_METHODS: &[&str] = &[
     "dos.restore",
     "attach.clients",
     "attach.kick",
+    "session.transfer",
+    "daemon.restart",
     "drawer.preview",
     "clipboard.list",
     "clipboard.get",
@@ -176,6 +178,9 @@ pub struct AutomationControlPlane {
     /// Name of the daemon this plane serves when it was started WITHOUT `--host-ptys` (its panes
     /// have no shell); command-sending RPCs then fail loudly instead of reporting success.
     pub(super) no_pty_daemon: Option<String>,
+    /// Accepts live session transfers from other hosts (`host-<name>.xfer.sock`, unix, hosts only).
+    #[cfg(unix)]
+    pub(super) transfer_listener: Option<crate::daemon::transfer::TransferListener>,
 }
 
 /// Execution policy determining whether snapshot exports are confined to the designated snapshot dir.
@@ -228,6 +233,8 @@ impl AutomationControlPlane {
             attach_requests: None,
             attach_hub: None,
             no_pty_daemon: None,
+            #[cfg(unix)]
+            transfer_listener: None,
         }
     }
 

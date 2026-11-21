@@ -26,6 +26,10 @@ pub enum DaemonCmd {
     New { name: Option<String>, restart: RestartMode, limits: MemoryLimits, host_ptys: bool, json: bool },
     Stop { name: String, force: bool },
     Status { name: String, json: bool },
+    /// `transfer [SESSION...|--all] --to DEST [--from NAME]`: ask host `from` to move sessions to `to`.
+    Transfer { from: String, sessions: Vec<String>, all: bool, to: String },
+    /// `restart --live [NAME]`: new process takes over every session of host NAME.
+    Restart { name: String },
 }
 
 /// Usage text for `bilterm daemon`.
@@ -47,6 +51,11 @@ Usage:
                                             used and printed. Refuses a NAME that already exists
   bilterm daemon stop [NAME] [--force]      Stop daemon NAME (SIGTERM; --force = SIGKILL)
   bilterm daemon status [NAME] [--json]     Show one daemon (exit 0 running, 3 otherwise)
+  bilterm daemon transfer [SESSION...|--all] --to DEST [--from NAME]
+                                            Move live sessions (shells keep running, same PIDs) from host
+                                            NAME to host DEST (both need --host-ptys; unix only)
+  bilterm daemon restart --live [NAME]      Replace host NAME with a fresh process of this binary; every
+                                            session and shell moves over, nothing is killed or reset
 
 NAME defaults to --daemon-name / BILTERM_DAEMON, else 'default'. Names: [A-Za-z0-9_-], max 64.
 Each named daemon listens on its own socket (daemons/daemon-<NAME>.sock in the runtime dir);
@@ -90,9 +99,14 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
     let (mut json, mut force, mut host_ptys) = (false, false, false);
     let mut restart = RestartMode::Never;
     let (mut mem_max, mut mem_high): (Option<String>, Option<String>) = (None, None);
+    let (mut live, mut all, mut to, mut from): (bool, bool, Option<String>, Option<String>) = (false, false, None, None);
     let mut args_it = args.iter();
     while let Some(a) = args_it.next() {
         match a.as_str() {
+            "--live" => live = true,
+            "--all" => all = true,
+            "--to" => to = Some(args_it.next().ok_or_else(|| format!("--to needs a daemon name\n{}", usage()))?.clone()),
+            "--from" => from = Some(args_it.next().ok_or_else(|| format!("--from needs a daemon name\n{}", usage()))?.clone()),
             "--restart" => {
                 let v = args_it.next().ok_or_else(|| format!("--restart needs never|on-crash\n{}", usage()))?;
                 restart = RestartMode::parse(v)?;
@@ -111,6 +125,20 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
         }
     }
     let sub = pos.first().copied().unwrap_or("list");
+    if sub == "transfer" {
+        let to = to.ok_or_else(|| format!("transfer needs --to <daemon>\n{}", usage()))?;
+        let sessions: Vec<String> = pos[1..].iter().map(|s| s.to_string()).collect();
+        if all && !sessions.is_empty() {
+            return Err("use either session names or --all, not both".to_string());
+        }
+        let from = from.or_else(|| target.map(str::to_string)).unwrap_or_else(|| "default".to_string());
+        validate_safe_name(&from).map_err(|e| format!("invalid daemon name '{from}': {e}"))?;
+        validate_safe_name(&to).map_err(|e| format!("invalid daemon name '{to}': {e}"))?;
+        return Ok(DaemonCmd::Transfer { from, sessions, all, to });
+    }
+    if sub == "restart" && !live {
+        return Err(format!("only a live restart exists: bilterm daemon restart --live [NAME]\n{}", usage()));
+    }
     if pos.len() > 2 {
         return Err(format!("too many arguments\n{}", usage()));
     }
@@ -132,6 +160,7 @@ pub fn parse_daemon_args(args: &[String], target: Option<&str>) -> Result<Daemon
         }
         "stop" => Ok(DaemonCmd::Stop { name: name()?, force }),
         "status" => Ok(DaemonCmd::Status { name: name()?, json }),
+        "restart" => Ok(DaemonCmd::Restart { name: name()? }),
         other => Err(format!("unknown daemon subcommand '{other}'\n{}", usage())),
     }
 }
@@ -214,12 +243,52 @@ pub fn run(cmd: &DaemonCmd, runtime_dir: &Path) -> (String, i32) {
             }
             Err(e) => (format!("bilterm: failed to start daemon '{name}': {e}"), 1),
         },
+        DaemonCmd::Transfer { from, sessions, all, to } => run_transfer(runtime_dir, from, sessions, *all, to),
+        DaemonCmd::Restart { name } => run_restart(runtime_dir, name),
         DaemonCmd::Stop { name, force } => match stop_daemon(runtime_dir, name, *force) {
             Ok(true) => (format!("daemon '{name}' stopped"), 0),
             Ok(false) => (format!("daemon '{name}' was not running"), 0),
             Err(e) => (format!("bilterm: failed to stop daemon '{name}': {e}"), 1),
         },
     }
+}
+
+#[cfg(unix)]
+fn run_transfer(runtime_dir: &Path, from: &str, sessions: &[String], all: bool, to: &str) -> (String, i32) {
+    let Some(sock) = crate::daemon::process::running_daemon_socket_in(runtime_dir, from) else {
+        return (format!("bilterm: daemon '{from}' is not running"), 1);
+    };
+    let list = sessions.iter().map(|s| format!("{s:?}")).collect::<Vec<_>>().join(",");
+    let params = format!("{{\"sessions\":[{list}],\"all\":{all},\"to\":{to:?}}}");
+    match crate::daemon::restart_live::rpc_call(&sock, "session.transfer", &params, std::time::Duration::from_secs(60)) {
+        Ok(v) => (v.to_json_string(), 0),
+        Err(e) => (format!("bilterm: transfer failed: {e}"), 1),
+    }
+}
+
+#[cfg(unix)]
+fn run_restart(runtime_dir: &Path, name: &str) -> (String, i32) {
+    match crate::daemon::restart_live::restart_live(None, runtime_dir, name) {
+        Ok(r) => (
+            format!(
+                "daemon '{}' restarted live: PID {} -> {}, {} window(s) in {} session(s) kept (shell PIDs unchanged: {:?}){}",
+                r.name, r.old_pid, r.new_pid, r.panes, r.sessions.len(), r.pids,
+                if r.new_is_serving { "" } else { "; the new daemon is still starting" }
+            ),
+            0,
+        ),
+        Err(e) => (format!("bilterm: live restart failed: {e}"), 1),
+    }
+}
+
+#[cfg(not(unix))]
+fn run_transfer(_: &Path, _: &str, _: &[String], _: bool, _: &str) -> (String, i32) {
+    ("bilterm: session transfer is unix only".to_string(), 1)
+}
+
+#[cfg(not(unix))]
+fn run_restart(_: &Path, _: &str) -> (String, i32) {
+    ("bilterm: live restart is unix only".to_string(), 1)
 }
 
 #[cfg(test)]
@@ -268,7 +337,13 @@ mod tests {
     #[test]
     fn rejects_bad_input() {
         assert!(parse_daemon_args(&v(&["start", "../evil"]), None).unwrap_err().contains("invalid daemon name"));
-        assert!(parse_daemon_args(&v(&["restart"]), None).unwrap_err().contains("unknown daemon subcommand"));
+        assert!(parse_daemon_args(&v(&["restart"]), None).unwrap_err().contains("live restart"));
+        assert_eq!(parse_daemon_args(&v(&["restart", "--live", "w"]), None), Ok(DaemonCmd::Restart { name: "w".into() }));
+        assert_eq!(
+            parse_daemon_args(&v(&["transfer", "a", "b", "--to", "z"]), Some("src")),
+            Ok(DaemonCmd::Transfer { from: "src".into(), sessions: vec!["a".into(), "b".into()], all: false, to: "z".into() })
+        );
+        assert!(parse_daemon_args(&v(&["transfer", "a"]), None).unwrap_err().contains("--to"));
         assert!(parse_daemon_args(&v(&["stop", "a", "b"]), None).unwrap_err().contains("too many"));
         assert!(parse_daemon_args(&v(&["list", "--bogus"]), None).unwrap_err().contains("unknown option"));
         assert!(parse_daemon_args(&v(&["list", "extra"]), None).is_err());

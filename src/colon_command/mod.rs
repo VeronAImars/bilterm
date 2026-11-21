@@ -9,6 +9,7 @@ mod execute_command_window;
 mod execute_config;
 pub mod execute_daemon;
 pub mod execute_daemon_host;
+pub mod execute_daemon_transfer;
 pub mod execute_find;
 pub mod execute_keys;
 pub mod execute_link;

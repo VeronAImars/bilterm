@@ -58,6 +58,17 @@ impl AutomationControlPlane {
         self
     }
 
+    /// Accept live session transfers on `host-<name>.xfer.sock` (hosts only; unix).
+    #[cfg(unix)]
+    pub fn with_transfer_listener(mut self, runtime_dir: &std::path::Path, name: &str) -> Self {
+        self.wm.set_host_name(name);
+        match crate::daemon::transfer::TransferListener::bind(runtime_dir, name, crate::daemon::transfer::SocketKind::Accept) {
+            Ok(l) => self.transfer_listener = Some(l),
+            Err(e) => tracing::warn!(error = %e, "session transfer socket unavailable"),
+        }
+        self
+    }
+
     /// True when the daemon must run [`Self::host_tick`] periodically.
     pub fn is_host(&self) -> bool {
         self.wm.is_host()
@@ -68,13 +79,48 @@ impl AutomationControlPlane {
     pub fn host_tick(&mut self) -> bool {
         let drained = self.drain_attach_requests();
         let resized = self.attach_tick_pre();
-        let changed = self.wm.poll_all_ptys() | drained | resized;
+        #[cfg(unix)]
+        let transferred = self.serve_transfers();
+        #[cfg(not(unix))]
+        let transferred = false;
+        let changed = self.wm.poll_all_ptys() | drained | resized | transferred;
         self.attach_publish();
         if let Some(p) = self.host_persist.as_mut() {
             let state = self.wm.host_state(&p.name);
             p.maybe_write(state, Instant::now());
         }
         changed
+    }
+
+    /// Serves at most one pending incoming session transfer. Blocks for the exchange (bounded by
+    /// the socket timeouts); the daemon is the single owner of its workspace, so this is also its
+    /// quiesce.
+    #[cfg(unix)]
+    fn serve_transfers(&mut self) -> bool {
+        let Some(l) = self.transfer_listener.as_ref() else { return false };
+        let Some(stream) = l.poll_accept() else { return false };
+        let kind = l.kind();
+        match crate::daemon::transfer::serve_connection(&mut self.wm, stream, kind) {
+            Ok(Some((names, _))) => {
+                tracing::info!(sessions = ?names, "adopted transferred sessions");
+                true
+            }
+            Ok(None) => false,
+            Err(e) => {
+                tracing::warn!(error = %e, "incoming session transfer failed");
+                false
+            }
+        }
+    }
+
+    /// True once a retiring transfer finished and the reply had time to go out.
+    pub fn retire_due(&self) -> bool {
+        #[cfg(unix)]
+        {
+            self.wm.retire_due()
+        }
+        #[cfg(not(unix))]
+        false
     }
 
     /// Clean shutdown: the host no longer owns anything, so its state file is removed rather than
