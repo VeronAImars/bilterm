@@ -10,7 +10,7 @@ use crate::editor::EditorOp;
 
 pub const EDITOR_METHODS: &[&str] = &[
     "editor.open", "editor.scratch", "editor.save", "editor.save_as", "editor.wrap", "editor.find", "editor.undo",
-    "editor.redo", "editor.goto", "editor.revert", "editor.insert", "editor.text", "editor.status", "editor.close",
+    "editor.redo", "editor.goto", "editor.revert", "editor.insert", "editor.text", "editor.status", "editor.close", "editor.menu",
 ];
 
 fn opt_str(p: &JsonValue, k: &str) -> Result<Option<String>, String> {
@@ -46,6 +46,19 @@ pub(super) fn editor_op(verb: &str, p: &JsonValue) -> Result<Option<EditorOp>, S
         "text" => EditorOp::Text,
         "status" => EditorOp::Status,
         "close" => EditorOp::Close { force: flag(p, "force") },
+        "menu" => {
+            let item = opt_str(p, "item")?;
+            let menu = opt_str(p, "menu")?;
+            let op = opt_str(p, "op")?.unwrap_or_else(|| if item.is_some() { "do" } else { "open" }.into());
+            let line = match op.as_str() {
+                "open" => format!("menu open {}", menu.unwrap_or_default()),
+                "close" => "menu close".to_string(),
+                "do" => format!("menu do {}", item.ok_or("missing 'item'")?),
+                o => return Err(format!("menu op must be open|close|do, got '{o}'")),
+            };
+            let parts: Vec<&str> = std::iter::once("editor").chain(line.split_whitespace()).collect();
+            EditorOp::parse("editor", &parts).ok_or("menu parse")??
+        }
         _ => return Ok(None),
     }))
 }

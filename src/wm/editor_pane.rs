@@ -26,7 +26,7 @@ impl WindowManager {
     }
 
     /// The active window when it is an editor, else the lowest-numbered editor window.
-    fn editor_target(&self) -> Option<PaneId> {
+    pub(super) fn editor_target(&self) -> Option<PaneId> {
         let a = self.active_pane_id();
         if self.panes.get(&a).is_some_and(|p| p.editor().is_some()) { Some(a) } else { self.editor_pane_ids().first().copied() }
     }
@@ -64,7 +64,7 @@ impl WindowManager {
         }
     }
 
-    fn editor_reply(&mut self, ok: bool, message: String, extra: Vec<(&str, JsonValue)>) {
+    pub(super) fn editor_reply(&mut self, ok: bool, message: String, extra: Vec<(&str, JsonValue)>) {
         let mut entries = vec![
             ("status", JsonValue::String(if ok { "ok" } else { "error" }.into())),
             ("message", JsonValue::String(message.clone())),
@@ -86,6 +86,7 @@ impl WindowManager {
             EditorOp::Open { path } => self.editor_open(path),
             EditorOp::Scratch { name } => self.editor_scratch(name.as_deref().unwrap_or(DEFAULT_SCRATCH)),
             EditorOp::Close { force } => self.editor_close(force),
+            EditorOp::Menu(m) => self.editor_menu_op(m),
             op => {
                 let Some(id) = self.editor_target() else {
                     return self.editor_reply(false, "no editor window (:edit [path] or :scratch)".into(), vec![]);
@@ -191,7 +192,7 @@ impl WindowManager {
                 Ok("text".into())
             }
             EditorOp::Status => Ok("status".into()),
-            EditorOp::Open { .. } | EditorOp::Scratch { .. } | EditorOp::Close { .. } => return,
+            EditorOp::Open { .. } | EditorOp::Scratch { .. } | EditorOp::Close { .. } | EditorOp::Menu(_) => return,
         };
         extra.push(("editor", JsonValue::parse(&ed.status_json()).unwrap_or(JsonValue::Null)));
         extra.push(("pane", JsonValue::Number(id as i64)));
@@ -205,8 +206,12 @@ impl WindowManager {
     /// Routes a key to the active editor window. `None` when the window is not an editor or the
     /// key is not the editor's (window-manager shortcuts keep working).
     pub fn editor_key(&mut self, key: crossterm::event::KeyEvent) -> Option<bool> {
-        let pane = self.panes.get_mut(&self.z_stack.top()?)?;
-        let ed = pane.editor_mut().filter(|e| e.focused)?;
+        let id = self.z_stack.top()?;
+        self.panes.get(&id)?.editor().filter(|e| e.focused)?;
+        if let Some(r) = self.editor_menu_key(id, key) {
+            return Some(r);
+        }
+        let ed = self.panes.get_mut(&id)?.editor_mut()?;
         let consumed = ed.handle_key(key);
         if consumed {
             self.after_editor_change();

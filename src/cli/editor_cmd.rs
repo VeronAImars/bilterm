@@ -33,6 +33,12 @@ pub(super) fn parse_editor(p: &Parsed, env: &CliEnv) -> Result<RpcCall, String> 
         "text" => ("editor.text", vec![]),
         "status" => ("editor.status", vec![]),
         "close" => ("editor.close", vec![force]),
+        "menu" => match rest.first().map(String::as_str) {
+            None | Some("open") => ("editor.menu", rest.get(1).map(|m| vec![("menu", str_val(m))]).unwrap_or_default()),
+            Some("close") => ("editor.menu", vec![("op", str_val("close"))]),
+            Some("do") => ("editor.menu", vec![("op", str_val("do")), ("item", rest.get(1).map(|i| str_val(i)).ok_or("editor menu do needs an ITEM")?)]),
+            Some(o) => return Err(format!("editor menu takes open [MENU] | close | do ITEM, got '{o}'")),
+        },
         other => return Err(format!("unknown editor subcommand '{other}'\n{}", usage())),
     };
     Ok(RpcCall { method: method.to_string(), params: base_params(env, params), poll: None })

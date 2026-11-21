@@ -115,6 +115,7 @@ pub const RPC_METHODS: &[&str] = &[
     "editor.text",
     "editor.status",
     "editor.close",
+    "editor.menu",
     "attach.clients",
     "attach.kick",
     "session.transfer",

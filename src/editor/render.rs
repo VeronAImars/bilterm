@@ -43,7 +43,7 @@ fn seg_index(segs: &[(usize, usize)], col: usize) -> usize {
 
 impl EditorState {
     fn text_area(&self) -> (usize, usize) {
-        (self.view.0.saturating_sub(1).max(1) as usize, self.view.1.max(1) as usize)
+        (self.view.0.saturating_sub(1 + self.bar_rows() as u16).max(1) as usize, self.view.1.max(1) as usize)
     }
 
     fn rows_to_cursor(&self, w: usize) -> usize {
@@ -83,12 +83,13 @@ impl EditorState {
     fn status_line(&self, cols: usize) -> String {
         let c = self.buf.cursor;
         let s = match &self.mode {
+            _ if self.menu.is_active() => self.menu_hint().unwrap_or_default(),
             Mode::Find(q) => format!(" Find: {q}_   Enter next  Esc cancel"),
             Mode::SaveAs(p) => format!(" Save as: {p}_   Enter save  Esc cancel"),
             Mode::Goto(n) => format!(" Go to line: {n}_   Enter go  Esc cancel"),
             Mode::ConfirmOverwrite(p) => format!(" {} exists or changed on disk. Overwrite? (y/n)", p.display()),
             Mode::Edit => format!(
-                " {}{}  Ln {}/{} Col {}  {}  {}{}",
+                " {}{}  Ln {}/{} Col {}  {}  {}  F10=Menu{}",
                 self.display_name(),
                 if self.is_dirty() { " *" } else { "" },
                 c.line + 1,
@@ -110,6 +111,7 @@ impl EditorState {
     pub fn render(&mut self, rows: u16, cols: u16) -> String {
         self.ensure_visible(rows, cols);
         let (h, w) = self.text_area();
+        let off = self.bar_rows();
         let fences = if self.markdown { highlight::fence_states((0..self.buf.line_count()).map(|l| self.buf.line(l))) } else { Vec::new() };
         let sel = self.buf.selection();
         let mut out = String::from("\x1b[?25l");
@@ -118,7 +120,7 @@ impl EditorState {
         let mut cursor_xy = (0usize, 0usize);
         while row < h {
             if line >= self.buf.line_count() {
-                out.push_str(&format!("\x1b[{};1H\x1b[0;2m~\x1b[0m\x1b[K", row + 1));
+                out.push_str(&format!("\x1b[{};1H\x1b[0;2m~\x1b[0m\x1b[K", row + 1 + off));
                 row += 1;
                 continue;
             }
@@ -130,7 +132,7 @@ impl EditorState {
                 if row >= h {
                     break;
                 }
-                out.push_str(&format!("\x1b[{};1H\x1b[0m", row + 1));
+                out.push_str(&format!("\x1b[{};1H\x1b[0m", row + 1 + off));
                 let mut cur_style = (Kind::Plain, false);
                 let base = if self.wrap { 0 } else { self.left };
                 let mut col_abs = 0usize; // display col from segment start
@@ -165,9 +167,16 @@ impl EditorState {
             line += 1;
         }
         let status = self.status_line(w);
-        out.push_str(&format!("\x1b[{};1H\x1b[0;7m{status}\x1b[0m", h + 1));
-        if matches!(self.mode, Mode::Edit) {
-            out.push_str(&format!("\x1b[{};{}H\x1b[?25h", cursor_xy.0 + 1, cursor_xy.1.min(w.saturating_sub(1)) + 1));
+        out.push_str(&format!("\x1b[{};1H\x1b[0;7m{status}\x1b[0m", h + 1 + off));
+        if off == 1 {
+            out.push_str(&self.paint_menu_bar(w));
+            out.push_str(&self.paint_dropdown(w, h + 2));
+            if self.menu.dialog {
+                out.push_str(&self.paint_keys_dialog(w, h + 2));
+            }
+        }
+        if matches!(self.mode, Mode::Edit) && !self.menu.is_active() {
+            out.push_str(&format!("\x1b[{};{}H\x1b[?25h", cursor_xy.0 + 1 + off, cursor_xy.1.min(w.saturating_sub(1)) + 1));
         }
         out
     }
@@ -175,10 +184,11 @@ impl EditorState {
     /// Buffer position under grid cell (`row`, `col`); `None` below the text area.
     fn pos_at(&self, row: u16, col: u16) -> Option<super::buffer::Pos> {
         let (h, w) = self.text_area();
-        if row as usize >= h {
+        let row = (row as usize).checked_sub(self.bar_rows())?;
+        if row >= h {
             return None;
         }
-        let mut remaining = row as usize;
+        let mut remaining = row;
         let mut line = self.top;
         while line < self.buf.line_count() {
             let segs = segments(self.buf.line(line), w, self.wrap);
@@ -204,6 +214,9 @@ impl EditorState {
 
     /// Mouse press: moves the cursor to the clicked cell and clears the selection.
     pub fn click(&mut self, row: u16, col: u16) {
+        if self.menu_click(row, col) {
+            return;
+        }
         if let Some(p) = self.pos_at(row, col) {
             self.buf.anchor = None;
             self.buf.cursor = p;

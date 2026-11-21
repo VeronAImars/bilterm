@@ -116,7 +116,7 @@ impl EditorState {
         self.go(to, extend, false);
     }
 
-    fn copy(&mut self) {
+    pub(crate) fn copy(&mut self) {
         if let Some(t) = self.buf.selected_text() {
             crate::clipboard::set_system_clipboard(&t);
             self.message = Some(format!("copied {} chars", t.chars().count()));
@@ -255,7 +255,7 @@ impl EditorState {
         true
     }
 
-    fn find_report(&mut self, forward: bool) {
+    pub(crate) fn find_report(&mut self, forward: bool) {
         if self.search.is_empty() {
             self.message = Some("no search text (Ctrl+F)".into());
         } else if !self.find(&self.search.clone(), forward) {
