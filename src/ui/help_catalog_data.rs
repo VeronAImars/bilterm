@@ -97,6 +97,7 @@ pub const HELP_LINES: &[(&str, &str)] = &[
     (":drawer add pane [h|v]", "Navigator drawer: split the selected pane horizontally or vertically (key A; also :navigator add pane)"),
     (":drawer menu [close|pick <n>]", "Navigator drawer: open the right-click menu on the selected row, close it, or run entry n (mouse: right-click a row)"),
     (":drawer comms", "Open the agent traffic window on the selected row's conversation (keys o / Enter on the glyph)"),
+    (":drawer drag-cancel", "Cancel an in-progress drawer row drag-and-drop (Esc); nothing was rearranged"),
     (":drawer comms-focus on|off", "Navigator drawer: focus or release the comms glyph of the selected row (keys Right / Left)"),
     (":navigator add window [session]", "Navigator tree: add a window to the selected (or named) session (alias of :drawer add window)"),
     (":navigator add pane [h|v]", "Navigator tree: split the selected pane (alias of :drawer add pane)"),

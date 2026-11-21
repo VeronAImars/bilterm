@@ -719,6 +719,9 @@ pub(super) fn handle_drawer_mouse_event(
         wm.step_scale(PanelTarget::Drawer, delta);
         return Some(AppAction::Handled);
     }
+    if let Some(a) = super::drawer_drag::handle_drawer_row_drag(wm, &mouse, workspace_area) {
+        return Some(a);
+    }
     match mouse.kind {
         MouseEventKind::Moved => {
             let row_changed = super::drawer_hover::apply_drawer_hover(wm, workspace_area, mouse.column, mouse.row);

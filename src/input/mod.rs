@@ -12,6 +12,7 @@ pub mod command_window;
 pub mod command_window_keys;
 pub mod copy_mode_keys;
 pub mod drawer_hover;
+mod drawer_drag;
 pub mod drawer_navigator;
 pub mod encode;
 pub mod find_modal;
@@ -704,6 +705,9 @@ pub fn handle_paste_event(pane: &mut CompositePane, pasted_text: &str) -> Result
 pub fn handle_wm_key_event(wm: &mut WindowManager, raw_key: KeyEvent) -> Result<AppAction> {
     wm.reset_cursor_blink();
     let key = normalize_macos_option_key(raw_key, wm.config().macos_option_as_alt, &wm.key_env());
+    if key.code == KeyCode::Esc && drawer_drag::cancel_drag_on_esc(wm) {
+        return Ok(AppAction::Handled);
+    }
 
     // Global emergency quit: Ctrl+Q
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {

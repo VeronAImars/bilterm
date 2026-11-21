@@ -240,6 +240,8 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":session move down", "Alt+Down, J (Drawer)", "Move selected session down in the session list"),
     (":window reorder up", "Alt+Up, K (Drawer)", "Move selected window up within its session (also down|top|bottom|N)"),
     (":window reorder down", "Alt+Down, J (Drawer)", "Move selected window down within its session"),
+    (":drawer drag-cancel", "Esc (during a drawer drag)", "Cancel an in-progress drawer drag-and-drop"),
+    (":session reorder <names...>", "Drag a session row (Drawer)", "Set the session order; drag a session/window row onto another row to reorder or move it, Esc cancels"),
     (":session save default", "—", "Save layout, shell, running software/commands & CWD per pane to TOML"),
     (":session restore default", "—", "Restore saved layout, shell, CWD & auto-relaunch running commands"),
     (":session processes", "—", "Toggle auto-relaunch of saved running software/commands on session restore"),

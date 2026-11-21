@@ -465,7 +465,7 @@ pub fn render_workspace_drawer(
                         .add_modifier(Modifier::BOLD),
                     _ => base_style,
                 };
-                let mark = RowMark::of(row_idx, selected, hover);
+                let mark = RowMark::with_drop(row_idx, selected, hover, drawer.drop_target_row());
                 if mark != RowMark::Plain {
                     row_style = mark_style(row_style, palette, bar, mark);
                     fill_rect(buf, Rect::new(inner.x, y, row_text_w, 1), row_style);
@@ -599,7 +599,7 @@ pub fn render_workspace_drawer(
         {
             let y = inner.y + 1 + vis_idx as u16;
             let mut style = base_style;
-            let mark = RowMark::of(row_idx, selected, drawer.hover_row);
+            let mark = RowMark::with_drop(row_idx, selected, drawer.hover_row, drawer.drop_target_row());
             if mark != RowMark::Plain {
                 style = mark_style(style, palette, is_modern, mark);
                 fill_rect(buf, Rect::new(inner.x, y, inner.width, 1), style);

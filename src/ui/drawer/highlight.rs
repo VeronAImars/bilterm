@@ -21,6 +21,8 @@ pub enum RowMark {
     Plain,
     Hover,
     Selected,
+    /// Row a drag-and-drop would drop onto (the drop indicator).
+    Drop,
 }
 
 impl RowMark {
@@ -33,6 +35,11 @@ impl RowMark {
         } else {
             Self::Plain
         }
+    }
+
+    /// The same, but the drag-and-drop target row (`drop`) wins over selection and hover.
+    pub fn with_drop(row: usize, selected: usize, hover: Option<usize>, drop: Option<usize>) -> Self {
+        if drop == Some(row) { Self::Drop } else { Self::of(row, selected, hover) }
     }
 }
 
@@ -54,6 +61,7 @@ pub fn mark_style(style: Style, palette: &ThemePalette, is_modern: bool, mark: R
             .bg(selection_bg(palette))
             .add_modifier(Modifier::BOLD),
         RowMark::Selected => style.add_modifier(Modifier::REVERSED),
+        RowMark::Drop => style.add_modifier(Modifier::REVERSED | Modifier::UNDERLINED | Modifier::BOLD),
         RowMark::Hover => {
             let tint = blend(palette.window_frame_bg, palette.active_border_fg, 14);
             let style = if tint != palette.window_frame_bg { style.bg(tint) } else { style };
