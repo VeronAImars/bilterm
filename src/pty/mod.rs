@@ -1,4 +1,10 @@
 mod exit_report;
+#[cfg(unix)]
+pub mod fdpass;
+#[cfg(unix)]
+pub mod handover;
+#[cfg(unix)]
+mod reader;
 pub mod line_discipline;
 pub mod shell_integration;
 pub mod wake;
@@ -7,6 +13,7 @@ pub mod writer;
 pub use line_discipline::LineDisciplineState;
 
 use std::collections::BTreeMap;
+#[cfg(not(unix))]
 use std::io::Read;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -152,6 +159,22 @@ pub struct PtySession {
     traffic: crate::traffic::TrafficTap,
     #[cfg(unix)]
     master_fd: Option<std::os::fd::RawFd>,
+    /// Pollable reader that can be stopped without stealing bytes (`H1.2`).
+    #[cfg(unix)]
+    reader: Option<ReaderCtl>,
+    /// Master owned directly (adopted session); `None` when `master` (portable-pty) owns it.
+    #[cfg(unix)]
+    adopted_fd: Option<std::os::fd::OwnedFd>,
+    /// The child and master were handed over by `release()`; `Drop` must not touch them.
+    #[cfg(unix)]
+    released: bool,
+}
+
+/// What a stopped reader needs to be restarted.
+#[cfg(unix)]
+struct ReaderCtl {
+    poll: reader::PollReader,
+    tx: mpsc::Sender<PtyEvent>,
 }
 
 impl PtySession {
@@ -196,10 +219,6 @@ impl PtySession {
         #[cfg(unix)]
         let master_fd = pair.master.as_raw_fd();
 
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| BiltermError::Pty(format!("try_clone_reader failed: {e}")))?;
         let writer = pair
             .master
             .take_writer()
@@ -207,37 +226,22 @@ impl PtySession {
 
         let (tx, rx) = mpsc::channel(32);
         let traffic = crate::traffic::ChannelCounters::new();
-        let reader_cell = traffic.clone();
-        thread::Builder::new()
-            .name("bilterm-pty-reader".to_string())
-            .spawn(move || {
-                let mut buf = [0u8; 8192];
-                loop {
-                    match reader.read(&mut buf) {
-                        Ok(0) => {
-                            let _ = tx.blocking_send(PtyEvent::Exited(None));
-                            break;
-                        }
-                        Ok(n) => {
-                            reader_cell.rx(n);
-                            if tx
-                                .blocking_send(PtyEvent::Output(buf[..n].to_vec()))
-                                .is_err()
-                            {
-                                break;
-                            }
-                            // Wake the UI loop now; it must not wait for its next timer tick.
-                            wake::notify_output();
-                        }
-                        Err(_) => {
-                            let _ = tx.blocking_send(PtyEvent::Exited(None));
-                            break;
-                        }
-                    }
-                }
-                wake::notify_output();
-            })
-            .map_err(BiltermError::Io)?;
+        #[cfg(unix)]
+        let reader = {
+            let fd = master_fd.ok_or_else(|| BiltermError::Pty("no master fd".to_string()))?;
+            let own = reader::dup_cloexec(fd).map_err(BiltermError::Io)?;
+            let poll = reader::PollReader::start(own, tx.clone(), traffic.clone())
+                .map_err(BiltermError::Io)?;
+            Some(ReaderCtl { poll, tx })
+        };
+        #[cfg(not(unix))]
+        {
+            let reader = pair
+                .master
+                .try_clone_reader()
+                .map_err(|e| BiltermError::Pty(format!("try_clone_reader failed: {e}")))?;
+            spawn_blocking_reader(reader, tx, traffic.clone())?;
+        }
 
         let writer = writer::PtyWriter::spawn(writer, traffic.clone()).map_err(BiltermError::Io)?;
 
@@ -253,6 +257,12 @@ impl PtySession {
             traffic,
             #[cfg(unix)]
             master_fd,
+            #[cfg(unix)]
+            reader,
+            #[cfg(unix)]
+            adopted_fd: None,
+            #[cfg(unix)]
+            released: false,
         })
     }
 
@@ -315,6 +325,11 @@ impl PtySession {
                     pixel_width: 0,
                     pixel_height: 0,
                 })
+                .map_err(|e| BiltermError::Pty(format!("PTY resize failed: {e}")))?;
+        }
+        #[cfg(unix)]
+        if let Some(fd) = self.adopted_fd.as_ref() {
+            handover::set_winsize(fd, clamped_rows, clamped_cols)
                 .map_err(|e| BiltermError::Pty(format!("PTY resize failed: {e}")))?;
         }
 
@@ -392,6 +407,39 @@ impl PtySession {
     }
 }
 
+/// Windows (ConPTY) reader: a plain blocking read loop; handover is unix-only.
+#[cfg(not(unix))]
+fn spawn_blocking_reader(
+    mut reader: Box<dyn Read + Send>,
+    tx: mpsc::Sender<PtyEvent>,
+    traffic: crate::traffic::TrafficTap,
+) -> Result<()> {
+    thread::Builder::new()
+        .name("bilterm-pty-reader".to_string())
+        .spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => {
+                        let _ = tx.blocking_send(PtyEvent::Exited(None));
+                        break;
+                    }
+                    Ok(n) => {
+                        traffic.rx(n);
+                        if tx.blocking_send(PtyEvent::Output(buf[..n].to_vec())).is_err() {
+                            break;
+                        }
+                        // Wake the UI loop now; it must not wait for its next timer tick.
+                        wake::notify_output();
+                    }
+                }
+            }
+            wake::notify_output();
+        })
+        .map_err(BiltermError::Io)?;
+    Ok(())
+}
+
 /// How long the reaper lets already-accepted input reach the child before killing it.
 const CLOSE_FLUSH_PATIENCE: std::time::Duration = std::time::Duration::from_millis(250);
 
@@ -422,6 +470,11 @@ fn hang_up_with_grace(child: &mut Box<dyn Child + Send + Sync>) {
 
 impl Drop for PtySession {
     fn drop(&mut self) {
+        #[cfg(unix)]
+        if self.released {
+            self.writer.close();
+            return;
+        }
         self.output_rx.close();
         while self.output_rx.try_recv().is_ok() {}
         let writer = self.writer.clone();
