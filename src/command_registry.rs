@@ -216,7 +216,6 @@ pub(crate) const PALETTE_EXCLUSIONS: &[(&str, &str)] = &[
     (":layout switch", "entity-id"),
     (":profile delete", "entity-id"),
     (":session switch", "entity-id"),
-    (":session reorder", "entity-id"),
     (":session delete", "entity-id"),
     (":session branch", "entity-id"),
     (":session graft", "entity-id"),

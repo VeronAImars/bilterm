@@ -814,7 +814,7 @@ pub fn render_navigator_drawer(
         {
             style = style.fg(tokens.accent).add_modifier(Modifier::BOLD);
         }
-        let mark = RowMark::of(row_idx, selected, hover);
+        let mark = RowMark::with_drop(row_idx, selected, hover, wm.drawer().drop_target_row());
         if mark != RowMark::Plain {
             style = mark_style(style, palette, is_modern, mark);
             fill_rect(buf, Rect::new(inner.x, y, inner.width, height), style);

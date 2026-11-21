@@ -870,6 +870,7 @@ fn parse_drawer_nav(parts: &[&str]) -> Option<Result<ColonCommand, String>> {
             _ => return Some(Err("Usage: :drawer rename [name]".to_string())),
         },
         "close-pane" => Op::Close,
+        "drag-cancel" if parts.len() == 2 => Op::DragCancel,
         "comms" if parts.len() == 2 => Op::OpenComms,
         "comms-focus" => match (parts.get(2).copied(), parts.len()) {
             (Some("on"), 3) => Op::CommsFocus(true),

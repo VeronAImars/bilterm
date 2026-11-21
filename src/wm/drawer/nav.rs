@@ -45,6 +45,8 @@ pub enum DrawerNavOp {
     Prev,
     /// Mouse pointer moved over row `Some(i)` (or off every row: `None`); only changes the hover highlight.
     Hover(Option<usize>),
+    /// Cancel an in-progress row drag-and-drop (`Esc`); nothing was rearranged.
+    DragCancel,
     /// Select a row by 0-based index (clamped); the operation a mouse click applies.
     Row(usize),
     /// Move the selection by `n` rows (clamped).
@@ -135,7 +137,7 @@ impl WindowManager {
         // to it); any other navigation disarms it.
         if !matches!(
             op,
-            DrawerNavOp::Close | DrawerNavOp::Hover(_) | DrawerNavOp::MenuOpen(_) | DrawerNavOp::MenuClose | DrawerNavOp::MenuPick(_)
+            DrawerNavOp::Close | DrawerNavOp::Hover(_) | DrawerNavOp::DragCancel | DrawerNavOp::MenuOpen(_) | DrawerNavOp::MenuClose | DrawerNavOp::MenuPick(_)
         ) {
             self.drawer.close_armed = None;
         }
@@ -161,6 +163,7 @@ impl WindowManager {
                 self.drawer_select_prev();
                 true
             }
+            DrawerNavOp::DragCancel => self.drawer_drag_cancel(),
             DrawerNavOp::Hover(row) => {
                 let changed = self.drawer.hover_row != row;
                 self.drawer.hover_row = row;
