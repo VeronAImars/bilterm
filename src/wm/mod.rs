@@ -4,8 +4,11 @@ pub mod resilience;
 pub mod swarm_cmd;
 mod agent_mail_apply;
 pub mod pane_mail;
+pub mod pane_origin;
 #[cfg(test)]
 mod pane_mail_tests;
+#[cfg(test)]
+mod pane_origin_tests;
 mod session_order;
 mod recording_cap;
 pub mod agent_state;

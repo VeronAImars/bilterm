@@ -124,6 +124,7 @@ fn assert_action_reachable(action: &Action) {
         Action::SshTmuxConnect { .. } => Some(":ssh-tmux user@host main"),
         Action::RemoteAdd { .. } => Some(":remote add web1 user@host prod"),
         Action::RemoteList => Some(":remote list"),
+        Action::RemoteStatus { .. } => Some(":remote status"),
         Action::RemoteExec { .. } => Some(":remote exec @all uptime"),
         Action::RemoteDisconnect(_) => Some(":remote disconnect web1"),
         Action::RemoteLink(_) => Some(":ssh-tmux info"),
@@ -417,6 +418,7 @@ fn every_action_is_reachable_from_keymap_colon_or_rpc() {
             tags: vec!["prod".to_string()],
         },
         Action::RemoteList,
+        Action::RemoteStatus { pane: None },
         Action::RemoteExec {
             selector: "@all".to_string(),
             command: "uptime".to_string(),

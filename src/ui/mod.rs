@@ -608,6 +608,10 @@ impl Widget for WorkspaceWidget<'_> {
                     Some(v) => pane_mail_ui::with_badge(&frame_title, cfg, &v),
                     None => frame_title,
                 };
+                let frame_title = match self.wm.pane_origin(id).badge(cfg) {
+                    Some(b) => crate::wm::pane_origin::with_badge(&frame_title, &b),
+                    None => frame_title,
+                };
                 let mut frame_palette = pane_palette.clone();
                 if non_legacy && cfg.appearance.focus_ring {
                     frame_palette.active_border_fg = design::DesignTokens::from_palette(&pane_palette).accent;
