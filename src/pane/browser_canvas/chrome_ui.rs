@@ -168,7 +168,7 @@ pub fn render_browser_nav_bar(buf: &mut Buffer, nav_rect: Rect, state: &BrowserC
         return;
     }
     if let Some(edit) = state.url_edit() {
-        let edit_style = Style::default().fg(Color::Black).bg(Color::Rgb(250, 250, 250));
+        let edit_style = Style::default().fg(Color::White).bg(Color::Rgb(44, 56, 84)).add_modifier(Modifier::UNDERLINED);
         for col in url.x..url.x + url.width {
             buf[(col, y)].set_char(' ').set_style(edit_style);
         }
@@ -315,6 +315,22 @@ mod tests {
         assert!(!url_zone_text(&s).contains('🔒'));
         assert!(s.navigate("javascript:alert(1)").is_err());
         assert!(url_zone_text(&s).contains("⚠ blocked URL"), "{}", url_zone_text(&s));
+    }
+
+    #[test]
+    fn url_edit_field_has_no_light_background() {
+        let mut state = BrowserCanvasState::new_synthetic("test://page", 320, 200);
+        state.begin_url_edit();
+        let rect = Rect::new(0, 0, 70, 1);
+        let mut buf = Buffer::empty(rect);
+        render_browser_nav_bar(&mut buf, rect, &state, true);
+        for x in 0..rect.width {
+            let c = &buf[(x, 0)];
+            if let Color::Rgb(r, g, b) = c.bg {
+                assert!(u16::from(r) + u16::from(g) + u16::from(b) < 300, "light bg at col {x}: {:?}", c.bg);
+            }
+            assert!(c.symbol().chars().all(|ch| !ch.is_control()), "control char in cell {x}");
+        }
     }
 
     #[test]

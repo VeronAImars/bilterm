@@ -209,6 +209,15 @@ pub fn set_device_metrics(css_width: u32, css_height: u32, scale: f64) -> Cmd {
     .with_class(Class::Viewport)
 }
 
+/// Asks pages for their dark colour scheme (`prefers-color-scheme: dark`).
+pub fn prefer_dark_scheme() -> Cmd {
+    Cmd::page(
+        "Emulation.setEmulatedMedia",
+        json!({ "features": [{ "name": "prefers-color-scheme", "value": "dark" }] }),
+    )
+    .with_class(Class::Internal)
+}
+
 pub fn start_screencast(max_width: u32, max_height: u32, quality: u8) -> Cmd {
     Cmd::page(
         "Page.startScreencast",

@@ -93,6 +93,7 @@ use crate::ui::modals::{
 use crate::ui::occlusion::occlude_rect;
 use crate::ui::design::DisplayMode;
 use crate::ui::status_bar::{render_dos_fkey_bar, render_floating_prompt};
+use crate::ui::contrast::resolve_ratatui_color_rgb;
 use crate::ui::theme::ThemePalette;
 use crate::vt::snapshot::CellSnapshot;
 use crate::wm::{WindowManager, WorkspaceLayoutMode, inset_window_frame};
@@ -176,14 +177,16 @@ impl Widget for CompositePaneWidget<'_> {
             && canvas.height > 1
         {
             let body = Rect::new(canvas.x, canvas.y + 1, canvas.width, canvas.height - 1);
-            rasterize_frame_halfblocks(buf, body, browser.cached_frame());
+            let page_bg = resolve_ratatui_color_rgb(palette.window_frame_bg, cfg.theme, (18, 24, 36));
+            let page_fg = resolve_ratatui_color_rgb(palette.text_fg.unwrap_or(palette.title_fg), cfg.theme, (230, 235, 240));
+            rasterize_frame_halfblocks(buf, body, browser.cached_frame(), Some((page_bg, page_fg)));
             crate::pane::browser_canvas::render_browser_status_overlay(buf, body, browser);
         }
         if let Some(video) = self.pane.video_canvas()
             && canvas.height > 1
         {
             let body = Rect::new(canvas.x, canvas.y, canvas.width, canvas.height - 1);
-            rasterize_frame_halfblocks(buf, body, video.cached_frame());
+            rasterize_frame_halfblocks(buf, body, video.cached_frame(), None);
         }
         if let Some(browser) = self.pane.browser_canvas() {
             crate::pane::browser_canvas::render_browser_nav_bar(
@@ -251,11 +254,15 @@ impl Widget for CompositePaneWidget<'_> {
     }
 }
 
+/// Theme `(background, foreground)` RGB a light browser page is remapped onto.
+type PageTheme = ((u8, u8, u8), (u8, u8, u8));
+
 /// Rasterizes an RGBA frame into `area` using TrueColor `▀` half-blocks (2 pixel rows per cell).
 fn rasterize_frame_halfblocks(
     buf: &mut Buffer,
     area: Rect,
     frame: Option<&crate::pane::browser_canvas::MediaRgbaFrame>,
+    theme: Option<PageTheme>,
 ) {
     let Some(f) = frame else { return };
     let (fw, fh) = (f.width_px as usize, f.height_px as usize);
@@ -263,6 +270,8 @@ fn rasterize_frame_halfblocks(
         return;
     }
     let (cols, prows) = (area.width as usize, area.height as usize * 2);
+    // A light page (mean luma > 0.5) is remapped onto the theme so it never glares.
+    let remap = theme.filter(|_| frame_sample::mean_luma(&f.rgba, fw, fh) > 0.5);
     // Average the source block under each half-cell: nearest-neighbour sampling drops text.
     let px = |cx: usize, py: usize| {
         let [r, g, b] = frame_sample::average_block(
@@ -274,6 +283,10 @@ fn rasterize_frame_halfblocks(
             (cx + 1) * fw / cols,
             (py + 1) * fh / prows,
         );
+        let [r, g, b] = match remap {
+            Some((bg, fg)) => frame_sample::themed_pixel([r, g, b], bg, fg),
+            None => [r, g, b],
+        };
         Color::Rgb(r, g, b)
     };
     for r in 0..area.height as usize {
@@ -831,6 +844,38 @@ pub fn cell_to_ratatui_style(cell: &CellSnapshot) -> Style {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn light_browser_frame_is_remapped_onto_theme_colours() {
+        use crate::pane::browser_canvas::MediaRgbaFrame;
+        let (w, h) = (40usize, 40usize);
+        // White page with a black text stripe.
+        let mut rgba = vec![255u8; w * h * 4];
+        for y in 10..14 {
+            for x in 0..w {
+                let i = (y * w + x) * 4;
+                rgba[i..i + 3].copy_from_slice(&[0, 0, 0]);
+            }
+        }
+        let frame = MediaRgbaFrame::new(1, w as u16, h as u16, 0, rgba);
+        let area = Rect::new(0, 0, 10, 10);
+        let (bg, fg) = ((12, 18, 30), (210, 220, 230));
+        let mut buf = Buffer::empty(area);
+        rasterize_frame_halfblocks(&mut buf, area, Some(&frame), Some((bg, fg)));
+        let mut saw_bg = false;
+        for y in 0..area.height {
+            for x in 0..area.width {
+                let c = &buf[(x, y)];
+                assert!(c.symbol().chars().all(|ch| !ch.is_control() && !ch.is_whitespace() || ch == ' '), "control char");
+                for col in [c.fg, c.bg] {
+                    let Color::Rgb(r, g, b) = col else { panic!("non-rgb cell") };
+                    assert!(!(r > 200 && g > 200 && b > 200 && (r, g, b) != fg), "raw light pixel {r},{g},{b}");
+                    saw_bg |= (r, g, b) == bg;
+                }
+            }
+        }
+        assert!(saw_bg, "page background must be the theme background");
+    }
+
     use super::*;
 
     #[test]
