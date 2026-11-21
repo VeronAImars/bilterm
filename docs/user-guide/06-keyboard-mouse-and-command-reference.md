@@ -222,6 +222,8 @@ The previous defaults stay available on the `legacy` profile and, for one releas
 | `Ctrl+Alt+Right` / `Alt+Shift+Right` | `<L> Right` / `<L> >` | `:resize right [N]` | Grow focused pane width (`+4` cols) or move split divider right |
 | `Ctrl+Alt+Up` / `Alt+Shift+Up` | — | `:resize up [N]` | Shrink focused pane height (`-2` rows) or move horizontal split divider up |
 | `Ctrl+Alt+Down` / `Alt+Shift+Down` | — | `:resize down [N]` | Grow focused pane height (`+2` rows) or move horizontal split divider down |
+| `Ctrl+X &` (alias `Ctrl+Alt+D`) | — | `:find-prefill` | Session find prefill on the prompt; the leader form works where GNOME/KDE swallow `Ctrl+Alt+D` (show desktop) |
+| `Ctrl+X _` (alias `Ctrl+Alt+E`) | — | `:scratch [name]` | Open or focus the scratchpad editor; the leader form works in terminals that do not deliver `Ctrl+Alt+E` |
 | `Ctrl+Shift+Left` / `Ctrl+Alt+h` | — | `:move left [N]` | Move floating Z-Stack window left (`-4` cols) or swap tiled pane |
 | `Ctrl+Shift+Right` / `Ctrl+Alt+l` | — | `:move right [N]` | Move floating Z-Stack window right (`+4` cols) or swap tiled pane |
 | `Ctrl+Shift+Up` / `Ctrl+Alt+k` | `<L> K` | `:move up [N]` | Move floating Z-Stack window up (`-2` rows) |

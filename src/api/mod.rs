@@ -10,6 +10,7 @@ mod agent_wait;
 mod host_tick;
 mod rpc_attach;
 mod rpc_pane_mail;
+mod rpc_remote_status;
 pub mod agents_hud_json;
 pub mod client_view;
 pub mod http;

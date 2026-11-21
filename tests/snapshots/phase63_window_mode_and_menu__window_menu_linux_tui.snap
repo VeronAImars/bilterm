@@ -1,10 +1,9 @@
 ---
 source: tests/phase63_window_mode_and_menu.rs
-assertion_line: 603
 expression: "menu_overlay(linux_tui(), \"Window\")"
 ---
  ≡ System  Window  Prompt  View  Theme  Tmux  Help  Daemon  Web
-┌ [1] PANE╔ Window ════════════════════[_][□][X]═╗┌ [2] PANE #2 [_][□][X]─┐╔ [3] PANE #3 [_][□][X]═╗
+┌⠿[1] PANE╔ Window ════════════════════[_][□][X]═╗┌⠿[2] PANE #2 [_][□][X]─┐╔⠿[3] PANE #3 [_][□][X]═╗
 │ ┌╣ BILTE║► Split Horizontal            Ctrl+X h║│ ┌╣ BILTERM 3270 // C┐ │║ ╔╣ BILTERM 3270 // C╗ ║
 │ │==>    ║  Split Vertical              Ctrl+X V║│ │==>                │ │║ ║==>                ║ ║
 │ └───────║  Zoom Toggle                 Ctrl+X z║│ └───────────────────┘ │║ ╚═══════════════════╝ ║

@@ -101,6 +101,10 @@ pub fn chrome_args(profile_dir: &Path, width_px: u32, height_px: u32) -> Vec<Str
         format!("--user-data-dir={}", profile_dir.to_string_lossy()),
         format!("--window-size={width_px},{height_px}"),
         "--hide-scrollbars".to_string(),
+        // Dark pages by default: no glaring white backgrounds in the pane (the pane also remaps
+        // any light frame onto the active theme palette when rasterising).
+        "--force-dark-mode".to_string(),
+        "--enable-features=WebContentsForceDark".to_string(),
         "--mute-audio".to_string(),
         "--no-first-run".to_string(),
         "--no-default-browser-check".to_string(),
@@ -309,6 +313,7 @@ mod tests {
         assert!(args.iter().any(|a| a == "--headless=new"));
         assert!(!args.iter().any(|a| a.contains("no-sandbox") || a.contains("remote-debugging-port")));
         assert_eq!(args.last().map(String::as_str), Some("about:blank"));
+        assert!(args.iter().any(|a| a == "--force-dark-mode"), "pages must not default to a light background");
     }
 
     #[test]

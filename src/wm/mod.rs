@@ -4,8 +4,11 @@ pub mod resilience;
 pub mod swarm_cmd;
 mod agent_mail_apply;
 pub mod pane_mail;
+pub mod pane_origin;
 #[cfg(test)]
 mod pane_mail_tests;
+#[cfg(test)]
+mod pane_origin_tests;
 mod session_order;
 mod recording_cap;
 pub mod agent_state;
@@ -74,6 +77,8 @@ pub mod session_map;
 pub mod session_pack_layout;
 pub mod session_tree;
 pub mod split_tree;
+pub mod window_drag;
+pub mod window_drag_place;
 pub mod stt_ops;
 pub mod tmux_flow;
 pub mod tmux_io;
@@ -292,6 +297,10 @@ pub struct WindowManager {
     agents_demo: agents_demo::AgentsDemoState,
     /// Active mouse drag gesture for moving or resizing workspace windows/splits.
     pub(crate) wm_mouse_drag: Option<WmMouseDrag>,
+    /// Tiled window drag-and-drop in progress (drop-zone overlay; `wm/window_drag.rs`).
+    window_drag: Option<window_drag::WindowDragState>,
+    /// Pane whose title-bar drag grip the pointer rests on (hover highlight).
+    grip_hover: Option<PaneId>,
     /// Scale percentage at which `default_size` viewport was computed (`100` by default).
     pub(crate) viewport_scale_pct: u16,
     /// Font scale percentage for the side drawer and `:mcp` console (`100` = unchanged). GUI only (46-04d).
@@ -435,6 +444,8 @@ impl WindowManager {
             swarm_surface: swarm_surface::SwarmSurface::default(),
             agents_demo: agents_demo::AgentsDemoState::default(),
             wm_mouse_drag: None,
+            window_drag: None,
+            grip_hover: None,
             viewport_scale_pct: 100,
             drawer_scale_pct: 100,
             mcp_scale_pct: 100,

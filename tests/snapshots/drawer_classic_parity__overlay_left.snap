@@ -2,7 +2,7 @@
 source: tests/drawer_classic_parity.rs
 expression: text
 ---
-╔ SESSIONS [D:Left] [M:[_][□][X]:╗─────[_][□][X]─┐╔ [2] beta [#2] (Z:2/2) ═══════════════[_][□][X]═╗
+╔ SESSIONS [D:Left] [M:[_][□][X]:╗─────[_][□][X]─┐╔⠿[2] beta [#2] (Z:2/2) ═══════════════[_][□][X]═╗
 ║[D:Left] [M:Float] [P:OnDemand] ║──────[▲][▼]─┐ │║B╔╣ BILTERM 3270 // CMD [TOP] ╠════════[▲][▼]═╗ ║
 ║◈ SESSION [default]             ║             │ │║ ║==>                                         ║ ║
 ║╰─ WINDOW: TILED SPLITS         ║─────────────┘ │║ ╚════════════════════════════════════════════╝ ║
@@ -32,4 +32,4 @@ expression: text
 ║                                ║               │║                                                ║
 ║[+Win][+Sess] JK:Move <>:Par F7 ║X │ PIN:TOP │ ⌖│║3270-OIA│ ● READY │ INPUT: CMD BOX │ PIN:TOP │ ⌖║
 ╚════════════════════════════════◢───────────────◢╚════════════════════════════════════════════════◢
-style-digest: be024047dcb2c200
+style-digest: db2570da90a61dcf

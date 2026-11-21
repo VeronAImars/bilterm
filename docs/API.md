@@ -137,6 +137,7 @@ bilterm ctl -t ~/.bilterm.token 127.0.0.1:7370 workspace.status
 | `pane.send_keys` | `keys` (string or string array, req) | `{"status": "dispatched", "count": int}` | Inject synthetic key chords into active pane. |
 | `pane.mail_state` | `pane_id` (int) or `selector`; none = every pane with mail | `{"panes":[{"pane_id","unread","read","sender","age_ms"}],"unread":int}` | Pane-mail envelope state: set when another session, a tool (RPC/MCP/CLI `pane.send`, `pane.send_keys`, `find.send`), an attach client or agent mail messages a pane; local typing never sets it. Same as `:mail status`, `bilterm pane mail`, MCP `bilterm_agent_control` `action="pane_mail_state"`. `pane.list` and `workspace.status` carry the same object as `mail`. |
 | `pane.mail_ack` | `pane_id`/`selector` (default active pane) or `all` (bool) | `{"status":"acked","count":int,"panes":[...]}` | Marks pane mail read (closed envelope becomes open). Same as `:mail ack [pane\|all]`, `bilterm pane mail-ack`, MCP `action="pane_mail_ack"`. Config: `[ui] pane_mail_indicator`, `pane_mail_flash` (default true). |
+| `remote.status` | `pane_id` (int) or `selector`; none = every pane | `{"panes":[{"pane_id","remote":bool,"kind","host","tag"}],"remote_panes":int,"daemons":[{"name","host","kind"}]}` | Where each pane lives. `kind` is `local`, `ssh`, `tmux-link`, `attach-client`, `remote-daemon` or `other` (derived from `:ssh`/`:ssh-tmux` state; unknown is `local`). `tag` is the `[R:host]` text shown on the pane title (with a glyph in unicode packs), drawer and status line. Also the `remote` object on every `pane.list` / `workspace.status` pane and `remote_panes` in `workspace.status`. Same as `:remote status [pane]`, `bilterm pane remote`, MCP `bilterm_agent_control` `action="remote_status"`. |
 | `wm.command` | `command` (string, req) | `{"status": "handled", "command": str, "data": ...}` | Execute any `:colon` multiplexer command (e.g. `:split`, `:theme`, `:get`). |
 | `events.poll` | `drain` (bool, default true) | `{"events": [...]}` | Poll and drain queued workspace lifecycle and trigger events. |
 | `playbook.run` | `toml` (string, req) | Playbook completion report, passed flag, step count | Run an end-to-end declarative TOML automation script. |
@@ -819,6 +820,11 @@ Moves a window (composite pane) to a target session preserving its live PTY, scr
     }
   }
   ```
+
+#### `window.place`
+Places a window relative to another (the drop of a title-bar grip drag), or floats it. Also `:window place [id] swap|left|right|up|down <target>` / `:window place [id] float`, MCP `bilterm_window_manage` action `place`.
+- **Parameters**: `how` (string, required: `swap|left|right|up|down|float`), `target` (integer; required except for `float`), `window_id` (integer, optional, default active). Swap/split need the Tiled layout; `float` switches to Stacked with the window on top.
+- **Response**: `{"status": "ok", "window_id": 1, "how": "left"}`
 
 #### `window.rename`
 Renames a window (composite pane) with safe validation and deterministic deduplication (`SES-02`).

@@ -563,6 +563,14 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             wm.apply_lightcycle_op(op);
             false
         }
+        ColonCommand::DragZones(on) => {
+            wm.config_mut().appearance.drag_zones = Some(on);
+            wm.active_pane_mut().set_status_message(Some(format!(
+                "Drag drop zones: {} (outlines every drop target while dragging a window by its grip)",
+                if on { "on" } else { "off" }
+            )));
+            false
+        }
         ColonCommand::ChromeRing(on) => {
             wm.config_mut().appearance.focus_ring = on;
             wm.active_pane_mut()
@@ -978,6 +986,16 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             false
         }
         ColonCommand::AgentMail(op) => super::execute_agent_mail::execute_agent_mail_command(wm, op),
+        ColonCommand::RemoteStatus { pane } => {
+            match wm.remote_status_apply(pane) {
+                Ok(msg) => wm.active_pane_mut().set_status_message(Some(msg)),
+                Err(err) => {
+                    wm.record_automation_error(err.clone());
+                    wm.active_pane_mut().set_status_message(Some(format!("Remote status error: {err}")));
+                }
+            }
+            false
+        }
         ColonCommand::PaneMail(op) => super::execute_agent_mail::execute_pane_mail_command(wm, op),
         ColonCommand::FontsWindow(op) => {
             let msg = wm.fonts_window_apply(&op);

@@ -52,8 +52,13 @@ impl WindowManager {
     }
 
     /// Drops the drag state without doing anything. `true` when a drag was in progress.
+    /// Also cancels a window drag-and-drop in progress (`Esc` for both gestures).
     pub fn drawer_drag_cancel(&mut self) -> bool {
-        self.drawer.row_drag.take().is_some_and(|d| d.active)
+        let win = self.window_drag_cancel();
+        if win {
+            self.set_wm_mouse_drag(None);
+        }
+        self.drawer.row_drag.take().is_some_and(|d| d.active) || win
     }
 
     /// The Action a drop of `source` onto row `target` lowers to, `None` when it would change nothing.

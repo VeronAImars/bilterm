@@ -158,6 +158,11 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
                 _ => usage(),
             }
         }
+        "drag" => match (parts.get(1).copied(), parts.get(2).map(|s| s.to_ascii_lowercase()).as_deref()) {
+            (Some("zones"), Some("on" | "true" | "yes")) => Some(Ok(ColonCommand::DragZones(true))),
+            (Some("zones"), Some("off" | "false" | "no")) => Some(Ok(ColonCommand::DragZones(false))),
+            _ => Some(Err("Usage: :drag zones on|off".to_string())),
+        },
         "help" | "h" | "?" => Some(Ok(ColonCommand::HelpToggle)),
         "history" | "hist" => match parts.get(1).copied() {
             None | Some("popup" | "list" | "show") => Some(Ok(ColonCommand::HistoryPopupToggle)),
@@ -590,6 +595,11 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
             }))
         }
         "remote" | "fleet" | "herdr" => match parts.get(1).copied() {
+            Some("status") => match (parts.get(2), parts.len()) {
+                (None, _) => Some(Ok(ColonCommand::RemoteStatus { pane: None })),
+                (Some(p), 3) => Some(p.trim_start_matches('#').parse::<usize>().map(|p| ColonCommand::RemoteStatus { pane: Some(p) }).map_err(|_| format!("invalid pane '{p}'; Usage: :remote status [pane]"))),
+                _ => Some(Err("Usage: :remote status [pane]".to_string())),
+            },
             None | Some("list" | "ls") => Some(Ok(ColonCommand::RemoteList)),
             Some("add" | "register") => {
                 let (Some(&name), Some(&dest)) = (parts.get(2), parts.get(3)) else {

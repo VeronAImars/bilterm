@@ -116,7 +116,7 @@ impl AutomationControlPlane {
                         if tool_name == "bilterm_agent_mail" {
                             Err("missing or invalid 'action' parameter: send, broadcast, inbox, ack, list, name or wait".to_string())
                         } else if tool_name == "bilterm_window_manage" {
-                            Err("missing or invalid 'action' parameter: move, reorder, session_move, session_reorder, rename, rename_session, select, bulk, or undo".to_string())
+                            Err("missing or invalid 'action' parameter: move, reorder, place, session_move, session_reorder, rename, rename_session, select, bulk, or undo".to_string())
                         } else if tool_name == "bilterm_daemon" {
                             Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick, session_transfer, restart".to_string())
                         } else if tool_name == "bilterm_dos" {
@@ -128,7 +128,7 @@ impl AutomationControlPlane {
                         } else if tool_name == "bilterm_clipboard" {
                             Err("missing or invalid 'action' parameter: list, get, copy, paste, pin, delete, clear, or window".to_string())
                         } else if tool_name == "bilterm_agent_control" {
-                            Err("missing or invalid 'action' parameter: hud, replay, watchdog, approve, prompt, last_turn, wait, guide, pane_list, pane_split, pane_focus, pane_zoom, pane_send, pane_mail_state, pane_mail_ack, workspace_list, workspace_select, workspace_new or workspace_rename".to_string())
+                            Err("missing or invalid 'action' parameter: hud, replay, watchdog, approve, prompt, last_turn, wait, guide, pane_list, pane_split, pane_focus, pane_zoom, pane_send, pane_mail_state, pane_mail_ack, remote_status, workspace_list, workspace_select, workspace_new or workspace_rename".to_string())
                         } else if tool_name == "bilterm_keys" {
                             Err("invalid 'action' parameter: list, check, explain, profile, window_mode or menu_open".to_string())
                         } else if tool_name == "bilterm_traffic" {
@@ -301,12 +301,14 @@ impl AutomationControlPlane {
                 "bilterm_window_manage",
                 "Manage Bilterm windows and sessions: move, rename, select, bulk operations (close, move, rename-prefix, tile, pin), and undo.",
                 &[
-                    ("action", "string", "Operation: move | reorder | session_move | session_reorder | rename | rename_session | select | bulk | undo (required)"),
+                    ("action", "string", "Operation: move | reorder | place | session_move | session_reorder | rename | rename_session | select | bulk | undo (required)"),
                     ("window_id", "integer", "Optional window (pane) ID (defaults to active window)"),
                     ("target_session", "string", "Target session for move or bulk move"),
                     ("new_name", "string", "New window or session name"),
                     ("old_name", "string", "Old session name for rename_session"),
                     ("to", "string", "Position for reorder/session_move: up | down | top | bottom | 1..N"),
+                    ("how", "string", "Placement for place: swap | left | right | up | down | float (needs target except float)"),
+                    ("target", "integer", "Target window id for place (swap/left/right/up/down)"),
                     ("name", "string", "Session to move for session_move (default: active session)"),
                     ("names", "array", "Session names for session_reorder, in desired order"),
                     ("switch", "boolean", "Switch active session after window move"),
@@ -482,7 +484,7 @@ impl AutomationControlPlane {
                 "bilterm_agent_control",
                 "Live agent control: the Mission Control HUD snapshot (hud), per-turn replay (replay), the stall/loop watchdog (watchdog), answer or prompt an agent pane (approve, prompt), read its last turn, and pane/workspace control. Each action is the RPC method of the same name (agent.hud, agent.replay, agent.approve, pane.split, ...).",
                 &[
-                    ("action", "string", "Operation: hud | replay | watchdog | approve | prompt | last_turn | wait | guide | pane_list | pane_split | pane_focus | pane_zoom | pane_send | pane_mail_state | pane_mail_ack | workspace_list | workspace_select | workspace_new | workspace_rename (required)"),
+                    ("action", "string", "Operation: hud | replay | watchdog | approve | prompt | last_turn | wait | guide | pane_list | pane_split | pane_focus | pane_zoom | pane_send | pane_mail_state | pane_mail_ack | remote_status | workspace_list | workspace_select | workspace_new | workspace_rename (required)"),
                     ("selector", "string", "Pane selector (p3, @blocked, @focused, ...)"),
                     ("pane_id", "integer", "Pane id (alternative to selector)"),
                     ("op", "string", "Sub-operation for hud (open|close|toggle|next|prev|select|approve|prompt|diff|zoom) and replay (open|close|prev|next|first|last|turn|scroll); guide: get (default, returns the agent guide text) | inject (hand it to the selected pane, or target=all) | print"),
@@ -580,6 +582,7 @@ impl AutomationControlPlane {
             "pane_send" => "pane.send",
             "pane_mail_state" => "pane.mail_state",
             "pane_mail_ack" => "pane.mail_ack",
+            "remote_status" => "remote.status",
             "workspace_list" => "workspace.list",
             "workspace_select" => "workspace.select",
             "workspace_new" => "workspace.new",
@@ -726,6 +729,7 @@ impl AutomationControlPlane {
             "move" => Some("window.move"),
             "rename" => Some("window.rename"),
             "reorder" => Some("window.reorder"),
+            "place" => Some("window.place"),
             "session_move" => Some("session.move"),
             "session_reorder" => Some("session.reorder"),
             "rename_session" => Some("session.rename"),

@@ -53,6 +53,7 @@ pub const RPC_METHODS: &[&str] = &[
     "session.restore",
     "window.move",
     "window.reorder",
+    "window.place",
     "session.move",
     "session.reorder",
     "window.rename",
@@ -78,6 +79,7 @@ pub const RPC_METHODS: &[&str] = &[
     "pane.focus",
     "pane.zoom",
     "pane.send",
+    "remote.status",
     "pane.mail_state",
     "pane.mail_ack",
     "workspace.list",
@@ -476,6 +478,7 @@ impl AutomationControlPlane {
                 ),
                 ("read_only", JsonValue::Bool(pane.is_read_only())),
                 ("mail", self.wm.pane_mail_json(id, std::time::Instant::now())),
+                ("remote", self.wm.pane_origin(id).to_json()),
                 ("recording", JsonValue::Bool(pane.vt().is_recording())),
                 (
                     "notifications",
@@ -493,6 +496,7 @@ impl AutomationControlPlane {
                 "pane_count",
                 JsonValue::Number(self.wm.window_count() as i64),
             ),
+            ("remote_panes", JsonValue::Number(self.wm.remote_status_json(None).get("remote_panes").and_then(JsonValue::as_i64).unwrap_or(0))),
             ("host_ptys", JsonValue::Bool(self.wm.is_host())),
             ("session_empty", JsonValue::Bool(self.wm.is_session_empty())),
             (

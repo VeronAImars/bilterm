@@ -30,6 +30,37 @@ pub fn average_block(rgba: &[u8], fw: usize, fh: usize, x0: usize, y0: usize, x1
     [(r / n) as u8, (g / n) as u8, (b / n) as u8]
 }
 
+/// Relative luminance in `0.0..=1.0` (Rec. 709 weights on gamma-encoded values; cheap, monotonic).
+pub fn luma(rgb: [u8; 3]) -> f32 {
+    (0.2126 * f32::from(rgb[0]) + 0.7152 * f32::from(rgb[1]) + 0.0722 * f32::from(rgb[2])) / 255.0
+}
+
+/// Mean luma of a sparse grid over the frame (bounded cost).
+pub fn mean_luma(rgba: &[u8], fw: usize, fh: usize) -> f32 {
+    if fw == 0 || fh == 0 || rgba.len() < fw * fh * 4 {
+        return 0.0;
+    }
+    let (sx, sy) = ((fw / 32).max(1), (fh / 32).max(1));
+    let (mut sum, mut n) = (0.0f32, 0u32);
+    for y in (0..fh).step_by(sy) {
+        for x in (0..fw).step_by(sx) {
+            let i = (y * fw + x) * 4;
+            sum += luma([rgba[i], rgba[i + 1], rgba[i + 2]]);
+            n += 1;
+        }
+    }
+    sum / n.max(1) as f32
+}
+
+/// Maps a page pixel onto the theme: lightness is mapped between the theme background and
+/// foreground (inverted, so a light page becomes theme-bg with theme-fg text). Contrast carries the
+/// meaning, never hue, so red/green pages stay legible for colourblind readers.
+pub fn themed_pixel(rgb: [u8; 3], bg: (u8, u8, u8), fg: (u8, u8, u8)) -> [u8; 3] {
+    let t = 1.0 - luma(rgb);
+    let mix = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
+    [mix(bg.0, fg.0), mix(bg.1, fg.1), mix(bg.2, fg.2)]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,5 +89,15 @@ mod tests {
         let f = line_frame();
         assert_eq!(average_block(&f, 20, 20, 3, 0, 3, 0), [0, 0, 0]);
         assert_eq!(average_block(&f, 20, 20, 99, 99, 120, 120), [255, 255, 255]);
+    }
+
+    #[test]
+    fn white_page_maps_to_theme_bg_and_black_text_to_theme_fg() {
+        let (bg, fg) = ((10, 20, 30), (200, 210, 220));
+        assert_eq!(themed_pixel([255, 255, 255], bg, fg), [10, 20, 30]);
+        assert_eq!(themed_pixel([0, 0, 0], bg, fg), [200, 210, 220]);
+        // Equal-luma red and green collapse to the same output: no hue dependence.
+        let a = themed_pixel([180, 0, 0], bg, fg);
+        assert!(a[0] > bg.0 && a[0] < fg.0);
     }
 }
