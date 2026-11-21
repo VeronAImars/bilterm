@@ -316,6 +316,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":mode zen", "—", "Display mode: Zen, focused pane plus one input row (:mode standard to leave)"),
     (":panel scale 125", "—", "GUI only: scale drawer, :mcp and agents window text (75..200, 100 = normal)"),
     (":chrome title focused", "—", "Non-Legacy looks: title on the focused pane only (all|focused|none|auto)"),
+    (":drag zones on", "—", "Outline every drop zone while a window is dragged by its title-bar grip (on|off)"),
     (":chrome ring on", "—", "Non-Legacy looks: accent border on the focused pane (on|off)"),
     (":cycles", "—", "TRON light cycles racing around the active window border: show speed (:cycles on|off|1..60 cells/s)"),
     (":cycles on", "—", "TRON light cycles: animate the active window border"),

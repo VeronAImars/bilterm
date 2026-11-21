@@ -231,11 +231,13 @@ fn tiled_move_drag_over_another_pane_swaps_the_two_leaves() {
     let (lo, ro) = (rect_of(&wm, left), rect_of(&wm, right));
     // start the move with ALT, then drag without ALT while still tiled => swap branch
     fire(&mut wm, MouseEventKind::Down(MouseButton::Left), lo.x + 5, lo.y, KeyModifiers::ALT, AREA);
-    drag(&mut wm, ro.x + 3, ro.y + 3);
+    drag(&mut wm, ro.x + ro.width / 2, ro.y + ro.height / 2);
     assert_eq!(wm.layout_mode(), WorkspaceLayoutMode::Tiled);
+    assert_eq!(rect_of(&wm, left).x, lo.x, "nothing moves until the release");
+    fire(&mut wm, MouseEventKind::Up(MouseButton::Left), ro.x + ro.width / 2, ro.y + ro.height / 2, KeyModifiers::NONE, AREA);
     assert_eq!(rect_of(&wm, left).x, ro.x, "left pane now occupies the right slot");
     assert_eq!(rect_of(&wm, right).x, lo.x);
-    assert!(wm.active_pane().status_message().unwrap_or("").contains("Swapped Pane"));
+    assert!(wm.active_pane().status_message().unwrap_or("").contains("dropped"));
 }
 
 #[test]

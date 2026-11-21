@@ -563,6 +563,14 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             wm.apply_lightcycle_op(op);
             false
         }
+        ColonCommand::DragZones(on) => {
+            wm.config_mut().appearance.drag_zones = Some(on);
+            wm.active_pane_mut().set_status_message(Some(format!(
+                "Drag drop zones: {} (outlines every drop target while dragging a window by its grip)",
+                if on { "on" } else { "off" }
+            )));
+            false
+        }
         ColonCommand::ChromeRing(on) => {
             wm.config_mut().appearance.focus_ring = on;
             wm.active_pane_mut()

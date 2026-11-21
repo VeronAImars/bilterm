@@ -166,6 +166,8 @@ pub const HELP_LINES: &[(&str, &str)] = &[
     (":session rename [old] <new>", "Rename active or specified workspace session"),
     (":session move [name] <up|down|top|bottom|N>", "Reorder sessions in the session list & F7 Drawer (Alt+Up/Down, J/K in the drawer)"),
     (":session reorder <names...>", "Set the session order; unnamed sessions keep their relative order"),
+    (":window place [id] <swap|left|right|up|down> <target> | float", "Place a window by swap or split edge (the drop of a title-bar grip drag), or float it; RPC window.place"),
+    (":drag zones on|off", "Outline every drop zone (swap, split edge, drawer, float) while a window is dragged by its grip; Esc cancels"),
     (":window reorder [id] <up|down|top|bottom|N>", "Reorder a window within its session (drawer: Alt+Up/Down, J/K); RPC window.reorder, session.move"),
     (":session save [name]", "Save layout, shell, running software/commands & CWD per pane to <name>.toml"),
     (":session restore [name]", "Restore layout, shell, CWD & auto-relaunch saved commands from <name>.toml"),

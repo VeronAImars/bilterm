@@ -490,6 +490,7 @@ impl AutomationControlPlane {
             "window.move" => self.handle_window_move(params),
             "window.rename" => self.handle_window_rename(params),
             "window.reorder" => self.handle_window_reorder(params),
+            "window.place" => self.handle_window_place(params),
             "session.move" | "session.reorder" => self.handle_session_move(params),
             "session.rename" => self.handle_session_rename(params),
             "window.select" => self.handle_window_select(params),

@@ -90,3 +90,12 @@ Bilterm ships its own instructions for AI coding agents: how to inspect panes, r
 - Menu: **Help > Inject Agent Guide**. Palette: `:agent guide`. Shell: `bilterm agent guide SELECTOR` or `bilterm agent guide all`.
 - What reaches the pane is one line, not the guide. Bilterm writes the guide to `agent-guide.md` (mode `0600`) in its private runtime directory and sends `Read <path> for bilterm control instructions ...`. An agent program receives the line as a prompt (pasted, then Enter), the same way `bilterm agent prompt` delivers text. A pane at a shell prompt receives it as a `#` comment line, so nothing is executed.
 - Refused, with a status message and nothing written to the pane: a read-only pane (`:lock on`), a password prompt (`!ECHO LOCK`), and a shell pane that is busy running a command. With `all`, refused panes are listed in the result and the others still get the line.
+
+
+## Dragging windows: the grip and the drop zones
+
+Every window title bar carries a drag handle at its left end, before the title: `⠿` (Unicode), `≡` (CP437), `=` (ASCII). It changes glyph and goes bold + reversed when the pointer rests on it. Press and drag it in the Tiled layout (Alt+drag floats the window instead).
+
+While you drag, every valid drop zone is outlined (dashed or single lines; the zone under the pointer gets heavy lines, a reversed fill and a label). Zones: the centre of each other window (`SWAP #n`), its four edge bands (`SPLIT LEFT/RIGHT/TOP/BOTTOM`, with arrows), a drawer session row (`MOVE TO SESSION`), and the `FLOAT` tray in the bottom-right corner. The source window is marked `MOVING #n`. The bottom row always states what a release does, or `NO DROP HERE` when the pointer is over nothing valid. Nothing is rearranged until release; `Esc` cancels. Meaning is carried by line weight, glyphs and text, not colour alone.
+
+`:drag zones on|off` (config `[appearance] drag_zones`) toggles the outlines; the drop itself is `:window place` / RPC `window.place`.

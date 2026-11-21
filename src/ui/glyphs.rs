@@ -45,6 +45,13 @@ impl GlyphPack {
                 status_scroll_icon: "⇳",
                 output_len_icon: "≣",
                 cursor_pos_icon: "⌖",
+                drag_grip: "⠿",
+                drag_grip_hot: "⣿",
+                zone_idle: ["┄", "┆", "┌", "┐", "└", "┘"],
+                zone_hot: ["━", "┃", "┏", "┓", "┗", "┛"],
+                zone_arrows: ["◀", "▶", "▲", "▼"],
+                zone_ok: "✔",
+                zone_no: "✘",
             },
             Self::Cp437 => GlyphSet {
                 pin_top_bottom: "[▲][▼]",
@@ -62,6 +69,13 @@ impl GlyphPack {
                 status_scroll_icon: "↕",
                 output_len_icon: "≡",
                 cursor_pos_icon: "┼",
+                drag_grip: "≡",
+                drag_grip_hot: "☰",
+                zone_idle: ["─", "│", "┌", "┐", "└", "┘"],
+                zone_hot: ["▓", "▓", "▓", "▓", "▓", "▓"],
+                zone_arrows: ["◄", "►", "▲", "▼"],
+                zone_ok: "√",
+                zone_no: "×",
             },
             Self::NerdFont => GlyphSet {
                 pin_top_bottom: "[▲][▼]",
@@ -79,6 +93,13 @@ impl GlyphPack {
                 status_scroll_icon: "⇳",
                 output_len_icon: "☰",
                 cursor_pos_icon: "⌖",
+                drag_grip: "⠿",
+                drag_grip_hot: "⣿",
+                zone_idle: ["┄", "┆", "┌", "┐", "└", "┘"],
+                zone_hot: ["━", "┃", "┏", "┓", "┗", "┛"],
+                zone_arrows: ["◀", "▶", "▲", "▼"],
+                zone_ok: "✔",
+                zone_no: "✘",
             },
             Self::Ascii => GlyphSet {
                 pin_top_bottom: "[^][v]",
@@ -96,6 +117,13 @@ impl GlyphPack {
                 status_scroll_icon: "^",
                 output_len_icon: "=",
                 cursor_pos_icon: "@",
+                drag_grip: "=",
+                drag_grip_hot: "#",
+                zone_idle: [".", ":", ".", ".", ".", "."],
+                zone_hot: ["#", "#", "#", "#", "#", "#"],
+                zone_arrows: ["<", ">", "^", "v"],
+                zone_ok: "+",
+                zone_no: "x",
             },
         }
     }
@@ -119,6 +147,17 @@ pub struct GlyphSet {
     pub status_scroll_icon: &'static str,
     pub output_len_icon: &'static str,
     pub cursor_pos_icon: &'static str,
+    /// Title-bar drag handle (1 cell) and its hover/dragging form.
+    pub drag_grip: &'static str,
+    pub drag_grip_hot: &'static str,
+    /// Drop-zone border cells `[horizontal, vertical, top-left, top-right, bottom-left, bottom-right]`:
+    /// idle zones, and the zone under the pointer (a different line weight, never colour alone).
+    pub zone_idle: [&'static str; 6],
+    pub zone_hot: [&'static str; 6],
+    /// Edge arrows `[left, right, up, down]`, drop accepted / refused marks.
+    pub zone_arrows: [&'static str; 4],
+    pub zone_ok: &'static str,
+    pub zone_no: &'static str,
 }
 
 impl Default for GlyphSet {
@@ -138,6 +177,11 @@ impl GlyphSet {
             && UnicodeWidthStr::width(self.oia_separator) == 1
             && UnicodeWidthStr::width(self.prompt_prefix) == 4
             && UnicodeWidthStr::width(self.prompt_continuation) == 4
+            && UnicodeWidthStr::width(self.drag_grip) == 1
+            && UnicodeWidthStr::width(self.drag_grip_hot) == 1
+            && self.zone_idle.iter().chain(&self.zone_hot).chain(&self.zone_arrows).all(|g| UnicodeWidthStr::width(*g) == 1)
+            && UnicodeWidthStr::width(self.zone_ok) == 1
+            && UnicodeWidthStr::width(self.zone_no) == 1
     }
 }
 

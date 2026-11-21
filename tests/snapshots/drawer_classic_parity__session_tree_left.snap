@@ -2,7 +2,7 @@
 source: tests/drawer_classic_parity.rs
 expression: text
 ---
-╔ SESSIONS [D:Left] [M:[_][□][X]O╗┌ [1] alpha [#1] (Z:1/[_][□][X]─┐╔ [2] beta [#2] (Z:2/2[_][□][X]═╗
+╔ SESSIONS [D:Left] [M:[_][□][X]O╗┌⠿[1] alpha [#1] (Z:1/[_][□][X]─┐╔⠿[2] beta [#2] (Z:2/2[_][□][X]═╗
 ║[D:Left] [M:Push] [P:OnDemand] [║│A┌╣ BILTERM 3270 // CMD [TOP]┐ │║B╔╣ BILTERM 3270 // CMD [TOP]╗ ║
 ║◈ SESSION [default]             ║│ │==>                        │ │║ ║==>                        ║ ║
 ║╰─ WINDOW: TILED SPLITS         ║│ └───────────────────────────┘ │║ ╚═══════════════════════════╝ ║
@@ -32,4 +32,4 @@ expression: text
 ║                                ║│                               │║                               ║
 ║[+Win][+Sess] JK:Move <>:Par F7 ║│3270-OIA│ ● READY │ INPUT: CMD │║3270-OIA│ ● READY │ INPUT: CMD ║
 ╚════════════════════════════════◢└───────────────────────────────◢╚═══════════════════════════════◢
-style-digest: 129d1258d3f99782
+style-digest: cb50cd9b5020e4bc

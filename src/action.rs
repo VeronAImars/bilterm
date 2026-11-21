@@ -87,6 +87,8 @@ pub enum Action {
     ChromeTitle(Option<crate::ui::design::TitlePolicy>),
     /// Accent border on the focused pane (non-Legacy looks).
     ChromeRing(bool),
+    /// Window drag drop-zone overlay on/off (`:drag zones on|off`).
+    DragZones(bool),
     /// TRON light-cycle border animation: show, on, off or set the speed (`:cycles`).
     LightCycles(crate::ui::lightcycle::LightCycleOp),
     Cursor(CaretStyle),
@@ -512,6 +514,11 @@ impl Action {
                 Some(id) => format!(":window reorder {id} {to}"),
                 None => format!(":window reorder {to}"),
             },
+            Self::WindowManage(crate::wm::window_manage::WindowManageOp::Place { window_id, target, how }) => {
+                let id = window_id.map(|i| format!(" {i}")).unwrap_or_default();
+                let to = target.map(|t| format!(" {t}")).unwrap_or_default();
+                format!(":window place{id} {}{to}", how.name())
+            }
             Self::WindowManage(_) => ":window undo".to_string(),
             Self::SessionManage(crate::wm::window_manage::SessionManageOp::MoveOrder { name, target_pos }) => match name {
                 Some(n) => format!(":session move {n} {target_pos}"),

@@ -53,6 +53,7 @@ pub const RPC_METHODS: &[&str] = &[
     "session.restore",
     "window.move",
     "window.reorder",
+    "window.place",
     "session.move",
     "session.reorder",
     "window.rename",

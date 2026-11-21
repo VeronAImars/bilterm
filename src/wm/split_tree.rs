@@ -289,6 +289,24 @@ impl SplitTree {
         }
     }
 
+    /// Moves leaf `src` next to leaf `target`: `src` is removed from its slot and `target` is split in
+    /// `direction` with `src` as the second child, or the first when `before` (window drag-and-drop edge
+    /// zones). `false` (tree unchanged) when `src == target`, either is missing, or `src` is the only leaf.
+    pub fn move_leaf_beside(&mut self, src: PaneId, target: PaneId, direction: SplitDirection, before: bool) -> bool {
+        if src == target || !Self::contains_pane(&self.root, src) || !Self::contains_pane(&self.root, target) {
+            return false;
+        }
+        let backup = self.root.clone();
+        if !self.remove_leaf(src) || !self.split_leaf(target, src, direction) {
+            self.root = backup;
+            return false;
+        }
+        if before {
+            self.swap_leaves(src, target);
+        }
+        true
+    }
+
     /// Swaps the positions of two leaf panes (`pane_a` and `pane_b`) in the split tree.
     pub fn swap_leaves(&mut self, pane_a: PaneId, pane_b: PaneId) -> bool {
         if pane_a == pane_b

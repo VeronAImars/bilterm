@@ -158,6 +158,11 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
                 _ => usage(),
             }
         }
+        "drag" => match (parts.get(1).copied(), parts.get(2).map(|s| s.to_ascii_lowercase()).as_deref()) {
+            (Some("zones"), Some("on" | "true" | "yes")) => Some(Ok(ColonCommand::DragZones(true))),
+            (Some("zones"), Some("off" | "false" | "no")) => Some(Ok(ColonCommand::DragZones(false))),
+            _ => Some(Err("Usage: :drag zones on|off".to_string())),
+        },
         "help" | "h" | "?" => Some(Ok(ColonCommand::HelpToggle)),
         "history" | "hist" => match parts.get(1).copied() {
             None | Some("popup" | "list" | "show") => Some(Ok(ColonCommand::HistoryPopupToggle)),

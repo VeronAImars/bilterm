@@ -58,6 +58,27 @@ impl AutomationControlPlane {
         ]))
     }
 
+    /// Handles `window.place` JSON-RPC requests: `{window_id?, target?, how}` with `how` = swap|left|right|up|down|float.
+    pub fn handle_window_place(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        let how = params
+            .get("how")
+            .and_then(JsonValue::as_str)
+            .and_then(crate::wm::window_drag_place::PlaceHow::from_name)
+            .ok_or("how must be one of swap|left|right|up|down|float")?;
+        let window_id = params.get("window_id").and_then(JsonValue::as_usize);
+        let target = params.get("target").and_then(JsonValue::as_usize);
+        let wid = window_id.unwrap_or_else(|| self.wm.active_pane_id());
+        self.apply_with_policy(
+            Action::WindowManage(WindowManageOp::Place { window_id, target, how }),
+            SnapshotPolicy::Trusted,
+        )?;
+        Ok(JsonValue::obj([
+            ("status", JsonValue::String("ok".to_string())),
+            ("window_id", JsonValue::Number(wid as i64)),
+            ("how", JsonValue::String(how.name().to_string())),
+        ]))
+    }
+
     /// Handles `session.move` JSON-RPC requests: `{name?, to}`; `session.reorder`: `{names: [..]}`.
     pub fn handle_session_move(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
         let op = if let Some(arr) = params.get("names").and_then(JsonValue::as_array) {

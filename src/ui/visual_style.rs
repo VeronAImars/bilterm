@@ -251,6 +251,13 @@ pub const fn modern_glyph_set() -> GlyphSet {
         status_scroll_icon: "↕",
         output_len_icon: "≡",
         cursor_pos_icon: "⌖",
+        drag_grip: "⠿",
+        drag_grip_hot: "⣿",
+        zone_idle: ["┄", "┆", "╭", "╮", "╰", "╯"],
+        zone_hot: ["━", "┃", "┏", "┓", "┗", "┛"],
+        zone_arrows: ["◀", "▶", "▲", "▼"],
+        zone_ok: "✔",
+        zone_no: "✘",
     }
 }
 
