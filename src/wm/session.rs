@@ -98,6 +98,9 @@ pub struct SavedWorkspaceSession {
     /// `true` for a session kept open with no windows (`:session on-empty keep`); `panes` is empty.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub empty_session: bool,
+    /// Explicit window order; absent in files written before it existed (then leaf order).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub window_order: Vec<PaneId>,
 }
 
 impl WindowManager {
@@ -460,6 +463,7 @@ impl WindowManager {
             panes,
             selected_windows: self.selected_windows().clone(),
             empty_session: empty,
+            window_order: if empty { Vec::new() } else { self.ordered_pane_ids() },
         }
     }
 

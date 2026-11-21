@@ -658,6 +658,8 @@ impl WindowManager {
         self.layout_mode = saved.layout_mode;
         self.zoomed_pane = saved.zoomed_pane;
         self.window_manage.selected_windows = saved.selected_windows.clone();
+        self.window_manage.window_order =
+            saved.window_order.iter().copied().filter(|id| self.panes.contains_key(id)).collect();
         self.next_pane_id = max_id + 1;
         self.clear_agents_demo();
         let vp = ratatui::layout::Rect::new(0, 0, self.default_size.1, self.default_size.0);

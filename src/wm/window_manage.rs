@@ -123,6 +123,8 @@ pub struct BackgroundSessionState {
     pub pane_chrome: BTreeMap<PaneId, PaneChromeStyle>,
     /// When the session was last left ([`next_park_seq`]); the highest is the most recently used.
     pub parked_seq: u64,
+    /// Explicit window order of this session (empty = legacy split-tree leaf order).
+    pub window_order: Vec<PaneId>,
 }
 
 /// Monotonic stamp for [`BackgroundSessionState::parked_seq`].
@@ -168,6 +170,8 @@ pub struct WindowManageState {
     /// Sessions ended in this run (`:session kill`, last window gone). Their saved layouts stay
     /// restorable by name, but ending another session never falls back to them.
     pub ended_sessions: BTreeSet<String>,
+    /// Explicit window order of the active session (empty = legacy split-tree leaf order).
+    pub window_order: Vec<PaneId>,
 }
 
 impl std::fmt::Debug for WindowManageState {
@@ -456,6 +460,7 @@ impl WindowManager {
         let chrome = self.pane_chrome.remove(&target_id);
         let _ = self.split_tree.remove_leaf(target_id);
         self.z_stack.remove(target_id);
+        self.window_manage.window_order.retain(|&i| i != target_id);
         if self.zoomed_pane == Some(target_id) {
             self.zoomed_pane = None;
         }
@@ -487,6 +492,7 @@ impl WindowManager {
                     layout_mode: snap.map_or(layout_mode, |s| s.layout_mode),
                     pane_chrome: BTreeMap::new(),
                     parked_seq: next_park_seq(),
+                    window_order: Vec::new(),
                 }
             });
 
@@ -513,6 +519,7 @@ impl WindowManager {
             bg.z_stack = ZStack::new(landed_id);
         }
         bg.panes.insert(landed_id, pane);
+        bg.append_window(landed_id);
         if let Some(style) = chrome {
             bg.pane_chrome.insert(landed_id, style);
         }

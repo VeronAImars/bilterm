@@ -59,6 +59,7 @@ impl WindowManager {
             }
         }
         self.config.session_order = dedup.clone();
+        self.drawer.invalidate_saved_sessions();
         if self.should_persist_sessions_to_disk()
             && let Ok(dir) = self.resolve_session_dir()
         {
@@ -119,29 +120,9 @@ impl WindowManager {
         names
     }
 
-    /// Returns all sessions including the currently active `history_session`, ordered by `session_order`.
+    /// Returns every session (saved, parked, active, tree-registered) in the one authoritative order.
     pub fn ordered_sessions_with_active(&self) -> Vec<String> {
-        let mut list = self.list_sessions();
-        let active = sanitize_profile_name(&self.config.history_session);
-        if !list.contains(&active) {
-            let order = self.load_session_order();
-            if order.contains(&active) {
-                list.push(active);
-                list.sort_by(|a, b| {
-                    let pos_a = order.iter().position(|x| x == a);
-                    let pos_b = order.iter().position(|x| x == b);
-                    match (pos_a, pos_b) {
-                        (Some(ia), Some(ib)) => ia.cmp(&ib),
-                        (Some(_), None) => std::cmp::Ordering::Less,
-                        (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (None, None) => a.cmp(b),
-                    }
-                });
-            } else {
-                list.insert(0, active);
-            }
-        }
-        list
+        self.session_order_view(&self.load_session_order(), &self.list_sessions())
     }
 
     /// Generates the next available default session name (`session-2`, `session-3`, ...).
@@ -196,6 +177,7 @@ impl WindowManager {
     /// (session new/switch, layout restore) instead of going through `remove_pane`: without it
     /// agent names, queued prompts and fleet references keep ids that new panes then reuse.
     pub(crate) fn forget_all_pane_ids_before_replace(&mut self) {
+        self.window_manage.window_order.clear();
         let dropped: Vec<crate::wm::PaneId> = self.panes.keys().copied().collect();
         for id in dropped {
             self.fleet.remove_pane_references(id);
@@ -356,9 +338,11 @@ impl WindowManager {
         if let Some(cnt) = self.daemon_state.session_panes.remove(&old_name) {
             self.daemon_state.session_panes.insert(new_name.clone(), cnt);
         }
-        self.daemon_state
-            .session_tree
-            .upsert_session(&new_name, SessionNodeKind::Rooted, None);
+        if !self.daemon_state.session_tree.rename_node(&old_name, &new_name) {
+            self.daemon_state
+                .session_tree
+                .upsert_session(&new_name, SessionNodeKind::Rooted, None);
+        }
         self.save_session_order(order);
         Ok((old_name, new_name))
     }

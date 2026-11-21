@@ -3,6 +3,7 @@ pub mod agent_mail;
 pub mod resilience;
 pub mod swarm_cmd;
 mod agent_mail_apply;
+mod session_order;
 mod recording_cap;
 pub mod agent_state;
 pub mod agents_topology;
@@ -441,6 +442,7 @@ impl WindowManager {
         // Any action may create, rename or delete a saved session: drop the Navigator's snapshot
         // before and after so rows rebuilt during or right after it are fresh (WR-05).
         self.drawer.invalidate_saved_sessions();
+        self.freeze_session_order();
         let quit = execute_wm_colon_command(self, action);
         self.drawer.invalidate_saved_sessions();
         self.settle_keyboard_owner();
@@ -718,6 +720,7 @@ impl WindowManager {
             self.panes.insert(new_id, new_pane);
             self.split_tree.split_leaf(target_id, new_id, direction);
             self.z_stack.push(new_id);
+            self.window_order_insert_after(target_id, new_id);
         }
         self.zoomed_pane = None;
         self.sync_config_scale_from_active_pane();
@@ -735,6 +738,7 @@ impl WindowManager {
         }
         let _ = self.split_tree.remove_leaf(target_id);
         self.panes.remove(&target_id);
+        self.window_manage.window_order.retain(|&i| i != target_id);
         self.pane_chrome.remove(&target_id);
         self.z_stack.remove(target_id);
         if self.zoomed_pane == Some(target_id) {
