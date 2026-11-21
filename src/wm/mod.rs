@@ -299,6 +299,8 @@ pub struct WindowManager {
     pub(crate) daemon_state: crate::daemon::DaemonServerState,
     /// Shared web surface handle (`WEB-FE-01..04`, Phase 60); clones share state with the HTTP/WS server.
     pub(crate) web_surface: crate::api::web_surface::WebSurfaceState,
+    /// URL of the pending non-blocking "Open in system browser?" offer (`:web external` accepts it).
+    pub(crate) pending_external_url: Option<String>,
     /// TRON Master Control Program (`MCP`) root terminal state (`MCP-01..02`).
     pub(crate) mcp_console: crate::mcp_console::McpConsoleState,
     /// Whether this client detached cleanly without terminating the session (`SAFE-02`).
@@ -424,6 +426,7 @@ impl WindowManager {
             gui_surface: false,
             daemon_state: crate::daemon::DaemonServerState::new(),
             web_surface: crate::api::web_surface::WebSurfaceState::new(),
+            pending_external_url: None,
             mcp_console: crate::mcp_console::McpConsoleState::new(),
             client_detached: false,
             resilience: Default::default(),

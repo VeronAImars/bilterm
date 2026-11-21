@@ -525,7 +525,7 @@ impl AutomationControlPlane {
             "attach.kick" => self.rpc_attach_kick(params),
             "daemon.switch" => super::rpc_daemon::handle_daemon_switch(params),
             "drawer.preview" => self.handle_rpc_drawer_preview(params),
-            "workspace.view_model" | "web.status" | "web.open" | "web.port" | "web.stop" | "web.pump" | "web.agents" | "web.agent" | "web.logs" | "web.search" | "web.input" | "web.create" | "web.kill" | "web.update" => self.dispatch_web(method, params),
+            "workspace.view_model" | "web.status" | "web.open" | "web.open_external" | "web.port" | "web.stop" | "web.pump" | "web.agents" | "web.agent" | "web.logs" | "web.search" | "web.input" | "web.create" | "web.kill" | "web.update" => self.dispatch_web(method, params),
             "keys.list" | "keys.check" | "keys.explain" | "keys.profile" | "keys.window_mode" | "menu.open" => self.dispatch_keys(method, params),
             "clipboard.list" => self.rpc_clipboard_list(params),
             "clipboard.get" => self.rpc_clipboard_get(params),

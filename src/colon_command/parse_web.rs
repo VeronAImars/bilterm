@@ -5,7 +5,7 @@
 use super::ColonCommand;
 use crate::action::WebOp;
 
-pub const WEB_USAGE: &str = "Usage: :web [status | open | port <1-65535> | stop]";
+pub const WEB_USAGE: &str = "Usage: :web [status | open [--external [url]] | external [url] | port <1-65535> | stop]";
 
 /// Parses `:web ...` into `Action::Web`; `None` when `head` is not `web`.
 pub fn parse_web_command(head: &str, parts: &[&str]) -> Option<Result<ColonCommand, String>> {
@@ -13,6 +13,19 @@ pub fn parse_web_command(head: &str, parts: &[&str]) -> Option<Result<ColonComma
         return None;
     }
     let sub = parts.get(1).copied().unwrap_or("status");
+    // `:web external [url]` and `:web open --external [url]` hand a URL to the system browser.
+    let external_args = match (sub, parts.get(2).copied()) {
+        ("external", _) => Some(&parts[2..]),
+        ("open", Some("--external")) => Some(&parts[3..]),
+        _ => None,
+    };
+    if let Some(args) = external_args {
+        return Some(match args {
+            [] => Ok(ColonCommand::WebOpenExternal { url: None }),
+            [url] => Ok(ColonCommand::WebOpenExternal { url: Some((*url).to_string()) }),
+            _ => Err(WEB_USAGE.to_string()),
+        });
+    }
     let op = match (sub, parts.len()) {
         ("status", 1 | 2) => Ok(WebOp::Status),
         ("open", 2) => Ok(WebOp::OpenBrowser),
@@ -48,5 +61,16 @@ mod tests {
         assert!(matches!(p("web bogus"), Some(Err(_))));
         assert!(matches!(p("web status extra"), Some(Err(_))));
         assert_eq!(p("webx"), None);
+        assert_eq!(p("web external"), Some(Ok(ColonCommand::WebOpenExternal { url: None })));
+        assert_eq!(p("web open --external"), Some(Ok(ColonCommand::WebOpenExternal { url: None })));
+        assert_eq!(
+            p("web external https://a.b/c"),
+            Some(Ok(ColonCommand::WebOpenExternal { url: Some("https://a.b/c".into()) }))
+        );
+        assert_eq!(
+            p("web open --external https://a.b/c"),
+            Some(Ok(ColonCommand::WebOpenExternal { url: Some("https://a.b/c".into()) }))
+        );
+        assert!(matches!(p("web external a b"), Some(Err(_))));
     }
 }

@@ -332,6 +332,11 @@ pub enum Action {
     Video(VideoOp),
     /// `:web [status|open|port <N>|stop]`: Web UI surface control (`WEB-FE-01..04`, Phase 60).
     Web(WebOp),
+    /// `:web external [url]` / `:web open --external [url]`: open `url` (default: the pending offer, else the
+    /// active browser canvas URL) in the system default browser in its own window.
+    WebOpenExternal {
+        url: Option<String>,
+    },
     /// `:wmode [on|off|focus|resize|move]`: sticky Window mode (`KEY-01`, Phase 63).
     WindowMode(WindowModeOp),
     /// `:menu open [category]`: open the menu bar from the keyboard (`KEY-01`, Phase 63).
@@ -506,6 +511,8 @@ impl Action {
             }
             Self::ScriptStudio(op) => op.colon_form(),
             Self::Web(op) => op.colon_form(),
+            Self::WebOpenExternal { url: None } => ":web external".to_string(),
+            Self::WebOpenExternal { url: Some(u) } => format!(":web external {u}"),
             Self::WindowMode(op) => op.colon_form(),
             Self::MenuOpen { category: None } => ":menu open".to_string(),
             Self::MenuOpen { category: Some(c) } => format!(":menu open {c}"),

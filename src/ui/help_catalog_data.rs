@@ -44,7 +44,7 @@ pub const HELP_LINES: &[(&str, &str)] = &[
     (":mcp freeze <node> / thaw <node>", "Freeze (read-only lock) or thaw a session subtree"),
     (":mcp derez <node> --confirm", "Terminate a session subtree (requires --confirm)"),
     (":mcp checkpoint", "Persist atomic WorkspaceJournal checkpoint to disk"),
-    (":web [status|open|port <N>|stop]", "Web UI surface: status, open in browser, set port, stop server"),
+    (":web [status|open|external [url]|port <N>|stop]", "Web UI surface: status, open in browser, open a URL in the system browser, set port, stop server"),
     (":wmode [on|off|toggle|focus|resize|move]", "Sticky Window mode: keyboard-only focus, zoom, split, close (Esc exits)"),
     (":menu open [category]", "Open the menu bar from the keyboard"),
     (":keys [list|check|explain <chord>|profile [name]]", "Inspect the per-OS key profile, conflicts and chords"),

@@ -1040,6 +1040,7 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
         ColonCommand::Browser(op) => super::execute_media::execute_browser_command(wm, op),
         ColonCommand::Video(op) => super::execute_media::execute_video_command(wm, op),
         ColonCommand::Web(ref op) => super::execute_web::execute_web_action(wm, op),
+        ColonCommand::WebOpenExternal { ref url } => super::execute_web::execute_web_open_external(wm, url.as_deref()),
         ColonCommand::WindowMode(op) => {
             wm.apply_window_mode(op);
             false

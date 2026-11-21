@@ -41,6 +41,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":dos snapshot", "—", "Snapshot the C: image: [list | rm] [--name N] [--tag T]"),
     (":dos restore --tag <T>", "—", "Restore a C: snapshot: --tag T [--name N] --yes"),
     (":web open", "—", "Open the Web UI in the default browser"),
+    (":web external [url]", "Ctrl+Alt+U", "Open a URL (or the pending offer / browser canvas page) in the system browser"),
     (":web port <N>", "—", "Set the Web UI server port"),
     (":web stop", "—", "Stop the Web UI server"),
     (":wmode", "Ctrl+X w", "Toggle sticky Window mode: hjkl focus, z zoom, x close (Esc exits)"),

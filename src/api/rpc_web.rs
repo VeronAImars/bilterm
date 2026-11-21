@@ -34,6 +34,7 @@ impl AutomationControlPlane {
             "workspace.view_model" => Ok(WorkspaceViewModelDto::from_wm_with_hub(&self.wm, Some(&self.output_hub)).to_json()),
             "web.status" => self.web_op(WebOp::Status),
             "web.open" => self.web_op(WebOp::OpenBrowser),
+            "web.open_external" => self.web_open_external(params),
             "web.stop" => self.web_op(WebOp::Stop),
             "web.port" => {
                 let port = params
@@ -106,6 +107,22 @@ impl AutomationControlPlane {
             }
             other => Err(format!("Method not found: {other}")),
         }
+    }
+
+    /// `web.open_external {url?}`: hands a validated URL to the system browser. Launching a host
+    /// process is a side effect outside the workspace, so it is gated like config writes.
+    fn web_open_external(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        let url = match params.get("url") {
+            None | Some(JsonValue::Null) => None,
+            Some(v) => Some(v.as_str().ok_or_else(|| "invalid 'url' parameter".to_string())?.to_string()),
+        };
+        let action = Action::WebOpenExternal { url };
+        if let Some(err) = self.wm.config_write_denied(&action) {
+            return Err(err);
+        }
+        self.apply_with_policy(action, SnapshotPolicy::Trusted)?;
+        let data = self.wm.take_command_data().unwrap_or_default();
+        JsonValue::parse(&data).ok_or_else(|| "web.open_external produced no result".to_string())
     }
 
     fn web_op(&mut self, op: WebOp) -> Result<JsonValue, String> {
