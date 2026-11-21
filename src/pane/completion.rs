@@ -377,6 +377,7 @@ const COLON_COMMANDS: &[(&str, &[&str])] = &[
     (":state", &[]),
     (":panel", &["scale"]),
     (":chrome", &["title", "ring"]),
+    (":drag", &["zones"]),
     (":cycles", &["on", "off"]),
     (":aero", &[]),
     (":asciinema", &[]),

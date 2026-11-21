@@ -1,4 +1,5 @@
 pub mod agents_gui;
+pub mod drag_zones;
 pub mod find_flash;
 pub mod pane_mail_ui;
 pub mod agents_hud_ui;
@@ -620,6 +621,7 @@ impl Widget for WorkspaceWidget<'_> {
                     outer, &frame_title, is_active, chrome_style.resolve_outline(cfg),
                     chrome_style.resolve_bold(cfg), &frame_palette, &glyphs, buf,
                 );
+                drag_zones::render_grip(self.wm, id, outer, &frame_palette, &glyphs, buf);
                 if self.wm.find_is_flashing(id) {
                     crate::ui::find_flash::highlight_border(buf, outer);
                 }
@@ -657,6 +659,7 @@ impl Widget for WorkspaceWidget<'_> {
         if self.wm.scale_pct(crate::ui::typography::PanelTarget::Drawer) == 100 {
             render_workspace_drawer(self.wm, workspace_area, cfg, &palette, &glyphs, buf);
         }
+        drag_zones::render_window_drag(self.wm, workspace_area, &palette, &glyphs, buf);
         drawer_preview::render_drawer_preview_overlay(
             self.wm,
             workspace_area,

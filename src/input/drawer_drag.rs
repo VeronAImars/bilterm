@@ -42,7 +42,7 @@ pub(super) fn handle_drawer_row_drag(wm: &mut WindowManager, mouse: &MouseEvent,
 
 /// `Esc` during a drag cancels it (lowers to `DrawerNavOp::DragCancel`). `true` when it consumed the key.
 pub(super) fn cancel_drag_on_esc(wm: &mut WindowManager) -> bool {
-    wm.drawer_drag_active() && {
+    (wm.drawer_drag_active() || wm.window_drag_active()) && {
         let _ = wm.apply(Action::DrawerNav(DrawerNavOp::DragCancel));
         true
     }

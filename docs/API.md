@@ -821,6 +821,11 @@ Moves a window (composite pane) to a target session preserving its live PTY, scr
   }
   ```
 
+#### `window.place`
+Places a window relative to another (the drop of a title-bar grip drag), or floats it. Also `:window place [id] swap|left|right|up|down <target>` / `:window place [id] float`, MCP `bilterm_window_manage` action `place`.
+- **Parameters**: `how` (string, required: `swap|left|right|up|down|float`), `target` (integer; required except for `float`), `window_id` (integer, optional, default active). Swap/split need the Tiled layout; `float` switches to Stacked with the window on top.
+- **Response**: `{"status": "ok", "window_id": 1, "how": "left"}`
+
 #### `window.rename`
 Renames a window (composite pane) with safe validation and deterministic deduplication (`SES-02`).
 - **Parameters**:

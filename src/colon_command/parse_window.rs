@@ -16,6 +16,7 @@ pub fn parse_window_manage_command(parts: &[&str]) -> Option<Result<ColonCommand
         "move" => Some(parse_window_move(&parts[1..])),
         "rename" => Some(parse_window_rename(&parts[1..])),
         "reorder" | "order" => Some(parse_window_reorder(&parts[1..])),
+        "place" => Some(parse_window_place(&parts[1..])),
         "select" => Some(parse_window_select(&parts[1..])),
         "bulk" => Some(parse_window_bulk(&parts[1..])),
         "undo" => {
@@ -300,4 +301,24 @@ pub(crate) fn parse_window_reorder(args: &[&str]) -> Result<ColonCommand, String
             .map_err(|_| format!("Invalid window id '{id}': must be a positive integer")),
         _ => Err(USAGE.to_string()),
     }
+}
+
+pub(crate) fn parse_window_place(args: &[&str]) -> Result<ColonCommand, String> {
+    use crate::wm::window_drag_place::PlaceHow;
+    const USAGE: &str = "Usage: :window place [id] swap|left|right|up|down <target> | :window place [id] float";
+    let (id, rest) = match args.first().map(|a| a.parse::<PaneId>()) {
+        Some(Ok(id)) if args.get(1).is_some_and(|h| PlaceHow::from_name(h).is_some()) => (Some(id), &args[1..]),
+        _ => (None, args),
+    };
+    let how = rest.first().and_then(|h| PlaceHow::from_name(h)).ok_or_else(|| USAGE.to_string())?;
+    let target = match (how, rest.get(1)) {
+        (PlaceHow::Float, None) => None,
+        (PlaceHow::Float, Some(_)) => return Err(USAGE.to_string()),
+        (_, Some(t)) => Some(t.parse::<PaneId>().map_err(|_| format!("Invalid target window '{t}'"))?),
+        (_, None) => return Err(USAGE.to_string()),
+    };
+    if rest.len() > 2 {
+        return Err(USAGE.to_string());
+    }
+    Ok(ColonCommand::WindowManage(WindowManageOp::Place { window_id: id, target, how }))
 }

@@ -2,7 +2,7 @@
 source: tests/drawer_classic_parity.rs
 expression: text
 ---
-╭ ● ● ●  ◢ SESSIONS ─── ─  □  × ─╮╭ ● ● ●  1 · alpha [#1 ─  □  × ─╮╭ ● ● ●  2 · beta [#2] ─  ⊞ ⤢×✕─╮
+╭ ● ● ●  ◢ SESSIONS ─── ─  □  × ─╮╭⠿● ● ●  1 · alpha [#1 ─  □  × ─╮╭⠿● ● ●  2 · beta [#2] ─  ⊞ ⤢×✕─╮
 │ ◧ Left  ·  ⧉ Push  ·  ◈ OnDeman││A╭ ❯ Command · TOP ──────────╮ ││B╭ ❯ Command · TOP ──────────╮ │
 │────────────────────────────────││ │  ❯                        │ ││ │  ❯                        │ │
 │◈ SESSION [default]             ││ ╰───────────────────────────╯ ││ ╰───────────────────────────╯ │
@@ -32,4 +32,4 @@ expression: text
 │────────────────────────────────││                               ││                               │
 │ +Win · +Sess · JK Move · <> Par││ ◢ Bilterm · ● Ready · ❯ Comman││ ◢ Bilterm · ● Ready · ❯ Comman│
 ╰────────────────────────────────⌟╰───────────────────────────────⌟╰───────────────────────────────⌟
-style-digest: faf63199e80af9cb
+style-digest: 0deb1a7ddcc95161

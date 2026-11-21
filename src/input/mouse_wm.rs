@@ -391,8 +391,10 @@ pub(super) fn handle_wm_frame_border_mouse_down(
             }
             _ => {
                 let on_title_grip = col > outer.x + 1 && col < outer.x + 18;
+                let on_drag_grip = crate::wm::window_drag::grip_hit_span(outer).is_some_and(|(a, b)| (a..=b).contains(&col));
                 if mouse.modifiers.contains(KeyModifiers::ALT)
                     || (wm.layout_mode() == WorkspaceLayoutMode::Stacked && on_title_grip)
+                    || on_drag_grip
                 {
                     wm.set_wm_mouse_drag(Some(WmMouseDrag::MoveWindow {
                         pane_id: hit_id,
@@ -433,10 +435,7 @@ pub(super) fn handle_wm_window_drag_event(
                     grab_dx,
                     grab_dy,
                 } => {
-                    if wm.layout_mode() == WorkspaceLayoutMode::Stacked
-                        || wm.pane_count() == 1
-                        || mouse.modifiers.contains(KeyModifiers::ALT)
-                    {
+                    if !wm.window_drag_uses_zones() || mouse.modifiers.contains(KeyModifiers::ALT) {
                         if wm.layout_mode() == WorkspaceLayoutMode::Tiled {
                             wm.set_layout_mode(WorkspaceLayoutMode::Stacked);
                         }
@@ -457,17 +456,9 @@ pub(super) fn handle_wm_window_drag_event(
                             updated.x, updated.y, updated.width, updated.height
                         )));
                     } else {
-                        for (other_id, rect) in wm.split_tree().compute_rects(eff_area) {
-                            if other_id != pane_id && rect_contains(rect, mouse.column, mouse.row) {
-                                if wm.split_tree_mut().swap_leaves(pane_id, other_id) {
-                                    wm.resize_all(workspace_area)?;
-                                    wm.active_pane_mut().set_status_message(Some(format!(
-                                        "Swapped Pane #{pane_id} <-> Pane #{other_id}"
-                                    )));
-                                }
-                                break;
-                            }
-                        }
+                        // Tiled: only the pointer is tracked; the drop zones outline where a release lands.
+                        let drawer_row = super::drawer_hover::drawer_row_at(wm, workspace_area, mouse.column, mouse.row);
+                        wm.window_drag_update(pane_id, mouse.column, mouse.row, workspace_area, drawer_row);
                     }
                     Ok(Some(AppAction::Handled))
                 }
@@ -671,6 +662,10 @@ pub(super) fn handle_wm_window_drag_event(
         }
         MouseEventKind::Up(MouseButton::Left) => {
             wm.set_wm_mouse_drag(None);
+            if let Some(msg) = wm.window_drag_drop() {
+                wm.resize_all(workspace_area)?;
+                wm.active_pane_mut().set_status_message(Some(msg));
+            }
             wm.maybe_autosave_layout();
             Ok(Some(AppAction::Handled))
         }
