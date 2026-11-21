@@ -93,6 +93,7 @@ fn handshake_attaches_configures_and_navigates() {
         [
             "Page.enable",
             "Browser.setDownloadBehavior",
+            "Emulation.setEmulatedMedia",
             "Target.setDiscoverTargets",
             "Emulation.setDeviceMetricsOverride",
             "Page.startScreencast",

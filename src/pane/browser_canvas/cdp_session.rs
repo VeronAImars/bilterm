@@ -414,6 +414,7 @@ impl Protocol {
         let boot = self.shared.boot();
         self.send(proto::page_enable());
         self.send(proto::deny_downloads());
+        self.send(proto::prefer_dark_scheme());
         self.send(proto::discover_targets());
         for cmd in boot.viewport.commands() {
             self.send(cmd);
