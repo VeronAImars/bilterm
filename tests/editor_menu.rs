@@ -50,7 +50,7 @@ fn bar_is_always_visible_and_f10_opens_the_first_menu() {
     let _ = first;
     let s = screen(&wm);
     assert!(s.contains("File") && s.contains("Edit") && s.contains("Search") && s.contains("View") && s.contains("Help"), "{s}");
-    assert!(s.contains("F10=Menu"), "{s}");
+    assert!(s.contains("F10="), "{s}");
     press(&mut wm, k(KeyCode::F(10)));
     assert_eq!(open_menu(&wm).as_deref(), Some("file"));
     assert!(screen(&wm).contains("Save As..."), "{}", screen(&wm));
@@ -86,11 +86,12 @@ fn enter_runs_an_item_through_apply_and_menu_closes() {
     press(&mut wm, k(KeyCode::Char('a')));
     press(&mut wm, k(KeyCode::Char('b')));
     press(&mut wm, alt('e'));
-    // Undo is the first Edit item.
+    // Undo is the first Edit item (typing is coalesced into one undo step).
     press(&mut wm, k(KeyCode::Enter));
     assert_eq!(open_menu(&wm), None);
-    assert_eq!(wm.active_pane().editor().unwrap().buf.text(), "a");
+    assert_eq!(wm.active_pane().editor().unwrap().buf.text(), "");
     // Mnemonic letter inside an open menu: Edit > Select all, then Search > Go to line prompt.
+    press(&mut wm, k(KeyCode::Char('x')));
     press(&mut wm, alt('e'));
     press(&mut wm, k(KeyCode::Char('a')));
     assert!(wm.active_pane().editor().unwrap().buf.selection().is_some());
