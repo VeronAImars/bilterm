@@ -89,7 +89,7 @@ fn status_line(st: &ClientState, cur: Option<usize>, info: &StatusInfo) -> Strin
     } else {
         HELP.to_string()
     };
-    format!(" {} | {role} | {pane} | {} | {tail}", info.host, owner_text(st))
+    format!(" [R:{}] | {role} | {pane} | {} | {tail}", info.host, owner_text(st))
 }
 
 fn style_of(c: &crate::vt::snapshot::CellSnapshot) -> Style {

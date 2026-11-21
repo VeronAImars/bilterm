@@ -328,13 +328,13 @@ pub fn render_oia_status_bar_themed(
         ));
     }
 
-    if let Some(remote) = pane.remote_target() {
+    if let Some(remote_txt) = oia_remote(pane) {
         spans.push(Span::styled(
             format!(" {sep}"),
             Style::default().fg(Color::White).bg(oia_bg),
         ));
         spans.push(Span::styled(
-            format!(" 🌐 SSH:{remote} "),
+            remote_txt,
             Style::default()
                 .fg(Color::Black)
                 .bg(role_color(&tokens, is_legacy, ColorRole::Accent, Color::Rgb(85, 255, 255)))
@@ -699,6 +699,16 @@ pub fn oia_layout(pane: &CompositePane) -> OiaLayout {
     }
 }
 
+/// Status-line text for a remote pane: the origin badge (` ⇄[R:host] ssh `, text tag always present),
+/// else the legacy ` 🌐 SSH:<target> ` form; `None` for local panes.
+fn oia_remote(pane: &CompositePane) -> Option<String> {
+    match (pane.origin_badge(), pane.remote_target()) {
+        (Some(b), _) => Some(format!(" {b} ")),
+        (None, Some(t)) => Some(format!(" 🌐 SSH:{t} ")),
+        _ => None,
+    }
+}
+
 /// Computes the exact `Rect` of the OIA microphone/STT badge inside `status_rect`, if present.
 pub fn oia_mic_badge_rect(pane: &CompositePane, status_rect: Rect) -> Option<Rect> {
     let badge = pane.stt_badge()?;
@@ -710,8 +720,8 @@ pub fn oia_mic_badge_rect(pane: &CompositePane, status_rect: Rect) -> Option<Rec
     if pane.is_read_only() {
         offset = layout.prot_end;
     }
-    if let Some(remote) = pane.remote_target() {
-        offset += 2 + format!(" 🌐 SSH:{remote} ").chars().count();
+    if let Some(remote_txt) = oia_remote(pane) {
+        offset += 2 + remote_txt.chars().count();
     }
     if pane.vt().is_recording() {
         offset += 2 + 7;
@@ -737,8 +747,8 @@ pub fn oia_mouse_badge_rect(pane: &CompositePane, status_rect: Rect) -> Option<R
     if pane.is_read_only() {
         offset = layout.prot_end;
     }
-    if let Some(remote) = pane.remote_target() {
-        offset += 2 + format!(" 🌐 SSH:{remote} ").chars().count();
+    if let Some(remote_txt) = oia_remote(pane) {
+        offset += 2 + remote_txt.chars().count();
     }
     if pane.vt().is_recording() {
         offset += 2 + 7;
@@ -767,8 +777,8 @@ pub fn oia_copy_badge_rect(pane: &CompositePane, status_rect: Rect) -> Option<Re
     if pane.is_read_only() {
         offset = layout.prot_end;
     }
-    if let Some(remote) = pane.remote_target() {
-        offset += 2 + format!(" 🌐 SSH:{remote} ").chars().count();
+    if let Some(remote_txt) = oia_remote(pane) {
+        offset += 2 + remote_txt.chars().count();
     }
     if pane.vt().is_recording() {
         offset += 2 + 7;

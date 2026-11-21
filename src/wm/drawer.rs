@@ -605,6 +605,7 @@ impl WindowManager {
                     FleetNodeKind::HostProfile { .. } => false,
                 });
             if is_ssh { transport_badges.push("🌐 SSH".to_string()); }
+            if let Some(tag) = self.pane_origin_tag(id) { transport_badges.push(tag); }
             let is_tmux = pane.title().contains("TMUX")
                 || (self.tmux_bridge.bilterm_to_tmux.contains_key(&id) && (id != 1 || pane.title().contains("TMUX")))
                 || self.fleet.nodes.values().any(
@@ -652,6 +653,9 @@ impl WindowManager {
         for (f_idx, (name, node)) in self.fleet.nodes.iter().enumerate() {
             let connector = if f_idx + 1 == fleet_len { "╰─" } else { "├─" };
             let mut transport_badges = vec!["🌐 SSH".to_string()];
+            if let Some((_, host)) = self.remote_daemon_peers().into_iter().find(|(n, _)| n == name) {
+                transport_badges.push(format!("[R:{host}] daemon"));
+            }
             if matches!(node.kind, FleetNodeKind::SshTmux { .. }) {
                 transport_badges.push("🔗 TMUX".to_string());
             }
