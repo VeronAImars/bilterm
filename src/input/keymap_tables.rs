@@ -160,6 +160,10 @@ pub const DEFAULT_LEADER_BINDINGS: &[(KeyCode, Action)] = &[
     (KeyCode::Char('+'), Action::PromptResizeHeight(1)),
     (KeyCode::Char('='), Action::WindowResetGeometry),
     (KeyCode::Char('#'), Action::ArrangeGrid),
+    // Session find prefill (`Ctrl+X &`): Ctrl+Alt+D is GNOME/KDE "show desktop" and never reaches the terminal
+    (KeyCode::Char('&'), Action::SessionFind(SessionFindOp::Prefill)),
+    // Scratchpad editor (`Ctrl+X _`): Ctrl+Alt+E is not delivered by every terminal; the leader always is
+    (KeyCode::Char('_'), Action::Editor(EditorOp::Scratch { name: None })),
     (KeyCode::Char('0'), Action::FontZoomReset),
     (KeyCode::PageUp, Action::BlockPrev),
     (KeyCode::PageDown, Action::ScrollModeTogglePage),
@@ -278,7 +282,7 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     // Find window (`:find agent`): Ctrl+Alt+F. Leader `?` is HelpToggle, so Find has no leader chord (P-06).
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('f'), Action::Find(FindOp::Open { kind: FindKind::Agent, query: String::new() })),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('F'), Action::Find(FindOp::Open { kind: FindKind::Agent, query: String::new() })),
-    // Session find (`:find --pid N --cwd D --text T`): Ctrl+Alt+D prefills the filters on the prompt.
+    // Session find (`:find ...`): Ctrl+Alt+D alias (GNOME/KDE swallow it; prefer leader `&`) prefills the filters on the prompt.
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('d'), Action::SessionFind(SessionFindOp::Prefill)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('D'), Action::SessionFind(SessionFindOp::Prefill)),
     // Reconnect the tmux link (`:ssh-tmux reconnect`): Ctrl+Alt+R, also reserved in raw passthrough.
