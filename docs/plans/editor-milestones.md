@@ -33,7 +33,7 @@ media). Linked from [`../FEATURE_MAP_AND_ROADMAP.md`](../FEATURE_MAP_AND_ROADMAP
 | Capability | Colon | Key (editor focused) | RPC | MCP `bilterm_editor` | CLI `bilterm editor` |
 |---|---|---|---|---|---|
 | Open file / new buffer | `:edit [path]` | palette | `editor.open` | `open` | `open [PATH]` |
-| Scratchpad | `:scratch [name]` | `Ctrl+Alt+E` (global) | `editor.scratch` | `scratch` | `scratch [NAME]` |
+| Scratchpad | `:scratch [name]` | `Ctrl+X _` (leader; `Ctrl+Alt+E` alias) | `editor.scratch` | `scratch` | `scratch [NAME]` |
 | Save / save-as | `:editor save`, `saveas <path> [--force]` | `Ctrl+S`, `Ctrl+O` | `editor.save`, `editor.save_as` | `save`, `save_as` | `save`, `saveas` |
 | Soft wrap | `:editor wrap [on\|off]` | `Ctrl+L` | `editor.wrap` | `wrap` | `wrap` |
 | Find | `:editor find\|findprev <text>` | `Ctrl+F`, `Ctrl+N`, `Ctrl+P` | `editor.find` | `find` | `find`, `findprev` |

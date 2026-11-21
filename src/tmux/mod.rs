@@ -474,6 +474,11 @@ impl TmuxControlBridge {
         self.primary
     }
 
+    /// `dest/session` text of the active link, when one is configured.
+    pub fn badge(&self) -> Option<&str> {
+        self.badge.as_deref()
+    }
+
     /// `dest/session` text used to title adopted panes.
     pub fn set_badge(&mut self, badge: Option<String>) {
         self.badge = badge.map(|b| crate::vt::sanitize_display(&b, BADGE_CAP));

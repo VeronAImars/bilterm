@@ -595,6 +595,11 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
             }))
         }
         "remote" | "fleet" | "herdr" => match parts.get(1).copied() {
+            Some("status") => match (parts.get(2), parts.len()) {
+                (None, _) => Some(Ok(ColonCommand::RemoteStatus { pane: None })),
+                (Some(p), 3) => Some(p.trim_start_matches('#').parse::<usize>().map(|p| ColonCommand::RemoteStatus { pane: Some(p) }).map_err(|_| format!("invalid pane '{p}'; Usage: :remote status [pane]"))),
+                _ => Some(Err("Usage: :remote status [pane]".to_string())),
+            },
             None | Some("list" | "ls") => Some(Ok(ColonCommand::RemoteList)),
             Some("add" | "register") => {
                 let (Some(&name), Some(&dest)) = (parts.get(2), parts.get(3)) else {

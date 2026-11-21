@@ -591,6 +591,15 @@ impl CompositePane {
         self.remote_target.as_deref()
     }
 
+    /// Remote-origin status text, `None` for local panes.
+    pub fn origin_badge(&self) -> Option<&str> {
+        self.origin_badge.as_deref()
+    }
+
+    pub fn set_origin_badge(&mut self, badge: Option<String>) {
+        self.origin_badge = badge;
+    }
+
     pub fn set_remote_target(&mut self, target: Option<String>) {
         self.remote_target = target;
     }

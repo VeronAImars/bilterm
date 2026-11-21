@@ -179,6 +179,8 @@ pub enum Action {
         tags: Vec<String>,
     },
     RemoteList,
+    /// `:remote status [pane]` / `remote.status` RPC / `bilterm pane remote`: per-pane origin (local, ssh, tmux-link, ...).
+    RemoteStatus { pane: Option<usize> },
     RemoteExec {
         selector: String,
         command: String,
@@ -507,6 +509,8 @@ impl Action {
             Self::DosRestore { args } => format!(":dos restore {}", args.join(" ")).trim_end().to_string(),
             Self::AgentMail(op) => op.colon_form(),
             Self::PaneMail(op) => op.colon_form(),
+            Self::RemoteStatus { pane: Some(p) } => format!(":remote status {p}"),
+            Self::RemoteStatus { pane: None } => ":remote status".to_string(),
             Self::AgentsHud(op) => op.colon_form(),
             Self::AgentsReplay(op) => op.colon_form(),
             Self::AgentsWatchdog(_) => ":agents watchdog status".to_string(),
