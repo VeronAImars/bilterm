@@ -6,6 +6,8 @@ pub mod fdpass;
 #[cfg(unix)]
 pub mod handover;
 #[cfg(unix)]
+mod master_writer;
+#[cfg(unix)]
 mod reader;
 pub mod line_discipline;
 pub mod shell_integration;
@@ -170,6 +172,9 @@ pub struct PtySession {
     /// The child and master were handed over by `release()`; `Drop` must not touch them.
     #[cfg(unix)]
     released: bool,
+    /// Tells the current input sink not to send EOF when it is dropped (set by `release`).
+    #[cfg(unix)]
+    suppress_eof: Arc<std::sync::atomic::AtomicBool>,
     /// Events that precede anything in `output_rx` (rollback of a release): drained first.
     #[cfg(unix)]
     replay: std::collections::VecDeque<PtyEvent>,
@@ -227,6 +232,15 @@ impl PtySession {
         #[cfg(unix)]
         let master_fd = pair.master.as_raw_fd();
 
+        #[cfg(unix)]
+        let suppress_eof = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        #[cfg(unix)]
+        let writer: Box<dyn std::io::Write + Send> = {
+            let fd = master_fd.ok_or_else(|| BiltermError::Pty("no master fd".to_string()))?;
+            let own = reader::dup_cloexec(fd).map_err(BiltermError::Io)?;
+            Box::new(master_writer::MasterWriter::new(own, suppress_eof.clone()))
+        };
+        #[cfg(not(unix))]
         let writer = pair
             .master
             .take_writer()
@@ -271,6 +285,8 @@ impl PtySession {
             adopted_fd: None,
             #[cfg(unix)]
             released: false,
+            #[cfg(unix)]
+            suppress_eof,
             #[cfg(unix)]
             replay: std::collections::VecDeque::new(),
             #[cfg(unix)]

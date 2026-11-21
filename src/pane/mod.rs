@@ -11,6 +11,8 @@ pub mod completion;
 pub mod exit_guard;
 pub mod fuzzy_history;
 pub mod highlight;
+#[cfg(unix)]
+pub mod handover;
 pub mod history_store;
 pub mod modes;
 pub mod prompt_editor;

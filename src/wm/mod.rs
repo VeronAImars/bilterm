@@ -19,6 +19,8 @@ pub mod agents_list_cmd;
 pub mod agents_geometry;
 pub mod agents_list_geometry;
 mod host_mode;
+#[cfg(unix)]
+pub mod session_transfer;
 pub mod host_view;
 mod attach_resize;
 mod pane_input;
@@ -205,6 +207,10 @@ pub struct WindowManager {
     headless_mode: bool,
     /// Session-host mode: headless but panes own real PTYs (`host_mode.rs`); default off.
     host_ptys: bool,
+    /// Daemon name this host runs under (set by the daemon; refuses transfers to itself).
+    host_name: Option<String>,
+    /// Set after a transfer that retires this host: the daemon loop exits once it passes.
+    retire_at: Option<std::time::Instant>,
     /// Attach client registry when the host runs an attach listener (`attach::host`); default none.
     attach_registry: Option<crate::attach::registry::SharedRegistry>,
     pub(crate) default_size: (u16, u16),
@@ -373,6 +379,8 @@ impl WindowManager {
             next_pane_id: initial_id + 1,
             headless_mode,
             host_ptys: false,
+            host_name: None,
+            retire_at: None,
             attach_registry: None,
             default_size: (screen_rows, cols),
             scrollback: if headless_mode {

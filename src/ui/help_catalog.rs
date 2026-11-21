@@ -31,6 +31,8 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":daemon switch <name>", "Ctrl+X D W", "Switch active client context to a named background daemon"),
     (":daemon prune", "—", "Prune dead background daemon locks and socket records"),
     (":daemon host", "—", "Show a session host's persisted state file (live or stale; read-only)"),
+    (":daemon transfer [<session>...|--all] --to <daemon>", "—", "Move live sessions (shells keep running, same PIDs) to another session host"),
+    (":daemon restart --live [name]", "—", "Live restart of a session host: a new process takes over every session, no terminal is killed or reset"),
     (":web status", "Ctrl+X @ / Ctrl+Alt+W", "Show Web UI server status: port, URL, active clients"),
     (":dos run", "—", "Open a FreeDOS pane (feature `dos`; qemu-curses): [--name N | --image FILE] [--drive-c DIR]"),
     (":dos setup", "—", "Download, verify and build the FreeDOS image in the background: --yes [--full] [--entry ID]"),

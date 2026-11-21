@@ -525,6 +525,8 @@ impl AutomationControlPlane {
             "dos.run" | "dos.setup" | "dos.doctor" | "dos.remove" | "dos.status" | "dos.reset" | "dos.snapshot" | "dos.restore" => self.rpc_dos(method, params),
             "attach.clients" => self.rpc_attach_clients(),
             "attach.kick" => self.rpc_attach_kick(params),
+            "session.transfer" => self.rpc_session_transfer(params),
+            "daemon.restart" => self.rpc_daemon_restart(params),
             "daemon.switch" => super::rpc_daemon::handle_daemon_switch(params),
             "drawer.preview" => self.handle_rpc_drawer_preview(params),
             "workspace.view_model" | "web.status" | "web.open" | "web.open_external" | "web.port" | "web.stop" | "web.pump" | "web.agents" | "web.agent" | "web.logs" | "web.search" | "web.input" | "web.create" | "web.kill" | "web.update" => self.dispatch_web(method, params),

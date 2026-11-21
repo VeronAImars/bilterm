@@ -93,9 +93,11 @@ impl ReleasedPty {
             return Err(BiltermError::Pty("session was not released".into()));
         }
         let wfd = reader::dup_cloexec(self.fd.as_raw_fd()).map_err(BiltermError::Io)?;
-        let writer = writer::PtyWriter::spawn(Box::new(File::from(wfd)), session.traffic.clone())
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer = writer::PtyWriter::spawn(Box::new(super::master_writer::MasterWriter::new(wfd, flag.clone())), session.traffic.clone())
             .map_err(BiltermError::Io)?;
         session.writer = Arc::new(writer);
+        session.suppress_eof = flag;
         if let Some(m) = self._master.take() {
             *session.master.lock().unwrap_or_else(|p| p.into_inner()) = Some(m);
         }
@@ -183,6 +185,8 @@ impl PtySession {
                 return Err(BiltermError::Io(e));
             }
         };
+        // portable-style EOF-on-drop must not reach the child: it keeps running elsewhere.
+        self.suppress_eof.store(true, std::sync::atomic::Ordering::SeqCst);
         self.writer.close();
         let (rows, cols) = self.size();
         self.released = true;
@@ -233,6 +237,7 @@ impl PtySession {
             reader: Some(ReaderCtl { poll, tx }),
             adopted_fd: Some(fd),
             released: false,
+            suppress_eof: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             replay: std::collections::VecDeque::new(),
             watch: Some(super::child_watch::ChildWatch::new(meta.pid)),
         })

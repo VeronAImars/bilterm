@@ -429,6 +429,14 @@ pub enum DaemonSupervisorOp {
     /// `:daemon attach kick <client-id> | --ro` / `attach.kick`: close one attach client (or all
     /// read-only ones) with `Bye{kicked}`. Refused when applied on behalf of an attach client.
     AttachKick { client_id: Option<u64>, all_ro: bool },
+    /// `:daemon transfer [<session>...|--all] --to <daemon>` / `session.transfer`: move live sessions
+    /// (PTYs, shells and terminal state, no restart) from THIS session host to host `to`. Empty
+    /// `sessions` without `all` = the active session. `takeover` targets a `--takeover` host's
+    /// socket and replaces its pristine session; `retire` makes this host exit afterwards.
+    SessionTransfer { sessions: Vec<String>, all: bool, to: String, #[serde(default)] takeover: bool, #[serde(default)] retire: bool },
+    /// `:daemon restart --live [name]` / `daemon.restart`: start a new daemon, transfer every
+    /// session to it, retire the old one; no terminal is killed or reset.
+    RestartLive { name: Option<String> },
 }
 
 pub type DaemonOp = DaemonSupervisorOp;

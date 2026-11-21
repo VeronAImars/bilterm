@@ -116,7 +116,7 @@ impl AutomationControlPlane {
                         } else if tool_name == "bilterm_window_manage" {
                             Err("missing or invalid 'action' parameter: move, reorder, session_move, session_reorder, rename, rename_session, select, bulk, or undo".to_string())
                         } else if tool_name == "bilterm_daemon" {
-                            Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick".to_string())
+                            Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick, session_transfer, restart".to_string())
                         } else if tool_name == "bilterm_dos" {
                             Err("missing or invalid 'action' parameter: run, setup, doctor, remove, status, reset, snapshot, restore".to_string())
                         } else if tool_name == "bilterm_web_surface" {
@@ -321,9 +321,15 @@ impl AutomationControlPlane {
             ),
             Self::mcp_tool_schema(
                 "bilterm_daemon",
-                "Supervise and inspect Bilterm background daemons (list, status, start, new, stop, switch, host_state, attach_clients, attach_kick). list/status report rss_bytes, restart_count, last_exit and limits.",
+                "Supervise and inspect Bilterm background daemons (list, status, start, new, stop, switch, host_state, attach_clients, attach_kick, session_transfer, restart). list/status report rss_bytes, restart_count, last_exit and limits.",
                 &[
-                    ("action", "string", "Operation: list | status | start | new | stop | switch | host_state | attach_clients | attach_kick"),
+                    ("action", "string", "Operation: list | status | start | new | stop | switch | host_state | attach_clients | attach_kick | session_transfer | restart"),
+                    ("to", "string", "With action='session_transfer': target daemon name (a session host)"),
+                    ("sessions", "array", "With action='session_transfer': session names to move (default: the active session)"),
+                    ("all", "boolean", "With action='session_transfer': move every session"),
+                    ("takeover", "boolean", "With action='session_transfer': target is a --takeover host (live restart)"),
+                    ("retire", "boolean", "With action='session_transfer': this host exits after a successful transfer"),
+                    ("live", "boolean", "With action='restart': must be true (restart keeping every session and shell)"),
                     ("client_id", "integer", "With action='attach_kick': attach client id to close with Bye{kicked}"),
                     ("ro", "boolean", "With action='attach_kick': kick every read-only attach client instead of one id"),
                     ("name", "string", "Optional daemon name (defaults to 'default'; with action='new' omitted = first free 'daemon-N', returned as 'name'; an existing name is refused)"),
@@ -607,6 +613,8 @@ impl AutomationControlPlane {
             "host_state" => Some("daemon.host_state"),
             "attach_clients" => Some("attach.clients"),
             "attach_kick" => Some("attach.kick"),
+            "session_transfer" => Some("session.transfer"),
+            "restart" => Some("daemon.restart"),
             _ => None,
         }
     }
