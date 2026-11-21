@@ -30,6 +30,7 @@ pub mod selector;
 pub mod rpc_clipboard;
 pub mod rpc_daemon;
 mod rpc_dos;
+mod rpc_editor;
 pub mod rpc_handlers;
 pub mod rpc_keys;
 pub mod rpc_link;

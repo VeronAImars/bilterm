@@ -8,6 +8,7 @@
 
 pub mod agent_cmd;
 mod coords_cmd;
+mod editor_cmd;
 pub mod daemon_cmd;
 pub mod leading_opts;
 
@@ -17,7 +18,7 @@ use std::path::Path;
 use crate::api::JsonValue;
 
 /// Subcommand words owned by this module.
-pub const CLI_COMMANDS: &[&str] = &["agent", "pane", "workspace", "coords"];
+pub const CLI_COMMANDS: &[&str] = &["agent", "pane", "workspace", "coords", "editor"];
 
 /// True when `first` is one of [`CLI_COMMANDS`].
 pub fn is_cli_command(first: Option<&str>) -> bool {
@@ -143,6 +144,7 @@ Usage:
   bilterm workspace select <NAME|wN>
   bilterm workspace new <NAME>
   bilterm workspace rename <NAME>
+  bilterm editor open [PATH] | scratch [NAME] | save [--force] | saveas <PATH> [--force] | wrap [on|off] | find|findprev <TEXT> | undo | redo | goto <LINE> | revert | insert <TEXT> | text | status | close [--force]
   bilterm coords resolve <COORD>   (e.g. d0:w1:main:y2)
   bilterm coords format [--pane N] [--style verbose|compact|daemon|off]
 
@@ -162,6 +164,7 @@ pub fn parse(args: &[String], env: &CliEnv) -> Result<RpcCall, String> {
         "pane" => parse_pane(&p, env),
         "workspace" => parse_workspace(&p),
         "coords" => coords_cmd::parse_coords(&p, env),
+        "editor" => editor_cmd::parse_editor(&p, env),
         other => Err(format!("unknown command '{other}'\n{}", usage())),
     }
 }

@@ -3,6 +3,7 @@ pub mod agents_list;
 pub mod agents_list_keys;
 mod agents_window;
 pub mod browser_keys;
+mod editor_keys;
 pub mod chord;
 pub mod clipboard_window;
 pub mod clipboard_window_keys;
@@ -608,7 +609,7 @@ pub fn handle_wm_paste_event(wm: &mut WindowManager, pasted_text: &str) -> Resul
     if let Some(action) = agents_window::handle_agents_window_paste(wm, pasted_text) {
         return Ok(action);
     }
-    if let Some(action) = browser_keys::handle_browser_paste(wm, pasted_text) {
+    if let Some(action) = browser_keys::handle_browser_paste(wm, pasted_text).or_else(|| editor_keys::handle_editor_paste(wm, pasted_text)) {
         return Ok(action);
     }
     if !pasted_text.is_empty() {
@@ -744,7 +745,7 @@ pub fn handle_wm_key_event(wm: &mut WindowManager, raw_key: KeyEvent) -> Result<
     if let Some(action) = keymap::reserved_global_action(&km, key).or_else(|| km.primary_action(key)) {
         return wm.apply(action);
     }
-    if let Some(action) = browser_keys::forward_browser_viewport_key(wm, key) {
+    if let Some(action) = browser_keys::forward_browser_viewport_key(wm, key).or_else(|| editor_keys::handle_editor_key(wm, key)) {
         return Ok(action);
     }
 

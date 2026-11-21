@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::action::{Action, BrowserOp, DrawerPreviewOp, VideoOp, VoiceOp, WebOp};
+use crate::action::{Action, BrowserOp, DrawerPreviewOp, EditorOp, VideoOp, VoiceOp, WebOp};
 use crate::wm::SplitDirection;
 use crate::wm::agents_cmd::{AgentsOp, KeywordEdit, SnoopFilterKind, SnoopFilterOp};
 use crate::wm::agents_list_cmd::AgentsListOp;
@@ -245,7 +245,7 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     // Web UI surface status: Ctrl+Alt+W (leader w/W stay ClosePane; Phase 60 UNI-R01)
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('w'), Action::Web(WebOp::Status)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('W'), Action::Web(WebOp::Status)),
-    // Accept the "Open in system browser?" offer / open the browser canvas URL externally: Ctrl+Alt+U (Ctrl+Alt+E stays unbound)
+    // Accept the "Open in system browser?" offer / open the browser canvas URL externally: Ctrl+Alt+U (Ctrl+Alt+E is the scratchpad editor)
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('u'), Action::WebOpenExternal { url: None }),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('U'), Action::WebOpenExternal { url: None }),
     // AGENTS list toggle: Ctrl+Alt+N (verified free; D-03).
@@ -271,6 +271,9 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('B'), Action::Browser(BrowserOp::Toggle)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('y'), Action::Video(VideoOp::Toggle)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('Y'), Action::Video(VideoOp::Toggle)),
+    // Scratchpad editor window (`:scratch`): Ctrl+Alt+E (EDIT-01; opens or focuses the scratchpad)
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('e'), Action::Editor(EditorOp::Scratch { name: None })),
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('E'), Action::Editor(EditorOp::Scratch { name: None })),
     // Find window (`:find agent`): Ctrl+Alt+F. Leader `?` is HelpToggle, so Find has no leader chord (P-06).
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('f'), Action::Find(FindOp::Open { kind: FindKind::Agent, query: String::new() })),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('F'), Action::Find(FindOp::Open { kind: FindKind::Agent, query: String::new() })),

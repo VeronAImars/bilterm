@@ -345,6 +345,7 @@ impl WindowManager {
                                 outline: chrome.outline,
                                 bold: chrome.bold,
                                 colors: chrome.colors,
+                                editor: Self::saved_editor(p),
                             }
                         })
                         .collect();
