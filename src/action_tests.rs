@@ -182,6 +182,7 @@ fn assert_action_reachable(action: &Action) {
         Action::FkeyModeCommand(_) => Some(":fkeys bilterm"),
         Action::VisualStyleCommand(_) => Some(":style snazzy"),
         Action::AgentMail(_) => Some(":agent list"),
+        Action::PaneMail(_) => Some(":mail status"),
         Action::WindowManage(_) => Some(":window undo"),
         Action::SessionManage(_) => Some(":session undo"),
         Action::DaemonSupervisor(_) | Action::Daemon(_) => Some(":daemon list"),

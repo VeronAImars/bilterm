@@ -78,6 +78,8 @@ pub const RPC_METHODS: &[&str] = &[
     "pane.focus",
     "pane.zoom",
     "pane.send",
+    "pane.mail_state",
+    "pane.mail_ack",
     "workspace.list",
     "workspace.select",
     "workspace.new",
@@ -472,6 +474,7 @@ impl AutomationControlPlane {
                     JsonValue::Bool(pane.is_password_prompt()),
                 ),
                 ("read_only", JsonValue::Bool(pane.is_read_only())),
+                ("mail", self.wm.pane_mail_json(id, std::time::Instant::now())),
                 ("recording", JsonValue::Bool(pane.vt().is_recording())),
                 (
                     "notifications",

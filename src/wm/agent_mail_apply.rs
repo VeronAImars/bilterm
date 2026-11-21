@@ -125,6 +125,7 @@ impl WindowManager {
                     false,
                     now,
                 );
+                self.note_pane_message(target_pane_id, &sender_name, now);
 
                 let (status_text, is_nudged) = match delivery {
                     AgentDeliveryMode::Mailbox => ("queued in mailbox".to_string(), false),
@@ -246,6 +247,7 @@ impl WindowManager {
                     };
                     if self.agent_mail.enqueue(msg).is_ok() {
                         recipient_names.push(JsonValue::String(name.clone()));
+                        self.note_pane_message(*pane_id, &sender_name, now);
                         self.record_traffic_with(
                             TrafficEndpoint::Pane(self.active_pane_id()),
                             TrafficEndpoint::Pane(*pane_id),

@@ -1,6 +1,8 @@
 pub mod agents;
 pub mod browser;
 pub use browser::BrowserConfig;
+pub mod ui;
+pub use ui::UiConfig;
 pub mod dotted;
 pub mod keys;
 pub mod coords;
@@ -187,6 +189,8 @@ pub struct BiltermConfig {
     pub api: ApiConfig,
     /// System-browser hand-off policy (`[browser]`).
     pub browser: BrowserConfig,
+    /// `[ui]` pane-mail envelope toggles.
+    pub ui: UiConfig,
     /// When `false`, mouse selection/drag only highlights text and requires an explicit copy (`Enter`/`y`/`Ctrl+C`/`:copy yank`). Default `true`.
     pub copy_on_select: bool,
     /// Modifier override policy for mouse selection over child applications with mouse tracking (`shift_alt`, `shift`, `alt`, `off`).
@@ -285,6 +289,7 @@ impl Default for BiltermConfig {
             appearance: crate::ui::design::AppearanceConfig::default(),
             api: ApiConfig::default(),
             browser: BrowserConfig::default(),
+            ui: UiConfig::default(),
             copy_on_select: true,
             mouse_select_override: "shift_alt".to_string(),
             clipboard_history_persist: true,

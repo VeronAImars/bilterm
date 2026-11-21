@@ -1,5 +1,6 @@
 pub mod agents_gui;
 pub mod find_flash;
+pub mod pane_mail_ui;
 pub mod agents_hud_ui;
 pub mod agents_list_ui;
 pub mod agents_ui;
@@ -603,6 +604,10 @@ impl Widget for WorkspaceWidget<'_> {
                 };
                 let frame_title = if show_title { frame_title } else { String::new() };
                 let frame_title = if self.wm.find_is_selected(id) { format!("{frame_title} [FOUND]") } else { frame_title };
+                let frame_title = match self.wm.pane_mail_view(id, std::time::Instant::now()) {
+                    Some(v) => pane_mail_ui::with_badge(&frame_title, cfg, &v),
+                    None => frame_title,
+                };
                 let mut frame_palette = pane_palette.clone();
                 if non_legacy && cfg.appearance.focus_ring {
                     frame_palette.active_border_fg = design::DesignTokens::from_palette(&pane_palette).accent;

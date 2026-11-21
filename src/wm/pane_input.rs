@@ -17,10 +17,13 @@ impl WindowManager {
     pub(crate) fn pane_input_bytes(&mut self, pane: PaneId, bytes: &[u8]) {
         let msg = match self.pane_input_allowed(pane) {
             Err(e) => Some(format!("Attach input rejected: {e}")),
-            Ok(()) => self
-                .pane_mut(pane)
-                .and_then(|p| p.write_input(bytes).err())
-                .map(|e| format!("Attach input error: {e}")),
+            Ok(()) => {
+                let err = self.pane_mut(pane).and_then(|p| p.write_input(bytes).err());
+                if err.is_none() {
+                    self.note_pane_message(pane, "attach", std::time::Instant::now());
+                }
+                err.map(|e| format!("Attach input error: {e}"))
+            }
         };
         if let Some(m) = msg {
             self.active_pane_mut().set_status_message(Some(m));

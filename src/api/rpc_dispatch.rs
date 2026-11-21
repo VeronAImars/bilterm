@@ -513,6 +513,8 @@ impl AutomationControlPlane {
             "pane.focus" => self.rpc_pane_focus(params),
             "pane.zoom" => self.rpc_pane_zoom(params),
             "pane.send" => self.rpc_pane_send(params),
+            "pane.mail_state" => self.rpc_pane_mail_state(params),
+            "pane.mail_ack" => self.rpc_pane_mail_ack(params),
             "workspace.list" => self.rpc_workspace_list(),
             "workspace.select" => self.rpc_workspace_select(params),
             "workspace.new" => self.rpc_workspace_new(params),

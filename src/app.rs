@@ -258,7 +258,7 @@ impl App {
                         handler.poll_waiters(&mut self.wm);
                     }
                     self.wm.drain_stt_events();
-                    if self.wm.find_flash_tick() {
+                    if self.wm.find_flash_tick() | self.wm.pane_mail_tick(Instant::now()) {
                         self.needs_redraw = true;
                     }
                     if self.poll_all_ptys() {
@@ -388,6 +388,7 @@ impl App {
     fn dispatch_crossterm_event(&mut self, event: Event) -> Result<()> {
         match event {
             Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
+                self.wm.pane_mail_on_local_key();
                 if handle_wm_key_event(&mut self.wm, key)? == AppAction::Quit {
                     self.should_quit = true;
                 }

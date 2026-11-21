@@ -20,6 +20,7 @@ pub mod execute_window;
 pub mod execute_wm;
 pub mod parse;
 mod parse_agent_mail;
+mod parse_pane_mail;
 mod parse_agents;
 mod parse_agents_hud;
 mod parse_agents_list;
