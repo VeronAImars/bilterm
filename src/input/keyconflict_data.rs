@@ -145,7 +145,7 @@ pub const RESERVED_HOST: &[ReservedChord] = &[
     host(c("Alt+`"), LIN, Severity::Warn, "Linux desktop", "same-application window switch"),
     host(c("Ctrl+Alt+T"), LIN, Severity::Warn, "Linux desktop", "open terminal"),
     host(c("Ctrl+Alt+L"), LIN, Severity::Warn, "Linux desktop", "lock screen"),
-    host(c("Ctrl+Alt+D"), LIN, Severity::Warn, "Linux desktop", "show desktop"),
+    host(c("Ctrl+Alt+D"), LIN, Severity::Warn, "Linux desktop", "show desktop (use Ctrl+X &)"),
     host(c("Ctrl+Alt+Left"), LIN, Severity::Warn, "Linux desktop", "switch workspace"),
     host(c("Ctrl+Alt+Right"), LIN, Severity::Warn, "Linux desktop", "switch workspace"),
     host(c("Ctrl+Alt+Up"), LIN, Severity::Warn, "Linux desktop", "switch workspace"),

@@ -199,6 +199,7 @@ impl AutomationControlPlane {
                 ("name", st.map_or(JsonValue::Null, |x| JsonValue::String(x.name.clone()))),
                 ("mode", s(pane.prompt_injection_kind().as_str())),
                 ("mail", self.wm.pane_mail_json(id, Instant::now())),
+                ("remote", self.wm.pane_origin(id).to_json()),
                 ("rows", JsonValue::Number(i64::from(rows))),
                 ("cols", JsonValue::Number(i64::from(cols))),
             ]));

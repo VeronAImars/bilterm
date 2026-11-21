@@ -607,6 +607,9 @@ pub(super) fn route_wm_mouse_event(
     let top_off = shell.top_offset();
     let bot_off = u16::from(shell.bottom_bar.is_some());
     let workspace_area = shell.workspace;
+    if matches!(mouse.kind, MouseEventKind::Moved) {
+        wm.update_grip_hover(mouse.column, mouse.row, workspace_area);
+    }
 
     if shell.top_bar_kind == Some(crate::ui::shell::TopBarKind::Pills) && mouse.row == screen_area.y {
         if let Some(bar) = shell.top_bar

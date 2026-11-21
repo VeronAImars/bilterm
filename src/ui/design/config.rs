@@ -186,6 +186,9 @@ pub struct AppearanceConfig {
     pub title: Option<TitlePolicy>,
     /// Accent-colored border on the focused pane (non-Legacy only).
     pub focus_ring: bool,
+    /// Outline every drop zone while a window is dragged by its grip (`None` = on; `:drag zones on|off`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drag_zones: Option<bool>,
     /// TRON light-cycle border animation speed in cells per second (`0` = off; `:cycles`).
     pub lightcycle_speed: crate::ui::lightcycle::CycleSpeed,
     /// Optional bundled/UI font family for chrome text (GUI only; `None` keeps `font_family`).

@@ -156,6 +156,8 @@ pub struct CompositePane {
     pending_media_records: Vec<(String, usize)>,
     /// Live STT status badge rendered in the 3270 OIA status bar (`STT-02`, `STT-03`).
     stt_badge: Option<String>,
+    /// Remote-origin status text (`⇄[R:host] ssh`), pushed by `WindowManager::sync_origin_badges`.
+    origin_badge: Option<String>,
     mouse_select_sticky: bool,
     toast_expires_at: Option<u64>,
     last_tick_ms: u64,
@@ -220,6 +222,7 @@ impl CompositePane {
             pending_clipboard_records: Vec::new(),
             pending_media_records: Vec::new(),
             stt_badge: None,
+            origin_badge: None,
             mouse_select_sticky: false,
             toast_expires_at: None,
             last_tick_ms: 0,

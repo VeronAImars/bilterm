@@ -77,6 +77,7 @@ fn assert_action_reachable(action: &Action) {
         Action::PanelScaleStepOf(..) => Some(":mcp scale +"),
         Action::ChromeTitle(_) => Some(":chrome title focused"),
         Action::ChromeRing(_) => Some(":chrome ring on"),
+        Action::DragZones(_) => Some(":drag zones on"),
         Action::LightCycles(_) => Some(":cycles 20"),
         Action::Cursor(_) => Some(":cursor block"),
         Action::Outline { .. } => Some(":outline double"),
@@ -124,6 +125,7 @@ fn assert_action_reachable(action: &Action) {
         Action::SshTmuxConnect { .. } => Some(":ssh-tmux user@host main"),
         Action::RemoteAdd { .. } => Some(":remote add web1 user@host prod"),
         Action::RemoteList => Some(":remote list"),
+        Action::RemoteStatus { .. } => Some(":remote status"),
         Action::RemoteExec { .. } => Some(":remote exec @all uptime"),
         Action::RemoteDisconnect(_) => Some(":remote disconnect web1"),
         Action::RemoteLink(_) => Some(":ssh-tmux info"),
@@ -354,6 +356,7 @@ fn every_action_is_reachable_from_keymap_colon_or_rpc() {
         Action::PanelScaleStepOf(crate::ui::typography::PanelTarget::Mcp, 10),
         Action::ChromeTitle(Some(crate::ui::design::TitlePolicy::Focused)),
         Action::ChromeRing(true),
+        Action::DragZones(false),
         Action::LightCycles(crate::ui::lightcycle::LightCycleOp::Speed(20)),
         Action::Cursor(CaretStyle::SolidBlock),
         Action::Outline {
@@ -417,6 +420,7 @@ fn every_action_is_reachable_from_keymap_colon_or_rpc() {
             tags: vec!["prod".to_string()],
         },
         Action::RemoteList,
+        Action::RemoteStatus { pane: None },
         Action::RemoteExec {
             selector: "@all".to_string(),
             command: "uptime".to_string(),

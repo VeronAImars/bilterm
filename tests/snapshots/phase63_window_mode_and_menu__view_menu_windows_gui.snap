@@ -3,7 +3,7 @@ source: tests/phase63_window_mode_and_menu.rs
 expression: "menu_overlay(KeyEnv::new(HostOs::Windows, Surface::Gui), \"View\")"
 ---
  ≡ System  Window  Prompt  View  Theme  Tmux  Help  Daemon  Web
-┌ [1] PANE #1 (Z:1/3) ────╔ View ══════════════════════[_][□][X]═╗][□][X]─┐╔ [3] PANE #3 [_][□][X]═╗
+┌⠿[1] PANE #1 (Z:1/3) ────╔ View ══════════════════════[_][□][X]═╗][□][X]─┐╔⠿[3] PANE #3 [_][□][X]═╗
 │ ┌╣ BILTERM 3270 // CMD [║► 3270 Field Hints            Ctrl+X f║0 // C┐ │║ ╔╣ BILTERM 3270 // C╗ ║
 │ │==>                    ║  Vi Copy Mode                Ctrl+X c║      │ │║ ║==>                ║ ║
 │ └───────────────────────║  Rectangular Select          Ctrl+X r║──────┘ │║ ╚═══════════════════╝ ║

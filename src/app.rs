@@ -258,7 +258,7 @@ impl App {
                         handler.poll_waiters(&mut self.wm);
                     }
                     self.wm.drain_stt_events();
-                    if self.wm.find_flash_tick() | self.wm.pane_mail_tick(Instant::now()) {
+                    if self.wm.find_flash_tick() | self.wm.pane_mail_tick(Instant::now()) | self.wm.sync_origin_badges() {
                         self.needs_redraw = true;
                     }
                     if self.poll_all_ptys() {

@@ -87,6 +87,8 @@ pub enum Action {
     ChromeTitle(Option<crate::ui::design::TitlePolicy>),
     /// Accent border on the focused pane (non-Legacy looks).
     ChromeRing(bool),
+    /// Window drag drop-zone overlay on/off (`:drag zones on|off`).
+    DragZones(bool),
     /// TRON light-cycle border animation: show, on, off or set the speed (`:cycles`).
     LightCycles(crate::ui::lightcycle::LightCycleOp),
     Cursor(CaretStyle),
@@ -177,6 +179,8 @@ pub enum Action {
         tags: Vec<String>,
     },
     RemoteList,
+    /// `:remote status [pane]` / `remote.status` RPC / `bilterm pane remote`: per-pane origin (local, ssh, tmux-link, ...).
+    RemoteStatus { pane: Option<usize> },
     RemoteExec {
         selector: String,
         command: String,
@@ -505,6 +509,8 @@ impl Action {
             Self::DosRestore { args } => format!(":dos restore {}", args.join(" ")).trim_end().to_string(),
             Self::AgentMail(op) => op.colon_form(),
             Self::PaneMail(op) => op.colon_form(),
+            Self::RemoteStatus { pane: Some(p) } => format!(":remote status {p}"),
+            Self::RemoteStatus { pane: None } => ":remote status".to_string(),
             Self::AgentsHud(op) => op.colon_form(),
             Self::AgentsReplay(op) => op.colon_form(),
             Self::AgentsWatchdog(_) => ":agents watchdog status".to_string(),
@@ -512,6 +518,11 @@ impl Action {
                 Some(id) => format!(":window reorder {id} {to}"),
                 None => format!(":window reorder {to}"),
             },
+            Self::WindowManage(crate::wm::window_manage::WindowManageOp::Place { window_id, target, how }) => {
+                let id = window_id.map(|i| format!(" {i}")).unwrap_or_default();
+                let to = target.map(|t| format!(" {t}")).unwrap_or_default();
+                format!(":window place{id} {}{to}", how.name())
+            }
             Self::WindowManage(_) => ":window undo".to_string(),
             Self::SessionManage(crate::wm::window_manage::SessionManageOp::MoveOrder { name, target_pos }) => match name {
                 Some(n) => format!(":session move {n} {target_pos}"),

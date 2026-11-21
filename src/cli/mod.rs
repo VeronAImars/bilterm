@@ -143,6 +143,7 @@ Usage:
   bilterm pane send <SELECTOR> <TEXT...> [--enter]
   bilterm pane mail [SELECTOR]
   bilterm pane mail-ack [SELECTOR | --all]
+  bilterm pane remote [SELECTOR]
   bilterm workspace list
   bilterm workspace select <NAME|wN>
   bilterm workspace new <NAME>
@@ -193,6 +194,7 @@ fn parse_pane(p: &Parsed, env: &CliEnv) -> Result<RpcCall, String> {
         }
         "focus" => Ok(call("pane.focus", base_params(env, vec![sel(0).ok_or("pane focus needs a SELECTOR")?]))),
         "zoom" => Ok(call("pane.zoom", base_params(env, sel(0).into_iter().collect()))),
+        "remote" => Ok(call("remote.status", base_params(env, sel(0).into_iter().collect()))),
         "mail" => Ok(call("pane.mail_state", base_params(env, sel(0).into_iter().collect()))),
         "mail-ack" => {
             let mut e: Vec<(&str, JsonValue)> = sel(0).into_iter().collect();

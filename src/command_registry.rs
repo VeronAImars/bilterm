@@ -43,7 +43,7 @@ pub(crate) const EXTRA: &[(&str, &str, &str)] = &[
     (":border", ":outline", "Alias of :outline."),
     (":box-select", ":rect", "Alias of :rect."),
     (":edit", "", "Open a text or markdown file in an editor window (`:edit [path]`); `bilterm ctl editor.open`, `bilterm_editor` MCP."),
-    (":scratch", "", "Open or focus the scratchpad editor window (`:scratch [name]`, Ctrl+Alt+E): autosaved privately, restored after restart."),
+    (":scratch", "", "Open or focus the scratchpad editor window (`:scratch [name]`, Ctrl+X _ or Ctrl+Alt+E): autosaved privately, restored after restart."),
     (":editor", "", "Editor window verbs: `:editor save|saveas|wrap|find|findprev|undo|redo|goto|revert|insert|text|status|close` (same as `editor.*` RPC and `bilterm_editor` MCP)."),
     (":dos", "", "DOS mode (feature `dos`): `:dos run [--name N | --image FILE] [--drive-c DIR]` opens a FreeDOS pane running QEMU (qemu-curses); `:dos setup|doctor|status|remove|reset|snapshot|restore` manage the host image (same verbs as `bilterm dos`, `dos.*` RPC, `bilterm_dos` MCP)."),
     (":clear", "", "Clear the focused pane's screen and scrollback and reset the page anchor."),

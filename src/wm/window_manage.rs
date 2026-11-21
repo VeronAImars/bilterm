@@ -40,6 +40,15 @@ pub enum WindowManageOp {
         window_id: Option<PaneId>,
         to: String,
     },
+    /// Places a window relative to a target (`swap|left|right|up|down`, Tiled) or floats it (`float`, no
+    /// target): the drop of a window drag (`wm/window_drag.rs`), `:window place`, RPC `window.place`.
+    Place {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window_id: Option<PaneId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<PaneId>,
+        how: crate::wm::window_drag_place::PlaceHow,
+    },
     /// Updates the multi-selection state for windows.
     Select(WindowSelectTarget),
     /// Executes an atomic bulk operation on currently selected windows.
@@ -352,6 +361,7 @@ impl WindowManager {
                 self.rename_window(*window_id, new_name)
             }
             WindowManageOp::Reorder { window_id, to } => self.reorder_window(*window_id, to),
+            WindowManageOp::Place { window_id, target, how } => self.place_window(*window_id, *target, *how),
             WindowManageOp::Select(spec) => {
                 let count = self.select_window(spec)?;
                 Ok(format!("Selected {count} window(s)"))
