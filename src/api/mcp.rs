@@ -120,7 +120,7 @@ impl AutomationControlPlane {
                         } else if tool_name == "bilterm_dos" {
                             Err("missing or invalid 'action' parameter: run, setup, doctor, remove, status, reset, snapshot, restore".to_string())
                         } else if tool_name == "bilterm_web_surface" {
-                            Err("invalid 'action' parameter: status, open, port or stop".to_string())
+                            Err("invalid 'action' parameter: status, open, external, port or stop".to_string())
                         } else if tool_name == "bilterm_clipboard" {
                             Err("missing or invalid 'action' parameter: list, get, copy, paste, pin, delete, clear, or window".to_string())
                         } else if tool_name == "bilterm_agent_control" {
@@ -353,7 +353,7 @@ impl AutomationControlPlane {
             ),
             Self::mcp_tool_schema(
                 "bilterm_web_surface",
-                "Inspect or control the Web UI surface server (status, open browser, set port, stop). Returns enabled, port, url, active_clients, web_dir.",
+                "Inspect or control the Web UI surface server (status, open browser, open_external URL in the system browser [needs [api] allow_config_write], set port, stop). Returns enabled, port, url, active_clients, web_dir.",
                 &[
                     ("action", "string", "Operation: status | open | port | stop (default 'status')"),
                     ("port", "integer", "TCP port when action='port'"),
@@ -587,6 +587,7 @@ impl AutomationControlPlane {
         match args.get("action").and_then(JsonValue::as_str).unwrap_or("status") {
             "status" => Some("web.status"),
             "open" => Some("web.open"),
+            "external" | "open_external" => Some("web.open_external"),
             "port" => Some("web.port"),
             "stop" => Some("web.stop"),
             _ => None,

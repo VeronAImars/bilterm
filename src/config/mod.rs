@@ -1,4 +1,6 @@
 pub mod agents;
+pub mod browser;
+pub use browser::BrowserConfig;
 pub mod dotted;
 pub mod keys;
 pub mod coords;
@@ -183,6 +185,8 @@ pub struct BiltermConfig {
     pub appearance: crate::ui::design::AppearanceConfig,
     /// Automation-plane policy (`[api]`, Phase 49-04); config writes over the API are off by default.
     pub api: ApiConfig,
+    /// System-browser hand-off policy (`[browser]`).
+    pub browser: BrowserConfig,
     /// When `false`, mouse selection/drag only highlights text and requires an explicit copy (`Enter`/`y`/`Ctrl+C`/`:copy yank`). Default `true`.
     pub copy_on_select: bool,
     /// Modifier override policy for mouse selection over child applications with mouse tracking (`shift_alt`, `shift`, `alt`, `off`).
@@ -280,6 +284,7 @@ impl Default for BiltermConfig {
             liquid_glass: false,
             appearance: crate::ui::design::AppearanceConfig::default(),
             api: ApiConfig::default(),
+            browser: BrowserConfig::default(),
             copy_on_select: true,
             mouse_select_override: "shift_alt".to_string(),
             clipboard_history_persist: true,

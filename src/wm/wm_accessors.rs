@@ -52,6 +52,11 @@ impl WindowManager {
             return (!self.config.api.allow_config_write)
                 .then(|| "DOS setup/remove/reset/snapshot/restore over the API are disabled; set [api] allow_config_write = true in config.toml".to_string());
         }
+        // Launching a host process (the system browser) is outside the workspace: gate it for API callers.
+        if matches!(action, Action::WebOpenExternal { .. }) {
+            return (!self.config.api.allow_config_write)
+                .then(|| "opening the system browser over the API is disabled; set [api] allow_config_write = true in config.toml".to_string());
+        }
         let writes = matches!(action, Action::ConfigSet(..) | Action::ConfigSave | Action::AppearanceSave);
         if !writes {
             return None;

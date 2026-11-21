@@ -245,6 +245,9 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     // Web UI surface status: Ctrl+Alt+W (leader w/W stay ClosePane; Phase 60 UNI-R01)
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('w'), Action::Web(WebOp::Status)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('W'), Action::Web(WebOp::Status)),
+    // Accept the "Open in system browser?" offer / open the browser canvas URL externally: Ctrl+Alt+U (Ctrl+Alt+E stays unbound)
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('u'), Action::WebOpenExternal { url: None }),
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('U'), Action::WebOpenExternal { url: None }),
     // AGENTS list toggle: Ctrl+Alt+N (verified free; D-03).
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('n'), Action::AgentsList(AgentsListOp::Toggle)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('N'), Action::AgentsList(AgentsListOp::Toggle)),

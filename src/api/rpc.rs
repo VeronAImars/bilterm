@@ -139,6 +139,7 @@ pub const RPC_METHODS: &[&str] = &[
     "workspace.view_model",
     "web.status",
     "web.open",
+    "web.open_external",
     "web.port",
     "web.stop",
     "web.pump",

@@ -728,7 +728,7 @@ const COLON_COMMANDS: &[(&str, &[&str])] = &[
     (":more", &[]),
     (":trigger", &["add ", "clear"]),
     (":notifications", &["clear"]),
-    (":web", &["status", "open", "port ", "stop"]),
+    (":web", &["status", "open", "external ", "port ", "stop"]),
     (":dos", &["run", "setup", "doctor", "status", "remove", "reset", "snapshot", "restore "]),
     (":wmode", &["on", "off", "focus", "resize", "move"]),
     (":keys", &["list", "check", "explain ", "profile "]),

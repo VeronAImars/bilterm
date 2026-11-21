@@ -27,7 +27,24 @@ fn video_backend_label(name: &str) -> &'static str {
     if name == "ffmpeg-pipe" { "ffmpeg" } else { "synthetic demo" }
 }
 
+/// Runs a `BrowserOp`; a successful-looking `Open` also raises the non-blocking offer to open the
+/// same URL in the system browser (`[browser] offer_external`, TUI/local origin only).
 pub fn execute_browser_command(wm: &mut WindowManager, op: BrowserOp) -> bool {
+    let offer_for = match &op {
+        BrowserOp::Open { url, .. } => Some((url.clone(), match &op {
+            BrowserOp::Open { pane_id, .. } => pane_id.unwrap_or_else(|| wm.active_pane_id()),
+            _ => unreachable!(),
+        })),
+        _ => None,
+    };
+    let quit = execute_browser_inner(wm, op);
+    if let Some((url, pane_id)) = offer_for {
+        super::execute_web::offer_external_browser(wm, &url, pane_id);
+    }
+    quit
+}
+
+fn execute_browser_inner(wm: &mut WindowManager, op: BrowserOp) -> bool {
     let target_id = match &op {
         BrowserOp::Toggle => wm.active_pane_id(),
         BrowserOp::Open { pane_id, .. }

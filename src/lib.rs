@@ -13,6 +13,7 @@ pub mod daemon;
 #[cfg(feature = "dos")]
 pub mod dos;
 pub mod error;
+pub mod ext_browser;
 pub mod input;
 pub mod launcher;
 pub mod launcher_terminal;
