@@ -7,6 +7,7 @@ use crate::wm::agents_list_cmd::AgentsListOp;
 use crate::wm::agents_window::GraphDir;
 use crate::wm::drawer::DrawerNavOp;
 use crate::wm::find_cmd::{FindKind, FindOp};
+use crate::wm::session_find::SessionFindOp;
 use crate::wm::keyboard_focus::FocusOp;
 use crate::wm::link_cmd::RemoteLinkOp;
 use crate::wm::session_map::SessionMapOp;
@@ -274,6 +275,9 @@ pub const DEFAULT_GLOBAL_BINDINGS: &[(KeyModifiers, KeyCode, Action)] = &[
     // Find window (`:find agent`): Ctrl+Alt+F. Leader `?` is HelpToggle, so Find has no leader chord (P-06).
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('f'), Action::Find(FindOp::Open { kind: FindKind::Agent, query: String::new() })),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('F'), Action::Find(FindOp::Open { kind: FindKind::Agent, query: String::new() })),
+    // Session find (`:find --pid N --cwd D --text T`): Ctrl+Alt+D prefills the filters on the prompt.
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('d'), Action::SessionFind(SessionFindOp::Prefill)),
+    (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('D'), Action::SessionFind(SessionFindOp::Prefill)),
     // Reconnect the tmux link (`:ssh-tmux reconnect`): Ctrl+Alt+R, also reserved in raw passthrough.
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('r'), Action::RemoteLink(RemoteLinkOp::Reconnect)),
     (KeyModifiers::CONTROL.union(KeyModifiers::ALT), KeyCode::Char('R'), Action::RemoteLink(RemoteLinkOp::Reconnect)),

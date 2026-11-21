@@ -776,6 +776,8 @@ impl VtParser {
     }
 
     pub fn unread_bell(&self) -> bool { self.unread_bell }
+    /// Raises the unread-bell indicator (session find `beep`); cleared by `clear_notifications`.
+    pub fn ring_bell(&mut self) { self.unread_bell = true; }
     pub fn recent_escape_sequences(&self) -> &[String] { &self.recent_escape_sequences }
     pub fn last_exit_code(&self) -> Option<i32> { self.last_exit_code }
     pub fn last_duration_ms(&self) -> Option<u64> { self.last_duration_ms }

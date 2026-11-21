@@ -12,6 +12,7 @@ use crate::input::keyprofile::{EffectiveKeymap, lookup_global, lookup_pane, user
 use crate::wm::agents_cmd::AgentsOp;
 use crate::wm::agents_list_cmd::AgentsListOp;
 use crate::wm::find_cmd::FindOp;
+use crate::wm::session_find::SessionFindOp;
 use crate::wm::link_cmd::RemoteLinkOp;
 use crate::wm::session_map::SessionMapOp;
 use crate::wm::clipboard_window::ClipboardWindowOp;
@@ -49,7 +50,7 @@ pub fn default_global_action(key: KeyEvent, fuzzy_search_active: bool) -> Option
 /// while an agent or a remote ssh prompt owns the pane.
 pub(super) fn reserved_global_action(km: &EffectiveKeymap, key: KeyEvent) -> Option<Action> {
     match km.global_action(key, false) {
-        Some(a @ (Action::Agents(AgentsOp::Toggle(_)) | Action::AgentsList(AgentsListOp::Toggle) | Action::SessionMap(SessionMapOp::Toggle) | Action::ClipboardWindow(ClipboardWindowOp::Toggle) | Action::TrafficMonitor(TrafficMonitorOp::Toggle) | Action::Find(FindOp::Open { .. }) | Action::RemoteLink(RemoteLinkOp::Reconnect) | Action::AgentGuide(_))) => Some(a),
+        Some(a @ (Action::Agents(AgentsOp::Toggle(_)) | Action::AgentsList(AgentsListOp::Toggle) | Action::SessionMap(SessionMapOp::Toggle) | Action::ClipboardWindow(ClipboardWindowOp::Toggle) | Action::TrafficMonitor(TrafficMonitorOp::Toggle) | Action::Find(FindOp::Open { .. }) | Action::SessionFind(SessionFindOp::Prefill) | Action::RemoteLink(RemoteLinkOp::Reconnect) | Action::AgentGuide(_))) => Some(a),
         _ => None,
     }
 }

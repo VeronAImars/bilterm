@@ -232,6 +232,8 @@ pub enum Action {
     ScriptStudio(crate::wm::script_studio::ScriptStudioOp),
     /// `:find agent|session|history [text]` and the `:finder` modal verbs (Phase 50.1, FND-R01).
     Find(crate::wm::find_cmd::FindOp),
+    /// `:find --pid N --pty P --cwd D --cmd C --text T` and `:find-focus|send|beep|flash|select` - locate panes by OS attributes and act (`Ctrl+Alt+D`).
+    SessionFind(crate::wm::session_find::SessionFindOp),
     FontZoomIn,
     FontZoomOut,
     FontZoomReset,
@@ -521,6 +523,7 @@ impl Action {
                 format!(":drawer preview session {name}")
             }
             Self::ScriptStudio(op) => op.colon_form(),
+            Self::SessionFind(op) => op.colon_form(),
             Self::Web(op) => op.colon_form(),
             Self::WebOpenExternal { url: None } => ":web external".to_string(),
             Self::WebOpenExternal { url: Some(u) } => format!(":web external {u}"),

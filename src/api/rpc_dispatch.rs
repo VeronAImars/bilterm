@@ -17,7 +17,7 @@ use crate::wm::traffic::{TrafficEndpoint, TrafficKind};
 
 /// Methods that deliver bytes to a pane's shell/PTY: refused on a daemon without `--host-ptys`.
 const PTY_REQUIRED_METHODS: &[&str] =
-    &["pane.exec", "pane.send_keys", "pane.send", "agent.prompt", "agent.approve", "swarm.run", "swarm.spawn"];
+    &["pane.exec", "pane.send_keys", "pane.send", "find.send", "agent.prompt", "agent.approve", "swarm.run", "swarm.spawn"];
 
 impl AutomationControlPlane {
     /// Dispatches a JSON-RPC 2.0 control plane method against the workspace.
@@ -482,6 +482,7 @@ impl AutomationControlPlane {
             "find.agents" => self.find_rpc(FindKind::Agent, params),
             "find.sessions" => self.find_rpc(FindKind::Session, params),
             "find.history" => self.find_rpc(FindKind::History, params),
+            "find.locate" | "find.focus" | "find.send" | "find.beep" | "find.flash" | "find.select" => self.dispatch_session_find(method, params),
             "workspace.fontsize" => self.handle_rpc_fontsize(params),
             "canvas.command" | "canvas.status" => self.handle_rpc_canvas(params),
             "session.save" => self.handle_rpc_session_save(params),

@@ -88,6 +88,7 @@ impl AutomationControlPlane {
                     "bilterm_workspace_fontsize" => Some("workspace.fontsize"),
                     "bilterm_canvas" => Some("canvas.command"),
                     "bilterm_find" => Some(Self::find_method_for_kind(&args).unwrap_or("")),
+                    "bilterm_session_find" => Some(Self::session_find_method(&args).unwrap_or("")),
                     "bilterm_agents_list" => Some("agents.list"),
                     "bilterm_agents_demo" => Some("agents.demo"),
                     "bilterm_session_map" => Some("session.map"),
@@ -129,6 +130,8 @@ impl AutomationControlPlane {
                             Err("invalid 'action' parameter: list, check, explain, profile, window_mode or menu_open".to_string())
                         } else if tool_name == "bilterm_traffic" {
                             Err("missing or invalid 'action' parameter: snapshot, history, window, reset, or config".to_string())
+                        } else if tool_name == "bilterm_session_find" {
+                            Err("invalid 'action' parameter: locate, focus, send, beep, flash or select".to_string())
                         } else if tool_name == "bilterm_voice" {
                             Err("missing or invalid 'action' parameter: toggle, start, stop, cancel, status, provider, or inject_wav".to_string())
                         } else {
@@ -478,6 +481,30 @@ impl AutomationControlPlane {
                     ("style", "string", "verbose | compact | daemon | off (default 'compact')"),
                 ],
             ),
+            Self::mcp_tool_schema(
+                "bilterm_session_find",
+                "Locate panes by OS identifying attributes (shell/foreground PID, process group, session id, pty path, cwd, process name/command, user, env marker, title, screen/scrollback text; all given filters must match) and optionally act on the matches. send skips read-only and password panes and is capped at 16 panes.",
+                &[
+                    ("action", "string", "locate (default) | focus | send | beep | flash | select"),
+                    ("pid", "integer", "Shell or foreground process id"),
+                    ("pgid", "integer", "Process group id"),
+                    ("sid", "integer", "Session id"),
+                    ("pane", "integer", "Pane id"),
+                    ("pty", "string", "PTY path (/dev/pts/3, pts/3 or 3)"),
+                    ("cwd", "string", "Substring of the working directory"),
+                    ("cmd", "string", "Substring of a process name or command line"),
+                    ("name", "string", "Substring of a process name"),
+                    ("user", "string", "Owner user name or uid"),
+                    ("env", "string", "Environment marker KEY or KEY=VALUE"),
+                    ("title", "string", "Substring of the pane title"),
+                    ("text", "string", "Text in the screen or scrollback (case-insensitive)"),
+                    ("session", "string", "Session name"),
+                    ("limit", "integer", "Maximum rows (default 50, max 200)"),
+                    ("send", "string", "Text to type (action=send)"),
+                    ("enter", "boolean", "Append Enter (action=send)"),
+                    ("clear", "boolean", "action=select: drop the selection"),
+                ],
+            ),
         ];
         JsonValue::obj([("tools", JsonValue::Array(tools))])
     }
@@ -566,6 +593,19 @@ impl AutomationControlPlane {
             "delete" => Some("clipboard.delete"),
             "clear" => Some("clipboard.clear"),
             "window" => Some("clipboard.window"),
+            _ => None,
+        }
+    }
+
+    /// `bilterm_session_find` `action` argument -> the `find.*` RPC method; `None` when unknown.
+    fn session_find_method(args: &JsonValue) -> Option<&'static str> {
+        match args.get("action").and_then(JsonValue::as_str).unwrap_or("locate") {
+            "locate" => Some("find.locate"),
+            "focus" => Some("find.focus"),
+            "send" => Some("find.send"),
+            "beep" => Some("find.beep"),
+            "flash" => Some("find.flash"),
+            "select" => Some("find.select"),
             _ => None,
         }
     }

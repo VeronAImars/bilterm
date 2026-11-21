@@ -44,6 +44,7 @@ pub mod drawer;
 pub mod find_cmd;
 pub mod journal;
 pub mod keyboard_focus;
+pub mod session_find;
 pub mod key_mode;
 pub mod which_key_state;
 pub mod layout_profile;
@@ -246,6 +247,8 @@ pub struct WindowManager {
     agents_hud: agents_hud::AgentsHudState,
     /// Keyboard owner at the last settle (`keyboard_focus::settle_keyboard_owner`).
     keyboard_owner_seen: keyboard_focus::KeyboardOwner,
+    /// Session find state (`:find --pid ...`): last matches, selection, flashes.
+    session_find: session_find::SessionFindState,
     /// Floating SESSION MAP packing viewer state (`VIEW-02`, Phase 54).
     pub(crate) session_map: session_map::SessionMapState,
     /// Floating FONTS window state (`WIN-01`, Phase 51.2).
@@ -398,6 +401,7 @@ impl WindowManager {
             agents_list: agents_list::AgentsListState::default(),
             agents_hud: agents_hud::AgentsHudState::default(),
             keyboard_owner_seen: keyboard_focus::KeyboardOwner::Pane,
+            session_find: session_find::SessionFindState::default(),
             session_map: session_map::SessionMapState::default(),
             daemon_window: daemon_window::DaemonWindowState::default(),
             fonts_window: fonts_window::FontsWindowState::default(),

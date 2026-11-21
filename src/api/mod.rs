@@ -23,6 +23,7 @@ pub mod output_ring;
 pub mod playbook;
 pub mod rpc;
 pub mod rpc_dispatch;
+pub mod rpc_find;
 pub mod rpc_agents;
 pub mod rpc_agent_ctl;
 pub mod rpc_agent_hud;
