@@ -9,8 +9,8 @@
 //!   output when the last copy closes early, verdict 1e);
 //! - `O_NONBLOCK` is never set on the master (shared with the adopter).
 //!
-//! Exit status of an adopted child is not obtainable by a non-parent (`exit_code` is `None`);
-//! exit is still reported through master EOF/EIO.
+//! Exit status of an adopted child is obtainable only by its parent (`ChildWatch`); a non-parent
+//! gets liveness (master EOF/EIO, `kill(0)` + zombie check) and `exit_code` is `None`.
 
 use std::fs::File;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
@@ -72,8 +72,42 @@ impl ReleasedPty {
         fdpass::send_fds(sock, payload, &[self.fd.as_raw_fd()])
     }
 
-    /// The new host confirmed adoption: close our copies. The shell is not touched.
-    pub fn ack(self) {}
+    /// The new host confirmed adoption: close our copies. The shell is not touched. When we are
+    /// still the child's parent a detached thread reaps it at exit, so it never lingers as a
+    /// zombie for as long as this process lives (its status is not reported to the adopter).
+    pub fn ack(mut self) {
+        if let Some(mut child) = self._child.take() {
+            let _ = std::thread::Builder::new().name("bilterm-pty-reaper".into()).spawn(move || {
+                let _ = child.wait();
+            });
+        }
+    }
+
+    /// Rollback: the new host never confirmed. Puts master and child back into `session` (the
+    /// one this was released from), restarts its writer and reader, and re-queues any events not
+    /// yet taken with [`take_pending`](Self::take_pending) ahead of new output. No byte of the
+    /// stream is lost: the PTY bytes were never read by anyone else (the adopter's reader starts
+    /// only after commit).
+    pub fn reclaim(mut self, session: &mut PtySession) -> Result<()> {
+        if !session.released {
+            return Err(BiltermError::Pty("session was not released".into()));
+        }
+        let wfd = reader::dup_cloexec(self.fd.as_raw_fd()).map_err(BiltermError::Io)?;
+        let writer = writer::PtyWriter::spawn(Box::new(File::from(wfd)), session.traffic.clone())
+            .map_err(BiltermError::Io)?;
+        session.writer = Arc::new(writer);
+        if let Some(m) = self._master.take() {
+            *session.master.lock().unwrap_or_else(|p| p.into_inner()) = Some(m);
+        }
+        if let Some(c) = self._child.take() {
+            *session.child.lock().unwrap_or_else(|p| p.into_inner()) = Some(c);
+        }
+        for ev in self.pending.drain(..).rev() {
+            session.replay.push_front(ev);
+        }
+        session.released = false;
+        session.resume_reader()
+    }
 }
 
 impl PtySession {
@@ -161,19 +195,12 @@ impl PtySession {
         })
     }
 
-    /// Failure path of `release`: the events already taken are not lost to the session.
+    /// Failure path of `release`: the events already taken go back in front of new output.
     fn requeue_or_resume(&mut self, pending: Vec<PtyEvent>) {
-        let _ = self.resume_reader();
-        // Channel order is preserved for new output only; the old events are re-queued first
-        // best-effort (capacity 32, `try_send`) via a fresh channel is overkill, so push back
-        // what fits and log the rest.
-        if let Some(ctl) = self.reader.as_ref() {
-            for ev in pending {
-                if ctl.tx.try_send(ev).is_err() {
-                    tracing::warn!("PTY release rollback dropped a queued event");
-                }
-            }
+        for ev in pending.into_iter().rev() {
+            self.replay.push_front(ev);
         }
+        let _ = self.resume_reader();
     }
 
     /// Adopts a master fd released by another session or process. The child is not ours: no
@@ -185,9 +212,10 @@ impl PtySession {
         let read_fd = reader::dup_cloexec(raw).map_err(BiltermError::Io)?;
         let traffic = crate::traffic::ChannelCounters::new();
         let (tx, rx) = mpsc::channel(32);
-        let poll = reader::PollReader::start(read_fd, tx.clone(), traffic.clone())
-            .map_err(BiltermError::Io)?;
         let writer = writer::PtyWriter::spawn(Box::new(File::from(write_fd)), traffic.clone())
+            .map_err(BiltermError::Io)?;
+        // Last fallible step: a failed adoption must not have consumed any PTY byte.
+        let poll = reader::PollReader::start(read_fd, tx.clone(), traffic.clone())
             .map_err(BiltermError::Io)?;
         let rows = meta.rows.max(1);
         let cols = meta.cols.max(1);
@@ -205,6 +233,8 @@ impl PtySession {
             reader: Some(ReaderCtl { poll, tx }),
             adopted_fd: Some(fd),
             released: false,
+            replay: std::collections::VecDeque::new(),
+            watch: Some(super::child_watch::ChildWatch::new(meta.pid)),
         })
     }
 
