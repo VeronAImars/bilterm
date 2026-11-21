@@ -194,10 +194,15 @@ fn refusals_are_clear_and_side_effect_free() {
     let old = FakeProbe { version: "QEMU emulator version 9.0.0", ..FakeProbe::good() };
     assert!(err(prepare(&req(&[]), &fx.env(&old), true)).contains("unusable"));
     let nocurses = FakeProbe { display: "none\n", ..FakeProbe::good() };
-    // auto-selection falls to textbuf, which has no PTY runner in D2a
-    assert!(err(prepare(&req(&[]), &fx.env(&nocurses), true)).contains("text-buffer"));
+    // auto-selection falls to textbuf, which runs as a Bridge plan (D3b)
+    assert_eq!(prepare(&req(&[]), &fx.env(&nocurses), true).unwrap().plan.kind, LaunchKind::Bridge);
     assert!(err(prepare(&req(&["--backend", "qemu-curses"]), &fx.env(&nocurses), true)).contains("curses"));
-    assert!(err(prepare(&req(&["--backend", "qemu-textbuf"]), &fx.env(&good), true)).contains("text-buffer"));
+    let tb = prepare(&req(&["--backend", "qemu-textbuf"]), &fx.env(&good), true).unwrap();
+    assert_eq!(tb.plan.kind, LaunchKind::Bridge);
+    assert!(tb.plan.argv.windows(2).any(|w| w == ["-display", "none"]));
+    check_plan_safety(&tb.plan).unwrap();
+    assert!(err(prepare(&req(&["--backend", "qemu-textbuf", "--drive-c", "/"]), &fx.env(&good), true)).contains("qemu-curses"));
+    drop(tb);
     assert!(err(prepare(&req(&["--backend", "bogus"]), &fx.env(&good), true)).contains("unknown backend"));
     // missing / unsafe image names never reach the network or a process
     assert!(err(prepare(&req(&["--name", "nope"]), &fx.env(&good), true)).contains("dos setup"));
@@ -365,12 +370,12 @@ fn render_command_quotes_for_display() {
 }
 
 #[test]
-fn registry_rows_construct_pty_backends() {
+fn registry_rows_construct_backends() {
     for (kind, ctor) in REGISTRY {
         let d = tempfile::tempdir().unwrap();
         let b = ctor(&BackendCtx { program: "/q".into(), base: d.path().to_path_buf() });
         assert_eq!(b.id(), kind.id());
-        assert!(b.caps().text_pane_native);
+        assert_eq!(b.caps().text_pane_native, *kind == BackendKind::QemuCurses);
     }
 }
 
@@ -420,4 +425,24 @@ fn dos_curses_smoke() {
     let _ = child.kill();
     let text = String::from_utf8_lossy(&seen).to_string();
     assert!(text.contains("Booting from") || text.contains("No bootable"), "no SeaBIOS text in curses output: {text:?}");
+}
+
+#[test]
+fn sweep_removes_only_old_empty_run_dirs() {
+    let d = tempfile::tempdir().unwrap();
+    let old_empty = d.path().join("run-aaaa");
+    let old_full = d.path().join("run-bbbb");
+    let young = d.path().join("run-cccc");
+    let other = d.path().join("capture-x");
+    for p in [&old_empty, &old_full, &young, &other] {
+        fs::create_dir(p).unwrap();
+    }
+    fs::write(old_full.join("keep"), b"x").unwrap();
+    let past = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for p in [&old_empty, &old_full, &other] {
+        fs::File::open(p).unwrap().set_modified(past).unwrap();
+    }
+    sweep_stale_run_dirs(d.path());
+    assert!(!old_empty.exists());
+    assert!(old_full.exists() && young.exists() && other.exists());
 }

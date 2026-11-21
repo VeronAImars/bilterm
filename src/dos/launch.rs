@@ -16,6 +16,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod bridge;
+
 use super::backend::qemu::{QemuBackend, QemuMode};
 use super::backend::{
     BackendKind, DosBackend, GUEST_COLS, GUEST_ROWS, LaunchKind, LaunchPlan,
@@ -145,8 +147,16 @@ fn make_qemu_curses(c: &BackendCtx) -> Box<dyn DosBackend> {
     Box::new(QemuBackend::new(QemuMode::Curses, c.program.clone(), c.base.clone()))
 }
 
-/// Backends `dos run` can start as an ordinary PTY (one row per backend; plan section 4.3).
-pub const REGISTRY: &[(BackendKind, Ctor)] = &[(BackendKind::QemuCurses, make_qemu_curses)];
+fn make_qemu_textbuf(c: &BackendCtx) -> Box<dyn DosBackend> {
+    Box::new(QemuBackend::new(QemuMode::TextBuf, c.program.clone(), c.base.clone()))
+}
+
+/// Backends `dos run` can start (one row per backend; plan section 4.3). Pty backends are run
+/// as-is in the pane; Bridge backends are driven by [`bridge`] inside the same `dos run` wrapper.
+pub const REGISTRY: &[(BackendKind, Ctor)] = &[
+    (BackendKind::QemuCurses, make_qemu_curses),
+    (BackendKind::QemuTextbuf, make_qemu_textbuf),
+];
 
 /// Maps `--backend` text to a kind. Unknown ids are an error, not a silent fallback.
 pub fn parse_backend_id(id: &str) -> Result<BackendKind, String> {
@@ -205,8 +215,9 @@ pub struct PreparedRun {
     guard: Option<RunGuard>,
     work_dir: PathBuf,
     /// Kept alive for the whole run: dropping a QEMU backend removes its session dir, which holds
-    /// the QMP socket the emulator binds at startup.
-    _backend: Box<dyn DosBackend>,
+    /// the QMP socket the emulator binds at startup. Bridge runs also drive it.
+    backend: Box<dyn DosBackend>,
+    spec: SessionSpec,
 }
 
 impl std::fmt::Debug for PreparedRun {
@@ -221,6 +232,9 @@ impl PreparedRun {
     pub fn finish(mut self, clean_exit: bool) -> Result<(), ImageError> {
         let guard = self.guard.take();
         let _ = std::fs::remove_dir_all(&self.work_dir);
+        if let Some(parent) = self.work_dir.parent() {
+            sweep_stale_run_dirs(parent);
+        }
         match guard {
             Some(g) if clean_exit => g.finish_clean(),
             _ => Ok(()), // dropping the guard releases the lock; the marker stays
@@ -348,13 +362,11 @@ fn resolve_inner(req: &RunRequest, env: &RunEnv, check_size: bool) -> Result<Res
         None => detect(env.os, &probe, None)
             .ok_or_else(|| RunError::Refused("no usable backend for this host (see `bilterm dos doctor`)".into()))?,
     };
-    // TODO(D3): no Bridge pane source exists yet, so qemu-textbuf (LaunchPlan::Bridge) is refused here;
-    // D3 adds its REGISTRY row once the text-buffer pane bridge lands.
     if !REGISTRY.iter().any(|(k, _)| *k == kind) {
-        return refuse(format!(
-            "backend {} cannot run as a plain PTY pane yet (it needs the text-buffer pane bridge); use --backend qemu-curses",
-            kind.id()
-        ));
+        return refuse(format!("backend {} is not registered", kind.id()));
+    }
+    if kind == BackendKind::QemuTextbuf && req.drive_c.is_some() {
+        return refuse("--drive-c is not supported by qemu-textbuf yet; use --backend qemu-curses");
     }
     let store = ImageStore::new(env.paths.clone());
     let mut spec = SessionSpec::default();
@@ -408,7 +420,7 @@ fn prepare_inner(req: &RunRequest, env: &RunEnv, dry: bool, check_size: bool) ->
             if let Some(rep) = &report {
                 notes.extend(rep.notes.iter().cloned());
             }
-            Ok(PreparedRun { plan, title: r.title, notes, report, guard, work_dir, _backend: backend })
+            Ok(PreparedRun { plan, title: r.title, notes, report, guard, work_dir, backend, spec: r.spec.clone() })
         }
         // The guard drops here: lock released, marker left (the emulator never started, but the
         // marker only costs one read-only sanity pass next time).
@@ -421,6 +433,7 @@ type Built = (LaunchPlan, PathBuf, Box<dyn DosBackend>);
 fn build_plan(r: &Resolved, env: &RunEnv) -> Result<Built, RunError> {
     let sessions = env.paths.sessions_dir();
     secure_fs::create_private_dir_all(&sessions).map_err(ImageError::from)?;
+    sweep_stale_run_dirs(&sessions);
     let work_dir = secure_fs::private_dir_in(&sessions, &format!("run-{}", super::backend::random_hex(8)))
         .map_err(ImageError::from)?;
     let go = || -> Result<(LaunchPlan, Box<dyn DosBackend>), RunError> {
@@ -431,8 +444,9 @@ fn build_plan(r: &Resolved, env: &RunEnv) -> Result<Built, RunError> {
             .ok_or_else(|| RunError::Refused("backend not registered".into()))?;
         let mut backend = ctor(&BackendCtx { program: r.program.clone(), base: work_dir.clone() });
         let mut plan = backend.plan(&r.spec).map_err(|e| RunError::Refused(e.to_string()))?;
-        if plan.kind != LaunchKind::Pty {
-            return refuse("backend did not produce a PTY plan");
+        let want = if r.kind == BackendKind::QemuCurses { LaunchKind::Pty } else { LaunchKind::Bridge };
+        if plan.kind != want {
+            return refuse("backend produced an unexpected launch kind");
         }
         if let Some(dir) = &r.host_folder {
             append_host_folder(&mut plan.argv, &r.spec, dir).map_err(RunError::Refused)?;
@@ -446,6 +460,26 @@ fn build_plan(r: &Resolved, env: &RunEnv) -> Result<Built, RunError> {
         Err(e) => {
             let _ = std::fs::remove_dir_all(&work_dir);
             Err(e)
+        }
+    }
+}
+
+/// Empty `run-*` directories older than this are leftovers of a killed wrapper.
+const STALE_RUN_DIR_AGE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Removes empty, old `run-*` directories below `sessions` (never a non-empty one, never a
+/// symlink, never one young enough to belong to a run that is starting right now).
+pub fn sweep_stale_run_dirs(sessions: &Path) {
+    let Ok(rd) = std::fs::read_dir(sessions) else { return };
+    for e in rd.flatten() {
+        if !e.file_name().to_string_lossy().starts_with("run-") {
+            continue;
+        }
+        let Ok(md) = std::fs::symlink_metadata(e.path()) else { continue };
+        let old = md.modified().ok().and_then(|m| m.elapsed().ok()).is_some_and(|a| a >= STALE_RUN_DIR_AGE);
+        if md.is_dir() && old {
+            // remove_dir fails on a non-empty directory, which is exactly the guard we want.
+            let _ = std::fs::remove_dir(e.path());
         }
     }
 }
@@ -468,6 +502,9 @@ impl Spawner for SystemSpawner {
 
 /// Foreground run: returns the process exit code for `bilterm dos run`.
 pub fn run_foreground(prep: PreparedRun, spawner: &dyn Spawner, out: &mut String) -> i32 {
+    if prep.plan.kind == LaunchKind::Bridge {
+        return bridge::run(prep, out);
+    }
     for n in &prep.notes {
         let _ = writeln!(out, "note: {n}");
     }

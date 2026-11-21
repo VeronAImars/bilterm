@@ -176,4 +176,10 @@ impl DosBackend for MockBackend {
         self.running = false;
         Ok(())
     }
+
+    /// The mock "guest" always powers down when asked.
+    fn stop(&mut self, _timeout: std::time::Duration) -> Result<super::StopOutcome> {
+        self.running = false;
+        Ok(super::StopOutcome::Clean)
+    }
 }

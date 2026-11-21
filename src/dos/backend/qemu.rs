@@ -382,6 +382,31 @@ impl DosBackend for QemuBackend {
         }
     }
 
+    fn stop(&mut self, timeout: Duration) -> Result<super::StopOutcome> {
+        let mut clean = false;
+        if let Some(c) = self.child.as_mut() {
+            match c.try_wait() {
+                Ok(Some(st)) => clean = st.success(),
+                _ => {
+                    if let Some(q) = self.qmp.as_mut() {
+                        let _ = q.system_powerdown();
+                    }
+                    let start = Instant::now();
+                    while start.elapsed() < timeout {
+                        if let Ok(Some(st)) = c.try_wait() {
+                            clean = st.success();
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
+                }
+            }
+        }
+        // Quits (QMP) and kills anything still alive, then removes the session directory.
+        self.shutdown()?;
+        Ok(if clean { super::StopOutcome::Clean } else { super::StopOutcome::Forced })
+    }
+
     fn shutdown(&mut self) -> Result<()> {
         if let Some(mut q) = self.qmp.take() {
             let _ = q.quit();
