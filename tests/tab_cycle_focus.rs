@@ -223,6 +223,6 @@ fn chords_lower_to_actions_with_colon_twins_and_a_leader_fallback() {
         assert!(wm.keyboard_owner().is_pane());
         assert_eq!(g(KeyCode::Char('x'), CTRL_ALT), Some(Action::KeyboardFocus(FocusOp::NextAll)));
         assert_eq!(g(KeyCode::Char('z'), CTRL_ALT), Some(Action::KeyboardFocus(FocusOp::PrevAll)));
-        assert_eq!(g(KeyCode::Char('e'), CTRL_ALT), None, "the old Ctrl+Alt+E fallback is gone");
+        assert_eq!(g(KeyCode::Char('e'), CTRL_ALT), Some(Action::Editor(bilterm::action::EditorOp::Scratch { name: None })), "Ctrl+Alt+E is the scratchpad now, no longer a focus chord");
     });
 }

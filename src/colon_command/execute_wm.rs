@@ -1023,6 +1023,10 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
             super::execute_dos::execute_dos_op(wm, a);
             false
         }
+        ColonCommand::Editor(op) => {
+            wm.apply_editor_op(op);
+            false
+        }
         ColonCommand::RespawnPaneInPlace => {
             wm.respawn_active_pane();
             false

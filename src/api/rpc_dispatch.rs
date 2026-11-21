@@ -523,6 +523,7 @@ impl AutomationControlPlane {
             "daemon.stop" => super::rpc_daemon::handle_daemon_stop(params),
             "daemon.host_state" => self.rpc_daemon_host_state(params),
             "dos.run" | "dos.setup" | "dos.doctor" | "dos.remove" | "dos.status" | "dos.reset" | "dos.snapshot" | "dos.restore" => self.rpc_dos(method, params),
+            "editor.open" | "editor.scratch" | "editor.save" | "editor.save_as" | "editor.wrap" | "editor.find" | "editor.undo" | "editor.redo" | "editor.goto" | "editor.revert" | "editor.insert" | "editor.text" | "editor.status" | "editor.close" => self.rpc_editor(method, params),
             "attach.clients" => self.rpc_attach_clients(),
             "attach.kick" => self.rpc_attach_kick(params),
             "daemon.switch" => super::rpc_daemon::handle_daemon_switch(params),

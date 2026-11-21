@@ -12,6 +12,7 @@ pub mod config;
 pub mod daemon;
 #[cfg(feature = "dos")]
 pub mod dos;
+pub mod editor;
 pub mod error;
 pub mod ext_browser;
 pub mod input;

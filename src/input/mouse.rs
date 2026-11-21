@@ -903,6 +903,9 @@ pub(super) fn route_wm_mouse_event(
     let Some(pane) = wm.pane_by_focus_mut(hit_focus) else {
         return Ok(AppAction::Continue);
     };
+    if let Some(action) = super::editor_keys::editor_mouse(pane, pane_mouse, pane_inner) {
+        return Ok(action);
+    }
     let route = crate::input::mouse_select::route(
         pane_mouse.modifiers,
         pane_mouse.kind,

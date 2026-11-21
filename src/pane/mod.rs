@@ -1,4 +1,5 @@
 pub mod browser_canvas;
+mod editor_hooks;
 pub mod copy_motion;
 pub mod copy_search;
 mod host_info;
@@ -159,6 +160,8 @@ pub struct CompositePane {
     last_click: Option<(u64, u16, u16, u8)>,
     pub(crate) browser_canvas: Option<browser_canvas::BrowserCanvasState>,
     pub(crate) video_canvas: Option<video_canvas::VideoCanvasState>,
+    /// Built-in text editor window state (`EDIT-01`); `None` for terminal panes.
+    pub(crate) editor: Option<crate::editor::EditorState>,
 }
 
 impl CompositePane {
@@ -221,6 +224,7 @@ impl CompositePane {
             last_click: None,
             browser_canvas: None,
             video_canvas: None,
+            editor: None,
         }
     }
 
@@ -557,6 +561,7 @@ impl CompositePane {
         self.resize_events += 1;
         self.vt.set_size(new_size.0, new_size.1);
         self.sync_browser_viewport();
+        self.paint_editor();
         self.transport.resize(new_size.0, new_size.1)
     }
 
@@ -808,7 +813,7 @@ impl CompositePane {
     /// Automatically hides during `DECSET 47/1047/1049` alternate screen (`vim`, `htop`, `less`),
     /// `!ECHO` password prompts (`sudo`, `ssh`), foreground sub-REPLs, or manual raw override.
     pub fn is_prompt_visible(&self) -> bool {
-        self.effective_routing_mode() == InputRoutingMode::CommandPrompt
+        self.effective_routing_mode() == InputRoutingMode::CommandPrompt && !self.editor_focused()
     }
 
     /// Resolves the live working directory (`OSC 7`, `/proc/<pid>/cwd`, `tracked_cwd`, then `current_dir()`).
@@ -1139,22 +1144,6 @@ impl CompositePane {
             self.prompt.insert_char(' ');
         }
         self.prompt.insert_str(text);
-    }
-
-    pub fn browser_canvas(&self) -> Option<&browser_canvas::BrowserCanvasState> {
-        self.browser_canvas.as_ref()
-    }
-
-    pub fn browser_canvas_mut(&mut self) -> Option<&mut browser_canvas::BrowserCanvasState> {
-        self.browser_canvas.as_mut()
-    }
-
-    pub fn video_canvas(&self) -> Option<&video_canvas::VideoCanvasState> {
-        self.video_canvas.as_ref()
-    }
-
-    pub fn video_canvas_mut(&mut self) -> Option<&mut video_canvas::VideoCanvasState> {
-        self.video_canvas.as_mut()
     }
 
     pub fn open_browser(&mut self, url: &str) {

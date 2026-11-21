@@ -17,6 +17,15 @@ use crate::remote::{FleetNodeKind, FleetSelector, RemoteHostProfile};
 use crate::vt::scrollback::{PaneUsage, format_mib, plan_capacities};
 use crate::wm::split_tree::{SplitDirection, SplitTree};
 
+/// Editor window description inside a saved session (`EDIT-05`); scratchpad content lives in its
+/// own private file, file buffers are re-read from disk.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SavedEditor {
+    Scratch { name: String },
+    File { path: String, wrap: bool },
+}
+
 /// Serialized per-pane metadata inside a `SavedWorkspaceSession` (`ECO-02`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedPaneState {
@@ -71,6 +80,9 @@ pub struct SavedPaneState {
     /// Per-window individual element color overrides (`font-color`, `cursor-color`, `frame-color`, `controls-color`, `status-color`, etc.).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub colors: BTreeMap<String, String>,
+    /// Set for editor windows (no shell is spawned on restore).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<SavedEditor>,
 }
 
 /// Newest session file format this build writes and understands.
@@ -400,7 +412,7 @@ impl WindowManager {
             .map(|(_, p)| {
                 let (rows, _cols) = p.vt().size();
                 let mut scrollback_lines = Vec::new();
-                for r in 0..rows {
+                for r in 0..if p.editor().is_some() { 0 } else { rows } {
                     let line = p.vt().row_text(r);
                     let trimmed = line.trim_end();
                     if !trimmed.is_empty() {
@@ -438,6 +450,7 @@ impl WindowManager {
                     outline: chrome.outline,
                     bold: chrome.bold,
                     colors: chrome.colors,
+                    editor: Self::saved_editor(p),
                 }
             })
             .collect();

@@ -3,6 +3,7 @@
 //! Every key chord, `:colon` command, playbook step, and JSON-RPC/MCP workspace command lowers
 //! into a typed [`Action`] executed by [`crate::wm::WindowManager::apply`].
 
+pub use crate::editor::EditorOp;
 pub use crate::pane::{BrowserOp, VideoOp};
 use crate::pane::{ExitProtectionPolicy, PaneId, PaneScrollMode, PromptMode};
 use crate::ui::chrome::{OutlineStyle, ShadowStyle};
@@ -300,6 +301,8 @@ pub enum Action {
     },
     /// `:dos setup [--yes] [--full] [--entry ID]...`: download + verify + build the DOS image (long: runs off the UI thread).
     DosSetup { yes: bool, full: bool, entries: Vec<String> },
+    /// `:edit` / `:scratch` / `:editor ...`, `Ctrl+Alt+E`, `editor.*` RPC, `bilterm_editor` MCP (`EDIT-01`).
+    Editor(EditorOp),
     /// `:dos doctor`: host readiness checks.
     DosDoctor,
     /// `:dos remove [--all] [--yes]`: delete downloaded DOS data.
@@ -481,6 +484,7 @@ impl Action {
                 for e in entries { s.push_str(&format!(" --entry {e}")); }
                 s
             }
+            Self::Editor(op) => op.colon_form(),
             Self::DosDoctor => ":dos doctor".to_string(),
             Self::DosStatus => ":dos status".to_string(),
             Self::DosRemove { all, yes } => format!(":dos remove{}{}", if *all { " --all" } else { "" }, if *yes { " --yes" } else { "" }),
