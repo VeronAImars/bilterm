@@ -1,8 +1,12 @@
 mod exit_report;
 #[cfg(unix)]
+pub mod child_watch;
+#[cfg(unix)]
 pub mod fdpass;
 #[cfg(unix)]
 pub mod handover;
+#[cfg(unix)]
+mod master_writer;
 #[cfg(unix)]
 mod reader;
 pub mod line_discipline;
@@ -168,6 +172,15 @@ pub struct PtySession {
     /// The child and master were handed over by `release()`; `Drop` must not touch them.
     #[cfg(unix)]
     released: bool,
+    /// Tells the current input sink not to send EOF when it is dropped (set by `release`).
+    #[cfg(unix)]
+    suppress_eof: Arc<std::sync::atomic::AtomicBool>,
+    /// Events that precede anything in `output_rx` (rollback of a release): drained first.
+    #[cfg(unix)]
+    replay: std::collections::VecDeque<PtyEvent>,
+    /// Liveness/status of an adopted child (not our `Child` handle).
+    #[cfg(unix)]
+    watch: Option<child_watch::ChildWatch>,
 }
 
 /// What a stopped reader needs to be restarted.
@@ -219,6 +232,15 @@ impl PtySession {
         #[cfg(unix)]
         let master_fd = pair.master.as_raw_fd();
 
+        #[cfg(unix)]
+        let suppress_eof = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        #[cfg(unix)]
+        let writer: Box<dyn std::io::Write + Send> = {
+            let fd = master_fd.ok_or_else(|| BiltermError::Pty("no master fd".to_string()))?;
+            let own = reader::dup_cloexec(fd).map_err(BiltermError::Io)?;
+            Box::new(master_writer::MasterWriter::new(own, suppress_eof.clone()))
+        };
+        #[cfg(not(unix))]
         let writer = pair
             .master
             .take_writer()
@@ -263,6 +285,12 @@ impl PtySession {
             adopted_fd: None,
             #[cfg(unix)]
             released: false,
+            #[cfg(unix)]
+            suppress_eof,
+            #[cfg(unix)]
+            replay: std::collections::VecDeque::new(),
+            #[cfg(unix)]
+            watch: None,
         })
     }
 
@@ -353,6 +381,12 @@ impl PtySession {
         self.child_pid
     }
 
+    /// For an adopted child: whether it is gone and, when obtainable, its status.
+    #[cfg(unix)]
+    pub fn child_state(&self) -> Option<child_watch::ChildState> {
+        self.watch.as_ref().map(|w| w.poll())
+    }
+
     /// Child exit code, polled (`try_wait` every 2 ms) for at most `patience`.
     ///
     /// `None` while the child is still running after `patience`, or when the child handle is
@@ -362,7 +396,25 @@ impl PtySession {
         loop {
             {
                 let mut guard = self.child.lock().ok()?;
-                let child = guard.as_mut()?;
+                let Some(child) = guard.as_mut() else {
+                    drop(guard);
+                    #[cfg(unix)]
+                    if let Some(w) = self.watch.clone() {
+                        if let child_watch::ChildState::Exited(code) = w.poll() {
+                            return code;
+                        }
+                    } else {
+                        return None;
+                    }
+                    #[cfg(not(unix))]
+                    return None;
+                    let now = std::time::Instant::now();
+                    if now >= deadline {
+                        return None;
+                    }
+                    thread::sleep(std::time::Duration::from_millis(2).min(deadline - now));
+                    continue;
+                };
                 if let Ok(Some(status)) = child.try_wait() {
                     return Some(i32::try_from(status.exit_code()).unwrap_or(i32::MAX));
                 }
@@ -392,6 +444,13 @@ impl PtySession {
     pub fn drain_events(&mut self) -> Vec<PtyEvent> {
         const MAX_EVENTS_PER_POLL: usize = 32;
         let mut events = Vec::new();
+        #[cfg(unix)]
+        while events.len() < MAX_EVENTS_PER_POLL {
+            match self.replay.pop_front() {
+                Some(ev) => events.push(ev),
+                None => break,
+            }
+        }
         while events.len() < MAX_EVENTS_PER_POLL {
             match self.output_rx.try_recv() {
                 Ok(ev) => events.push(ev),
@@ -402,6 +461,25 @@ impl PtySession {
         let failure = if drained_all && !self.exit_reported { self.writer.failure() } else { None };
         if exit_report::settle(&mut events, &mut self.exit_reported, failure.as_deref()) {
             tracing::warn!(error = ?failure, pid = ?self.child_pid, "PTY write failed; reporting the pane as exited");
+        }
+        #[cfg(unix)]
+        if let Some(w) = self.watch.clone() {
+            // An adopted child's reader EOF carries no status: ask the watch (we may be its parent).
+            for ev in events.iter_mut() {
+                if matches!(ev, PtyEvent::Exited(None)) {
+                    // EOF can beat the kernel's exit bookkeeping by a moment.
+                    for _ in 0..25 {
+                        match w.poll() {
+                            child_watch::ChildState::Exited(Some(c)) => {
+                                *ev = PtyEvent::Exited(u32::try_from(c).ok());
+                                break;
+                            }
+                            child_watch::ChildState::Exited(None) => break,
+                            child_watch::ChildState::Running => thread::sleep(std::time::Duration::from_millis(2)),
+                        }
+                    }
+                }
+            }
         }
         events
     }
@@ -474,6 +552,9 @@ impl Drop for PtySession {
         if self.released {
             self.writer.close();
             return;
+        }
+        if let Some(w) = self.watch.as_ref() {
+            let _ = w.poll(); // reap when we happen to be the parent; harmless otherwise
         }
         self.output_rx.close();
         while self.output_rx.try_recv().is_ok() {}

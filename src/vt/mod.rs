@@ -450,7 +450,10 @@ impl VtParser {
         self.rebuild_keeping(rows, cols, capacity, usize::MAX);
     }
 
-    fn rebuild_keeping(&mut self, rows: u16, cols: u16, capacity: usize, max_history: usize) {
+    /// Byte stream that rebuilds this terminal's history and screen in a fresh parser of
+    /// `rows`x`cols` (history rows serialised, then `state_formatted`). Used by [`rebuild`](Self::rebuild)
+    /// and by live session transfer. Leaves the viewport at the bottom.
+    fn replay_bytes(&mut self, rows: u16, cols: u16, capacity: usize, max_history: usize) -> Vec<u8> {
         let rows = rows.max(1);
         let cols = cols.max(1);
         let used = self.scrollback_used_rows();
@@ -534,7 +537,22 @@ impl VtParser {
             out.extend_from_slice(&screen.input_mode_formatted());
             out.extend_from_slice(&screen.attributes_formatted());
         }
+        out
+    }
 
+    /// Everything needed to recreate this terminal elsewhere at its current size: feed the result
+    /// to `VtParser::new(rows, cols, capacity)` via [`process`](Self::process). Not preserved:
+    /// a partially received escape sequence, alt-screen contents (apps repaint after SIGWINCH),
+    /// scroll regions, tab stops, charsets.
+    pub fn export_replay(&mut self) -> Vec<u8> {
+        let (rows, cols, cap) = (self.rows, self.cols, self.scrollback_capacity);
+        self.replay_bytes(rows, cols, cap, usize::MAX)
+    }
+
+    fn rebuild_keeping(&mut self, rows: u16, cols: u16, capacity: usize, max_history: usize) {
+        let rows = rows.max(1);
+        let cols = cols.max(1);
+        let out = self.replay_bytes(rows, cols, capacity, max_history);
         let mut rebuilt = vt100_ctt::Parser::new(rows, cols, capacity);
         rebuilt.process(&out);
         self.parser = rebuilt;

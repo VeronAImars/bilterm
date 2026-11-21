@@ -532,7 +532,14 @@ async fn serve_loop<A: RpcAcceptor>(
                 waiters.handle(&mut plane, &line, reply_tx);
             }
             _ = wait_tick.tick(), if !waiters.is_empty() => waiters.poll(&plane),
-            _ = host_tick.tick(), if plane.is_host() => { plane.host_tick(); }
+            _ = host_tick.tick(), if plane.is_host() => {
+                plane.host_tick();
+                if plane.retire_due() {
+                    // Sessions were handed to a new host: leave without touching any shell.
+                    plane.host_shutdown();
+                    return Ok(());
+                }
+            }
         }
     }
 }

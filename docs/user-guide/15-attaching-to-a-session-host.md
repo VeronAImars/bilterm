@@ -102,6 +102,13 @@ uid, or the TCP token). An attach client can never kick another: an `Act` contai
 `:daemon attach kick` is refused with `bad_request`. A kicked client may reconnect (there is no ban
 list); the host logs every kick at `warn` level (`attach.kick`).
 
+## Moving sessions between hosts and live restart (unix)
+
+- `bilterm daemon transfer [SESSION...|--all] --to DEST [--from NAME]`, `:daemon transfer ...` / `:session transfer ...`, RPC `session.transfer`, MCP `bilterm_daemon` `action="session_transfer"`: move live sessions to another `--host-ptys` host. The shells keep their PIDs; the PTY master fds travel over a `0600` same-uid unix socket (`SCM_RIGHTS`); history, screen, colours and cursor are replayed on the other side. The sender keeps everything open until the receiver confirms adoption; any refusal, timeout or failure gives every PTY back (no byte lost or duplicated), so the old session keeps working.
+- `bilterm daemon restart --live [NAME]`, `:daemon restart --live`, RPC `daemon.restart {live:true}`, MCP `action="restart"`: a new process of the current binary takes over every session of host NAME, then the old process exits. No terminal is killed or reset.
+- Not carried over: a partially received escape sequence, alt-screen contents (apps are nudged to repaint with a one-column resize), scroll regions/tab stops/charsets, per-window chrome overrides, attach clients (they must reconnect; there is a short moment without a public socket), the supervisor restart policy of the new process (it runs unsupervised). A child's exit status is unknown to a host that did not spawn it (the pane still shows it exited). Windows is not supported (ConPTY handles cannot be passed).
+- Residual risk: if the receiver adopted but its confirmation is lost after `Commit`, the sender (which then reclaims) and the receiver can briefly both read the PTY.
+
 ## Known gaps
 
 - No Windows client or host attach (named pipes deferred).

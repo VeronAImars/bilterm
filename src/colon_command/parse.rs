@@ -32,6 +32,9 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
     if let Some(res) = super::parse_daemon::parse_daemon_colon_command(head, &parts) {
         return Some(res);
     }
+    if let Some(res) = crate::editor::EditorOp::parse(head, &parts) {
+        return Some(res.map(ColonCommand::Editor));
+    }
     if let Some(res) = super::parse_dos::parse_dos_command(head, &parts) {
         return Some(res);
     }
@@ -378,6 +381,12 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
         "session" | "workspace" | "sessions" => {
             if let Some(res) = super::parse_window::parse_session_manage_command(&parts[1..]) {
                 return Some(res);
+            }
+            if parts.get(1) == Some(&"transfer") {
+                // `:session transfer ...` is the same operation as `:daemon transfer ...`.
+                let mut as_daemon = vec!["daemon"];
+                as_daemon.extend(&parts[1..]);
+                return super::parse_daemon::parse_daemon_colon_command("daemon", &as_daemon);
             }
             match parts.get(1).copied() {
                 Some("map") => Some(super::parse_session_map::parse_session_map(&parts[2..])),

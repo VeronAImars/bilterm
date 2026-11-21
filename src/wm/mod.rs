@@ -19,6 +19,8 @@ pub mod agents_list_cmd;
 pub mod agents_geometry;
 pub mod agents_list_geometry;
 mod host_mode;
+#[cfg(unix)]
+pub mod session_transfer;
 pub mod host_view;
 mod attach_resize;
 mod pane_input;
@@ -60,6 +62,7 @@ pub mod rename_dialog;
 pub mod session;
 #[cfg(feature = "dos")]
 mod dos_pane;
+mod editor_pane;
 pub mod session_empty;
 pub mod session_end;
 pub mod session_manager;
@@ -96,7 +99,7 @@ pub use drawer::{
 pub use journal::{PaneJournalRecord, SessionJournalRecord, WorkspaceJournal};
 pub use layout_profile::{BUILTIN_LAYOUT_PROFILES, LayoutProfileMeta, sanitize_profile_name};
 pub use quick_terminal::{encode_sgr_mouse_local, inset_window_frame, rect_contains};
-pub use session::{SavedPaneState, SavedWorkspaceSession};
+pub use session::{SavedEditor, SavedPaneState, SavedWorkspaceSession};
 pub use session_map::{SessionMapDrag, SessionMapOp, SessionMapState};
 pub use session_pack_layout::{
     compute_inner_rect, pack_rects, pack_sessions_treemap, SessionPackInput, SessionPackRect,
@@ -206,6 +209,10 @@ pub struct WindowManager {
     headless_mode: bool,
     /// Session-host mode: headless but panes own real PTYs (`host_mode.rs`); default off.
     host_ptys: bool,
+    /// Daemon name this host runs under (set by the daemon; refuses transfers to itself).
+    host_name: Option<String>,
+    /// Set after a transfer that retires this host: the daemon loop exits once it passes.
+    retire_at: Option<std::time::Instant>,
     /// Attach client registry when the host runs an attach listener (`attach::host`); default none.
     attach_registry: Option<crate::attach::registry::SharedRegistry>,
     pub(crate) default_size: (u16, u16),
@@ -376,6 +383,8 @@ impl WindowManager {
             next_pane_id: initial_id + 1,
             headless_mode,
             host_ptys: false,
+            host_name: None,
+            retire_at: None,
             attach_registry: None,
             default_size: (screen_rows, cols),
             scrollback: if headless_mode {
@@ -698,12 +707,17 @@ impl WindowManager {
 
     /// [`Self::split_focused`] with the new pane's shell rooted in `cwd` (swarm worktrees).
     pub fn split_focused_in(&mut self, direction: SplitDirection, cwd: Option<std::path::PathBuf>) -> Result<PaneId> {
+        self.split_focused_with(direction, cwd, false)
+    }
+
+    /// [`Self::split_focused_in`]; `no_pty` creates a model-only window (editor windows).
+    pub(super) fn split_focused_with(&mut self, direction: SplitDirection, cwd: Option<std::path::PathBuf>, no_pty: bool) -> Result<PaneId> {
         let target_id = self.z_stack.top().unwrap_or(1);
         let new_id = self.next_pane_id;
         self.next_pane_id += 1;
 
         let (rows, cols) = self.default_size;
-        let mut new_pane = if self.model_only_panes() {
+        let mut new_pane = if no_pty || self.model_only_panes() {
             CompositePane::new_headless(new_id, rows, cols)
         } else {
             CompositePane::spawn(
@@ -744,6 +758,7 @@ impl WindowManager {
         if self.panes.len() <= 1 || !self.panes.contains_key(&target_id) {
             return false;
         }
+        self.editor_flush(target_id);
         let _ = self.split_tree.remove_leaf(target_id);
         self.panes.remove(&target_id);
         self.window_manage.window_order.retain(|&i| i != target_id);
@@ -770,6 +785,9 @@ impl WindowManager {
         let Some(target_id) = self.z_stack.top() else {
             return false;
         };
+        if !self.editor_allow_close(target_id) {
+            return false;
+        }
         if self.panes.len() == 1 && self.panes.contains_key(&target_id) {
             // The session's last window: closing it ends the session when another one exists.
             return self.close_last_window_of_session();
@@ -833,6 +851,7 @@ impl WindowManager {
             changed = true;
         }
         changed |= self.tick_media_canvases(tm_ms);
+        self.editor_tick();
         registry::capture::tick(self, Instant::now());
         self.sync_clipboard_records();
         self.maybe_rebalance_scrollback(Instant::now());

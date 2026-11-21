@@ -107,6 +107,7 @@ async fn real_main() -> color_eyre::Result<()> {
                -m, --mcp                        Run Model Context Protocol (MCP) JSON-RPC 2.0 server over stdio\n  \
                -d, --headless, --daemon         Run headless JSON-RPC 2.0 daemon (default: private Unix socket; TCP loopback via -l 127.0.0.1:PORT -t PATH)\n  \
                    --host-ptys                  With --headless: session host; the daemon owns real PTYs (default off; P1 of docs/plans/session-host-architecture.md)\n  \
+                   --takeover                   With --headless --host-ptys (unix): start empty, receive every session from the running host of the same NAME (bilterm daemon restart --live), then take over its sockets\n  \
                    --attach                     With --headless --host-ptys: also serve the attach protocol on host-<NAME>.attach.sock (0600, same-uid; default off; P2 of docs/plans/session-host-p2-attach.md)\n  \
                    --name <NAME>                With --headless: daemon name (default: 'default'); each named daemon gets its own lock and socket (daemons/daemon-<NAME>.sock) so several run side by side\n  \
                    --daemon-name <NAME>         With ctl/agent/pane/workspace/coords/daemon: talk to the named daemon (or BILTERM_DAEMON); before or after the subcommand\n  \
@@ -427,22 +428,55 @@ async fn real_main() -> color_eyre::Result<()> {
             ListenEndpoint::Unix(p) => p.clone(),
             _ => bilterm::daemon::process::session_daemon_socket_path_in(&runtime_dir, daemon_name)?,
         };
-        let _daemon_lock = match bilterm::daemon::supervisor::acquire_lock(&runtime_dir, daemon_name, sock_path.clone())? {
-            bilterm::daemon::supervisor::DaemonLockResult::Acquired(l) => l,
-            bilterm::daemon::supervisor::DaemonLockResult::AlreadyHeld(r) => {
-                eprintln!("bilterm: daemon '{daemon_name}' already running (PID {})", r.pid);
-                return Ok(());
+        // Live restart (`--takeover`, unix): receive the old host's sessions BEFORE taking the lock.
+        #[cfg(unix)]
+        let mut takeover_wm = if has_switch(&args, &["--takeover"]) {
+            if !has_switch(&args, &["--host-ptys"]) {
+                return Err(bilterm::error::BiltermError::Config("--takeover requires --host-ptys".into()).into());
+            }
+            Some(takeover_receive(&runtime_dir, daemon_name)?)
+        } else {
+            None
+        };
+        let _daemon_lock = {
+            let mut waited = 0u32;
+            loop {
+                let attempt = bilterm::daemon::supervisor::acquire_lock(&runtime_dir, daemon_name, sock_path.clone());
+                let taking_over = has_switch(&args, &["--takeover"]);
+                match attempt {
+                    Ok(bilterm::daemon::supervisor::DaemonLockResult::Acquired(l)) => break l,
+                    // A taking-over host waits for the retiring old host to release the lock (the
+                    // old one holds it, with an emptied record, while it exits).
+                    Ok(bilterm::daemon::supervisor::DaemonLockResult::AlreadyHeld(_)) | Err(_) if taking_over && waited < 600 => {
+                        waited += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    Ok(bilterm::daemon::supervisor::DaemonLockResult::AlreadyHeld(r)) => {
+                        eprintln!("bilterm: daemon '{daemon_name}' already running (PID {})", r.pid);
+                        return Ok(());
+                    }
+                    Err(e) => return Err(e.into()),
+                }
             }
         };
         // Opt-in session host (P1): the daemon owns real PTYs. Default off = unchanged model-only daemon.
         let mut plane = if has_switch(&args, &["--host-ptys"]) {
+            #[cfg(unix)]
+            let wm = match takeover_wm.take() {
+                Some(wm) => wm,
+                None => bilterm::wm::WindowManager::new_host(24, 80)?,
+            };
+            #[cfg(not(unix))]
             let wm = bilterm::wm::WindowManager::new_host(24, 80)?;
             let state_path = bilterm::daemon::host::host_state_path_in(&runtime_dir, daemon_name)
                 .map_err(bilterm::error::BiltermError::Config)?;
             // We hold the daemon lock, so any state file already here is a previous crash's leftover.
             bilterm::daemon::host::remove_host_state(&state_path);
-            AutomationControlPlane::new(wm, ratatui::layout::Rect::new(0, 0, 80, 24))
-                .with_host_state_file(daemon_name, state_path)
+            let p = AutomationControlPlane::new(wm, ratatui::layout::Rect::new(0, 0, 80, 24))
+                .with_host_state_file(daemon_name, state_path);
+            #[cfg(unix)]
+            let p = p.with_transfer_listener(&runtime_dir, daemon_name);
+            p
         } else {
             // Model-only daemon: panes have no shell, so command-sending RPCs say so (never silent).
             AutomationControlPlane::new_headless(24, 80).with_no_pty_daemon(daemon_name)
@@ -787,4 +821,29 @@ async fn real_main() -> color_eyre::Result<()> {
         );
     }
     Ok(())
+}
+
+/// `--takeover` start-up: listen on `host-<name>.takeover.sock` and adopt the old host's sessions
+/// (replacing this host's own pristine session). Returns once the old host reported it retires.
+#[cfg(unix)]
+fn takeover_receive(runtime_dir: &std::path::Path, name: &str) -> bilterm::error::Result<bilterm::wm::WindowManager> {
+    use bilterm::daemon::transfer::{serve_connection, SocketKind, TransferListener};
+    let mut wm = bilterm::wm::WindowManager::new_host(24, 80)?;
+    wm.set_host_name(name);
+    let listener = TransferListener::bind(runtime_dir, name, SocketKind::Takeover)?;
+    let overall = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    while std::time::Instant::now() < overall {
+        let Some(stream) = listener.accept_blocking(std::time::Duration::from_secs(1)) else { continue };
+        match serve_connection(&mut wm, stream, SocketKind::Takeover) {
+            Ok(Some((names, retire))) => {
+                eprintln!("bilterm: took over sessions {names:?}");
+                if retire {
+                    return Ok(wm);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("bilterm: takeover offer refused: {e}"),
+        }
+    }
+    Err(bilterm::error::BiltermError::Config("takeover timed out: no sessions were handed over".into()))
 }

@@ -194,3 +194,43 @@ impl super::rpc::AutomationControlPlane {
         Ok(v)
     }
 }
+
+impl super::rpc::AutomationControlPlane {
+    /// `session.transfer {sessions?: [name], all?, to, takeover?, retire?}`: moves live sessions to
+    /// another session host without restarting any shell; lowered through
+    /// `Action::Daemon(DaemonSupervisorOp::SessionTransfer)`. Same gate as `daemon.stop`.
+    pub(super) fn rpc_session_transfer(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        use crate::action::{Action, DaemonSupervisorOp};
+        let to = params.get("to").and_then(JsonValue::as_str).ok_or("session.transfer needs 'to' (target daemon name)")?.to_string();
+        let sessions = match params.get("sessions") {
+            None | Some(JsonValue::Null) => Vec::new(),
+            Some(JsonValue::Array(a)) => a.iter().map(|v| v.as_str().map(str::to_string).ok_or("'sessions' must be strings")).collect::<Result<_, _>>()?,
+            Some(_) => return Err("'sessions' must be an array of names".to_string()),
+        };
+        let flag = |k: &str| params.get(k).and_then(JsonValue::as_bool).unwrap_or(false);
+        let op = DaemonSupervisorOp::SessionTransfer { sessions, all: flag("all"), to, takeover: flag("takeover"), retire: flag("retire") };
+        self.apply_with_policy(Action::Daemon(op), super::rpc::SnapshotPolicy::Trusted)?;
+        Self::transfer_result(self.wm.take_command_data(), "session.transfer")
+    }
+
+    /// `daemon.restart {name?, live: true}`: live restart of a session host; lowered through
+    /// `Action::Daemon(DaemonSupervisorOp::RestartLive)`.
+    pub(super) fn rpc_daemon_restart(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        use crate::action::{Action, DaemonSupervisorOp};
+        if params.get("live").and_then(JsonValue::as_bool) != Some(true) {
+            return Err("daemon.restart needs {\"live\": true}: only a live restart (sessions and shells kept) exists".to_string());
+        }
+        let name = params.get("name").and_then(JsonValue::as_str).map(str::to_string);
+        self.apply_with_policy(Action::Daemon(DaemonSupervisorOp::RestartLive { name }), super::rpc::SnapshotPolicy::Trusted)?;
+        Self::transfer_result(self.wm.take_command_data(), "daemon.restart")
+    }
+
+    fn transfer_result(data: Option<String>, what: &str) -> Result<JsonValue, String> {
+        let data = data.ok_or_else(|| format!("no {what} data"))?;
+        let v = JsonValue::parse(&data).ok_or_else(|| format!("invalid {what} data"))?;
+        if v.get("status").and_then(JsonValue::as_str) == Some("error") {
+            return Err(v.get("error").and_then(JsonValue::as_str).unwrap_or("failed").to_string());
+        }
+        Ok(v)
+    }
+}

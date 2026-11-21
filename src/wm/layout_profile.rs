@@ -531,7 +531,7 @@ impl WindowManager {
             let cwd_path = PathBuf::from(if sp.cwd.trim().is_empty() { "." } else { &sp.cwd });
             let spawn_cwd = cwd_path.is_dir().then(|| cwd_path.clone());
             let mut spawned_requested = true;
-            let mut pane = if self.model_only_panes() {
+            let mut pane = if self.model_only_panes() || sp.editor.is_some() {
                 CompositePane::new_headless(sp.id, rows, cols)
             } else {
                 CompositePane::spawn(
@@ -585,6 +585,9 @@ impl WindowManager {
                 pane.prompt_mut().set_text(&sp.prompt_input);
             }
             pane.font_options_mut().scale_pct = sp.font_scale_pct;
+            if let Some(ed) = sp.editor.as_ref().and_then(|e| self.build_saved_editor(e)) {
+                pane.set_editor(ed);
+            }
             if let Some(sm) = sp.scroll_mode {
                 pane.set_scroll_mode(sm);
             }

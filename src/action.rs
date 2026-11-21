@@ -3,6 +3,7 @@
 //! Every key chord, `:colon` command, playbook step, and JSON-RPC/MCP workspace command lowers
 //! into a typed [`Action`] executed by [`crate::wm::WindowManager::apply`].
 
+pub use crate::editor::EditorOp;
 pub use crate::pane::{BrowserOp, VideoOp};
 use crate::pane::{ExitProtectionPolicy, PaneId, PaneScrollMode, PromptMode};
 use crate::ui::chrome::{OutlineStyle, ShadowStyle};
@@ -302,6 +303,8 @@ pub enum Action {
     },
     /// `:dos setup [--yes] [--full] [--entry ID]...`: download + verify + build the DOS image (long: runs off the UI thread).
     DosSetup { yes: bool, full: bool, entries: Vec<String> },
+    /// `:edit` / `:scratch` / `:editor ...`, `Ctrl+Alt+E`, `editor.*` RPC, `bilterm_editor` MCP (`EDIT-01`).
+    Editor(EditorOp),
     /// `:dos doctor`: host readiness checks.
     DosDoctor,
     /// `:dos remove [--all] [--yes]`: delete downloaded DOS data.
@@ -431,6 +434,14 @@ pub enum DaemonSupervisorOp {
     /// `:daemon attach kick <client-id> | --ro` / `attach.kick`: close one attach client (or all
     /// read-only ones) with `Bye{kicked}`. Refused when applied on behalf of an attach client.
     AttachKick { client_id: Option<u64>, all_ro: bool },
+    /// `:daemon transfer [<session>...|--all] --to <daemon>` / `session.transfer`: move live sessions
+    /// (PTYs, shells and terminal state, no restart) from THIS session host to host `to`. Empty
+    /// `sessions` without `all` = the active session. `takeover` targets a `--takeover` host's
+    /// socket and replaces its pristine session; `retire` makes this host exit afterwards.
+    SessionTransfer { sessions: Vec<String>, all: bool, to: String, #[serde(default)] takeover: bool, #[serde(default)] retire: bool },
+    /// `:daemon restart --live [name]` / `daemon.restart`: start a new daemon, transfer every
+    /// session to it, retire the old one; no terminal is killed or reset.
+    RestartLive { name: Option<String> },
 }
 
 pub type DaemonOp = DaemonSupervisorOp;
@@ -483,6 +494,7 @@ impl Action {
                 for e in entries { s.push_str(&format!(" --entry {e}")); }
                 s
             }
+            Self::Editor(op) => op.colon_form(),
             Self::DosDoctor => ":dos doctor".to_string(),
             Self::DosStatus => ":dos status".to_string(),
             Self::DosRemove { all, yes } => format!(":dos remove{}{}", if *all { " --all" } else { "" }, if *yes { " --yes" } else { "" }),

@@ -42,6 +42,11 @@ impl WindowManager {
             return (!self.config.api.allow_config_write)
                 .then(|| "key and mode changes over the API are disabled; set [api] allow_config_write = true in config.toml".to_string());
         }
+        // Editor verbs that read or write host files are mutations too (`editor.*` RPC, MCP, `wm.command`).
+        if let Action::Editor(op) = action {
+            return (op.touches_files() && !self.config.api.allow_config_write)
+                .then(|| "editor file access over the API is disabled; set [api] allow_config_write = true in config.toml".to_string());
+        }
         // DOS lifecycle verbs that download, delete or overwrite images are mutations too.
         let dos_mutates = match action {
             Action::DosSetup { .. } | Action::DosRemove { .. } | Action::DosReset { .. } | Action::DosRestore { .. } => true,

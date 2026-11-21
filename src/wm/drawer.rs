@@ -21,6 +21,7 @@ pub mod nav;
 pub mod menu;
 pub mod preview;
 mod ops;
+mod drag;
 pub(crate) mod navigator_detail;
 pub use navigator::{CommsIndicator, DrawerStyle, NavigatorLevel, NavigatorRowMeta};
 pub use nav::{DrawerNavOp, ENTER_DOUBLE_TAP_WINDOW};
@@ -223,6 +224,15 @@ impl DrawerRow {
     }
 }
 
+/// A drawer row being dragged. `active` turns true once the pointer has left the source row.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowDrag {
+    pub source: DrawerRowKind,
+    pub active: bool,
+    /// Row index under the pointer (the drop indicator), `None` outside the rows.
+    pub target: Option<usize>,
+}
+
 /// Runtime state of the workspace slide-out drawer (`DRW-01`, `DRW-02`).
 #[derive(Clone, Debug, Default)]
 pub struct WorkspaceDrawer {
@@ -240,6 +250,8 @@ pub struct WorkspaceDrawer {
     /// Wheel-set viewport `(selected_index it was set for, first visible row)`; ignored once the selection moves.
     pub view_scroll: Option<(usize, usize)>,
     pub resizing_drag: bool,
+    /// Pointer drag of a session/window row (see `drawer/drag.rs`); gesture bookkeeping only.
+    pub row_drag: Option<RowDrag>,
     /// Open navigator right-click menu (Phase 50-15); changed only through `DrawerNavOp::Menu*`.
     nav_menu: Option<NavigatorMenu>,
     pub navigator: navigator::NavigatorDrawerState,

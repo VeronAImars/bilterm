@@ -97,6 +97,7 @@ impl AutomationControlPlane {
                     "bilterm_window_manage" => Some(Self::window_manage_method(&args).unwrap_or("")),
                     "bilterm_daemon" => Some(Self::daemon_method(&args).unwrap_or("")),
                     "bilterm_dos" => Some(Self::dos_method(&args).unwrap_or("")),
+                    "bilterm_editor" => Some(Self::editor_method(&args).unwrap_or("")),
                     "bilterm_web_surface" => Some(Self::web_surface_method(&args).unwrap_or("")),
                     "bilterm_drawer_preview" => Some("drawer.preview"),
                     "bilterm_clipboard" => Some(Self::clipboard_method(&args).unwrap_or("")),
@@ -117,9 +118,11 @@ impl AutomationControlPlane {
                         } else if tool_name == "bilterm_window_manage" {
                             Err("missing or invalid 'action' parameter: move, reorder, session_move, session_reorder, rename, rename_session, select, bulk, or undo".to_string())
                         } else if tool_name == "bilterm_daemon" {
-                            Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick".to_string())
+                            Err("missing or invalid 'action' parameter: list, status, start, new, stop, switch, host_state, attach_clients, attach_kick, session_transfer, restart".to_string())
                         } else if tool_name == "bilterm_dos" {
                             Err("missing or invalid 'action' parameter: run, setup, doctor, remove, status, reset, snapshot, restore".to_string())
+                        } else if tool_name == "bilterm_editor" {
+                            Err("missing or invalid 'action' parameter: open, scratch, save, save_as, wrap, find, undo, redo, goto, revert, insert, text, status or close".to_string())
                         } else if tool_name == "bilterm_web_surface" {
                             Err("invalid 'action' parameter: status, open, external, port or stop".to_string())
                         } else if tool_name == "bilterm_clipboard" {
@@ -324,9 +327,15 @@ impl AutomationControlPlane {
             ),
             Self::mcp_tool_schema(
                 "bilterm_daemon",
-                "Supervise and inspect Bilterm background daemons (list, status, start, new, stop, switch, host_state, attach_clients, attach_kick). list/status report rss_bytes, restart_count, last_exit and limits.",
+                "Supervise and inspect Bilterm background daemons (list, status, start, new, stop, switch, host_state, attach_clients, attach_kick, session_transfer, restart). list/status report rss_bytes, restart_count, last_exit and limits.",
                 &[
-                    ("action", "string", "Operation: list | status | start | new | stop | switch | host_state | attach_clients | attach_kick"),
+                    ("action", "string", "Operation: list | status | start | new | stop | switch | host_state | attach_clients | attach_kick | session_transfer | restart"),
+                    ("to", "string", "With action='session_transfer': target daemon name (a session host)"),
+                    ("sessions", "array", "With action='session_transfer': session names to move (default: the active session)"),
+                    ("all", "boolean", "With action='session_transfer': move every session"),
+                    ("takeover", "boolean", "With action='session_transfer': target is a --takeover host (live restart)"),
+                    ("retire", "boolean", "With action='session_transfer': this host exits after a successful transfer"),
+                    ("live", "boolean", "With action='restart': must be true (restart keeping every session and shell)"),
                     ("client_id", "integer", "With action='attach_kick': attach client id to close with Bye{kicked}"),
                     ("ro", "boolean", "With action='attach_kick': kick every read-only attach client instead of one id"),
                     ("name", "string", "Optional daemon name (defaults to 'default'; with action='new' omitted = first free 'daemon-N', returned as 'name'; an existing name is refused)"),
@@ -352,6 +361,21 @@ impl AutomationControlPlane {
                     ("image", "string", "With run: throwaway image path (refused over the API)"),
                     ("drive_c", "string", "With run: host dir exposed read-only (refused over the API)"),
                     ("backend", "string", "With run: backend id (qemu-curses)"),
+                ],
+            ),
+            Self::mcp_tool_schema(
+                "bilterm_editor",
+                "Built-in text/markdown editor window and scratchpad. Same verbs as `:edit`, `:scratch` and `:editor ...`. open (with path), save, save_as and revert touch host files and need [api] allow_config_write; overwriting needs force=true. Plain UTF-8 text only, regular files only, 4 MiB max.",
+                &[
+                    ("action", "string", "Operation: open | scratch | save | save_as | wrap | find | undo | redo | goto | revert | insert | text | status | close"),
+                    ("path", "string", "With open (optional; omitted = new unnamed buffer) or save_as"),
+                    ("name", "string", "With scratch: scratchpad name (default 'scratch')"),
+                    ("force", "boolean", "With save|save_as|close: overwrite an existing/changed file, or discard unsaved changes"),
+                    ("enabled", "boolean", "With wrap: on/off (omitted = toggle)"),
+                    ("query", "string", "With find"),
+                    ("backward", "boolean", "With find: search backward"),
+                    ("line", "integer", "With goto: 1-based line"),
+                    ("text", "string", "With insert: text inserted at the cursor"),
                 ],
             ),
             Self::mcp_tool_schema(
@@ -647,6 +671,8 @@ impl AutomationControlPlane {
             "host_state" => Some("daemon.host_state"),
             "attach_clients" => Some("attach.clients"),
             "attach_kick" => Some("attach.kick"),
+            "session_transfer" => Some("session.transfer"),
+            "restart" => Some("daemon.restart"),
             _ => None,
         }
     }
@@ -664,6 +690,12 @@ impl AutomationControlPlane {
             "restore" => Some("dos.restore"),
             _ => None,
         }
+    }
+
+    /// `bilterm_editor` `action` argument -> the `editor.*` RPC method; `None` when missing or unknown.
+    fn editor_method(args: &JsonValue) -> Option<&'static str> {
+        let action = args.get("action").and_then(JsonValue::as_str)?;
+        super::rpc_editor::EDITOR_METHODS.iter().copied().find(|m| m.strip_prefix("editor.") == Some(action))
     }
 
     /// `bilterm_agent_mail` `action` argument -> the `agent.*` RPC method; `None` when missing or unknown.
