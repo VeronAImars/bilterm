@@ -41,6 +41,52 @@ impl AutomationControlPlane {
         ]))
     }
 
+    /// Handles `window.reorder` JSON-RPC requests: `{window_id?, to}` with `to` = up|down|top|bottom|1..N.
+    pub fn handle_window_reorder(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        let to = Self::move_spec(params)?;
+        let window_id = params.get("window_id").and_then(JsonValue::as_usize);
+        let wid = window_id.unwrap_or_else(|| self.wm.active_pane_id());
+        self.apply_with_policy(
+            Action::WindowManage(WindowManageOp::Reorder { window_id, to }),
+            SnapshotPolicy::Trusted,
+        )?;
+        let order = self.wm.ordered_pane_ids();
+        Ok(JsonValue::obj([
+            ("status", JsonValue::String("ok".to_string())),
+            ("window_id", JsonValue::Number(wid as i64)),
+            ("order", JsonValue::Array(order.into_iter().map(|p| JsonValue::Number(p as i64)).collect())),
+        ]))
+    }
+
+    /// Handles `session.move` JSON-RPC requests: `{name?, to}`; `session.reorder`: `{names: [..]}`.
+    pub fn handle_session_move(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
+        let op = if let Some(arr) = params.get("names").and_then(JsonValue::as_array) {
+            SessionManageOp::Reorder {
+                names: arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+            }
+        } else {
+            SessionManageOp::MoveOrder {
+                name: params.get("name").and_then(JsonValue::as_str).map(String::from),
+                target_pos: Self::move_spec(params)?,
+            }
+        };
+        self.apply_with_policy(Action::SessionManage(op), SnapshotPolicy::Trusted)?;
+        let order = self.wm.ordered_sessions_with_active();
+        Ok(JsonValue::obj([
+            ("status", JsonValue::String("ok".to_string())),
+            ("order", JsonValue::Array(order.into_iter().map(JsonValue::String).collect())),
+        ]))
+    }
+
+    /// `to` as a string (`up|down|top|bottom|N`) or a 1-based integer.
+    fn move_spec(params: &JsonValue) -> Result<String, String> {
+        match params.get("to") {
+            Some(v) if v.as_str().is_some() => Ok(v.as_str().unwrap_or_default().to_string()),
+            Some(v) if v.as_usize().is_some() => Ok(v.as_usize().unwrap_or(1).to_string()),
+            _ => Err("missing 'to' parameter (up|down|top|bottom|1..N)".to_string()),
+        }
+    }
+
     /// Handles `window.rename` JSON-RPC requests (`SES-02`, `SES-05`).
     pub fn handle_window_rename(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
         let new_name = params

@@ -15,6 +15,7 @@ pub fn parse_window_manage_command(parts: &[&str]) -> Option<Result<ColonCommand
     match sub {
         "move" => Some(parse_window_move(&parts[1..])),
         "rename" => Some(parse_window_rename(&parts[1..])),
+        "reorder" | "order" => Some(parse_window_reorder(&parts[1..])),
         "select" => Some(parse_window_select(&parts[1..])),
         "bulk" => Some(parse_window_bulk(&parts[1..])),
         "undo" => {
@@ -70,6 +71,13 @@ pub fn parse_session_manage_command(parts: &[&str]) -> Option<Result<ColonComman
         }
         "rename" | "name" => Some(parse_session_rename(&parts[1..])),
         "move" => Some(parse_session_move(&parts[1..])),
+        "reorder" | "order" => Some(if parts.len() < 2 {
+            Err("Usage: :session reorder <session1> <session2> ...".to_string())
+        } else {
+            Ok(ColonCommand::SessionManage(SessionManageOp::Reorder {
+                names: parts[1..].iter().map(|s| s.to_string()).collect(),
+            }))
+        }),
         _ => None,
     }
 }
@@ -279,5 +287,17 @@ pub(crate) fn parse_session_move(args: &[&str]) -> Result<ColonCommand, String> 
             target_pos: args[1].to_string(),
         })),
         _ => Err("Usage: :session move [name] <up|down|top|bottom|1..N>".to_string()),
+    }
+}
+
+pub(crate) fn parse_window_reorder(args: &[&str]) -> Result<ColonCommand, String> {
+    const USAGE: &str = "Usage: :window reorder [id] <up|down|top|bottom|1..N>";
+    match args {
+        [to] => Ok(ColonCommand::WindowManage(WindowManageOp::Reorder { window_id: None, to: to.to_string() })),
+        [id, to] => id
+            .parse::<PaneId>()
+            .map(|id| ColonCommand::WindowManage(WindowManageOp::Reorder { window_id: Some(id), to: to.to_string() }))
+            .map_err(|_| format!("Invalid window id '{id}': must be a positive integer")),
+        _ => Err(USAGE.to_string()),
     }
 }

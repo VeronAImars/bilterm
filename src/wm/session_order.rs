@@ -18,7 +18,58 @@ use super::window_manage::BackgroundSessionState;
 use crate::pane::PaneId;
 use crate::wm::layout_profile::sanitize_profile_name;
 
+/// Resolves a move spec (`up`, `down`, `top`, `bottom`, or a 1-based index) to a new index.
+pub(crate) fn resolve_move_index(cur_idx: usize, len: usize, spec: &str) -> Option<usize> {
+    let last = len.saturating_sub(1);
+    Some(match spec.trim().to_ascii_lowercase().as_str() {
+        "up" | "-1" | "prev" | "previous" | "k" => cur_idx.saturating_sub(1),
+        "down" | "+1" | "next" | "j" => (cur_idx + 1).min(last),
+        "top" | "first" | "start" => 0,
+        "bottom" | "last" | "end" => last,
+        num => match num.parse::<usize>() {
+            Ok(n) if n >= 1 => (n - 1).min(last),
+            _ => return None,
+        },
+    })
+}
+
 impl WindowManager {
+    /// Reorders window `window_id` (default: the active window) within its own session to `spec`
+    /// (`up|down|top|bottom|1..N`). Works for live and parked sessions; the drawer reads the same order.
+    pub fn reorder_window(&mut self, window_id: Option<PaneId>, spec: &str) -> Result<String, String> {
+        const USAGE: &str = "Usage: :window reorder [id] <up|down|top|bottom|1..N>";
+        let id = window_id.unwrap_or_else(|| self.active_pane_id());
+        if self.panes.contains_key(&id) {
+            let mut ids = self.ordered_pane_ids();
+            let cur = ids.iter().position(|&x| x == id).ok_or_else(|| format!("Window {id} has no slot"))?;
+            let new = resolve_move_index(cur, ids.len(), spec).ok_or_else(|| USAGE.to_string())?;
+            let adjacent = new.abs_diff(cur) == 1;
+            let partner = ids.get(new).copied();
+            let item = ids.remove(cur);
+            ids.insert(new, item);
+            if adjacent && let Some(p) = partner {
+                // Keep the tiled layout following the order, as the drawer always did for one step.
+                self.split_tree.swap_leaves(id, p);
+                self.reflow_default_viewport();
+            }
+            self.window_manage.window_order = ids.clone();
+            let lbl = ids.iter().map(|p| format!("#{p}")).collect::<Vec<_>>().join(", ");
+            return Ok(format!("Moved Pane #{id} {} (Window order: {lbl})", spec.trim().to_ascii_lowercase()));
+        }
+        for bg in self.window_manage.background_sessions.values_mut() {
+            let mut ids = bg.ordered_window_ids();
+            if let Some(cur) = ids.iter().position(|&x| x == id) {
+                let new = resolve_move_index(cur, ids.len(), spec).ok_or_else(|| USAGE.to_string())?;
+                let item = ids.remove(cur);
+                ids.insert(new, item);
+                bg.window_order = ids.clone();
+                return Ok(format!("Window order: {}", ids.iter().map(|p| format!("#{p}")).collect::<Vec<_>>().join(", ")));
+            }
+        }
+        Err(format!("Window {id} not found"))
+    }
+
+
     /// The authoritative session order given the persisted list and the saved-session names.
     pub(crate) fn session_order_view(&self, persisted: &[String], saved: &[String]) -> Vec<String> {
         let active = sanitize_profile_name(&self.config.history_session);
@@ -72,15 +123,6 @@ impl WindowManager {
         let view = self.session_order_view(&persisted, &saved);
         if view != persisted {
             self.save_session_order(view);
-        }
-    }
-
-    /// Swaps two windows in the active session's window order.
-    pub(crate) fn window_order_swap(&mut self, a: PaneId, b: PaneId) {
-        let mut ids = self.ordered_pane_ids();
-        if let (Some(i), Some(j)) = (ids.iter().position(|&x| x == a), ids.iter().position(|&x| x == b)) {
-            ids.swap(i, j);
-            self.window_manage.window_order = ids;
         }
     }
 

@@ -252,38 +252,22 @@ impl WindowManager {
         }) = rows.get(self.drawer.selected_index)
         {
             let pane_id = *id;
-            let ordered = self.ordered_pane_ids();
-            if let Some(pos) = ordered.iter().position(|&p| p == pane_id) {
-                let partner_opt = if up {
-                    pos.checked_sub(1).and_then(|i| ordered.get(i).copied())
-                } else {
-                    ordered.get(pos + 1).copied()
-                };
-                if let Some(partner_id) = partner_opt
-                    && self.split_tree.swap_leaves(pane_id, partner_id)
-                {
-                    self.window_order_swap(pane_id, partner_id);
-                    self.reflow_default_viewport();
-                    if let Some(new_row) = self
-                        .drawer_rows()
-                        .iter()
-                        .position(|r| r.kind == DrawerRowKind::Pane(pane_id))
-                    {
-                        self.drawer.selected_index = new_row;
-                    }
-                    let dir = if up { "up" } else { "down" };
-                    let order_lbl: Vec<String> = self
-                        .ordered_pane_ids()
-                        .into_iter()
-                        .map(|p| format!("#{p}"))
-                        .collect();
-                    self.active_pane_mut().set_status_message(Some(format!(
-                        "Moved Pane #{pane_id} {dir} (Window order: {})",
-                        order_lbl.join(", ")
-                    )));
-                    return;
-                }
+            // Lowers to the same Action as `:window reorder`, RPC and MCP (UNI-R01).
+            let to = if up { "up" } else { "down" };
+            let _ = self.apply(crate::action::Action::WindowManage(
+                crate::wm::window_manage::WindowManageOp::Reorder {
+                    window_id: Some(pane_id),
+                    to: to.to_string(),
+                },
+            ));
+            if let Some(new_row) = self
+                .drawer_rows()
+                .iter()
+                .position(|r| r.kind == DrawerRowKind::Pane(pane_id))
+            {
+                self.drawer.selected_index = new_row;
             }
+            return;
         }
 
         let target_sess = rows.get(self.drawer.selected_index).and_then(|r| match &r.kind {
@@ -295,17 +279,20 @@ impl WindowManager {
             .unwrap_or_else(|| self.config.history_session.clone());
         let _ = self.daemon_state.session_tree.move_node(&name, up);
         let dir = if up { "up" } else { "down" };
-        if let Ok(order) = self.move_session_in_order(target_sess.as_deref(), dir) {
-            if let Some(ref s) = target_sess
-                && let Some(pos) = self
-                    .drawer_rows()
-                    .iter()
-                    .position(|r| r.kind == DrawerRowKind::SessionHeader(s.clone()))
-            {
-                self.drawer.selected_index = pos;
-            }
-            self.active_pane_mut()
-                .set_status_message(Some(format!("Session order: {}", order.join(", "))));
+        // Same Action as `:session move`, RPC and MCP (UNI-R01).
+        let _ = self.apply(crate::action::Action::SessionManage(
+            crate::wm::window_manage::SessionManageOp::MoveOrder {
+                name: target_sess.clone(),
+                target_pos: dir.to_string(),
+            },
+        ));
+        if let Some(ref s) = target_sess
+            && let Some(pos) = self
+                .drawer_rows()
+                .iter()
+                .position(|r| r.kind == DrawerRowKind::SessionHeader(s.clone()))
+        {
+            self.drawer.selected_index = pos;
         }
     }
 

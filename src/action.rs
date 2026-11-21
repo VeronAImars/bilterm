@@ -486,7 +486,18 @@ impl Action {
             Self::AgentsHud(op) => op.colon_form(),
             Self::AgentsReplay(op) => op.colon_form(),
             Self::AgentsWatchdog(_) => ":agents watchdog status".to_string(),
+            Self::WindowManage(crate::wm::window_manage::WindowManageOp::Reorder { window_id, to }) => match window_id {
+                Some(id) => format!(":window reorder {id} {to}"),
+                None => format!(":window reorder {to}"),
+            },
             Self::WindowManage(_) => ":window undo".to_string(),
+            Self::SessionManage(crate::wm::window_manage::SessionManageOp::MoveOrder { name, target_pos }) => match name {
+                Some(n) => format!(":session move {n} {target_pos}"),
+                None => format!(":session move {target_pos}"),
+            },
+            Self::SessionManage(crate::wm::window_manage::SessionManageOp::Reorder { names }) => {
+                format!(":session reorder {}", names.join(" "))
+            }
             Self::SessionManage(_) => ":session undo".to_string(),
             Self::SessionOnEmpty(None) => ":session on-empty".to_string(),
             Self::SessionOnEmpty(Some(p)) => format!(":session on-empty {}", p.label()),
