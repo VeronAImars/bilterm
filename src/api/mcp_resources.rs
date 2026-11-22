@@ -58,6 +58,19 @@ impl AutomationControlPlane {
                 &format!("Inbox messages for agent '{name}' (pane #{pid}, {unread} unread)."),
             ));
         }
+        for entry in self.wm.context_bus().list(None) {
+            let mime = if entry.key.starts_with(crate::editor::artifact::ARTIFACT_KEY_PREFIX) {
+                "text/markdown"
+            } else {
+                "text/plain"
+            };
+            list.push(JsonValue::obj([
+                ("uri", s(format!("bilterm://context/{}", entry.key))),
+                ("name", s(format!("Shared context '{}'", entry.key))),
+                ("description", s(format!("Shared workspace context/artifact entry (rev {}, {} bytes).", entry.revision, entry.value.len()))),
+                ("mimeType", s(mime)),
+            ]));
+        }
         JsonValue::obj([("resources", JsonValue::Array(list))])
     }
 
@@ -73,6 +86,26 @@ impl AutomationControlPlane {
                     ("uri", s(uri)),
                     ("mimeType", s("text/markdown")),
                     ("text", s(crate::agent_guide::GUIDE)),
+                ])]),
+            )]));
+        }
+        if let Some(ctx_key) = uri.strip_prefix("bilterm://context/") {
+            let entry = self
+                .wm
+                .context_bus()
+                .get(ctx_key)
+                .ok_or_else(|| (-32602, format!("Invalid params: context key '{ctx_key}' not found")))?;
+            let mime = if ctx_key.starts_with(crate::editor::artifact::ARTIFACT_KEY_PREFIX) {
+                "text/markdown"
+            } else {
+                "text/plain"
+            };
+            return Ok(JsonValue::obj([(
+                "contents",
+                JsonValue::Array(vec![JsonValue::obj([
+                    ("uri", s(uri)),
+                    ("mimeType", s(mime)),
+                    ("text", s(entry.value)),
                 ])]),
             )]));
         }
