@@ -255,6 +255,12 @@ impl AutomationControlPlane {
         ]))
     }
 
+    /// `ui.repaint`: forces a full repaint of the host screen on the next frame (`:repaint`).
+    pub(super) fn rpc_ui_repaint(&mut self) -> Result<JsonValue, String> {
+        self.apply_trusted(Action::Repaint)?;
+        Ok(JsonValue::obj([("status", s("ok")), ("repaint", JsonValue::Bool(true))]))
+    }
+
     /// `pane.send`: raw text to the pane's input (`enter`: append CR). No history/prompt path.
     pub(super) fn rpc_pane_send(&mut self, params: &JsonValue) -> Result<JsonValue, String> {
         let text = need_text(params)?.to_string();

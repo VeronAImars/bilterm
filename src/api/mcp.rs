@@ -108,6 +108,7 @@ impl AutomationControlPlane {
                     "bilterm_keys" => Some(Self::keys_method(&args).unwrap_or("")),
                     "bilterm_agent_control" => Some(Self::agent_control_method(&args).unwrap_or("")),
                     "bilterm_coords_resolve" => Some("coords.resolve"),
+                    "bilterm_repaint" => Some("ui.repaint"),
                     "bilterm_coords_format" => Some("coords.format"),
                     _ => None,
                 };
@@ -497,6 +498,11 @@ impl AutomationControlPlane {
                     ("direction", "string", "pane_split direction: h | v"),
                     ("all", "boolean", "pane_mail_ack: mark every pane's mail read"),
                 ],
+            ),
+            Self::mcp_tool_schema(
+                "bilterm_repaint",
+                "Force a full repaint of the Bilterm screen on the next frame (clears stale or garbled cells, e.g. after wide-character width disagreement; same effect as a window resize).",
+                &[],
             ),
             Self::mcp_tool_schema(
                 "bilterm_coords_resolve",

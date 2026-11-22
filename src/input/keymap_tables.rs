@@ -165,6 +165,8 @@ pub const DEFAULT_LEADER_BINDINGS: &[(KeyCode, Action)] = &[
     // Scratchpad editor (`Ctrl+X _`): Ctrl+Alt+E is not delivered by every terminal; the leader always is
     (KeyCode::Char('_'), Action::Editor(EditorOp::Scratch { name: None })),
     (KeyCode::Char('0'), Action::FontZoomReset),
+    // Force a full host-terminal repaint (`Ctrl+X )`): every letter is taken and bare Ctrl+L belongs to the pane's program
+    (KeyCode::Char(')'), Action::Repaint),
     (KeyCode::PageUp, Action::BlockPrev),
     (KeyCode::PageDown, Action::ScrollModeTogglePage),
 ];

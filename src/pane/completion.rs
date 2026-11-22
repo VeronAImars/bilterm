@@ -723,6 +723,8 @@ const COLON_COMMANDS: &[(&str, &[&str])] = &[
     (":yank", &[]),
     (":paste", &[]),
     (":clear", &[]),
+    (":repaint", &[]),
+    (":redraw", &[]),
     (":raw", &[]),
     (
         ":palette",

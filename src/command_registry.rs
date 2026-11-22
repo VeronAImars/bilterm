@@ -46,6 +46,8 @@ pub(crate) const EXTRA: &[(&str, &str, &str)] = &[
     (":scratch", "", "Open or focus the scratchpad editor window (`:scratch [name]`, Ctrl+X _ or Ctrl+Alt+E): autosaved privately, restored after restart."),
     (":editor", "", "Editor window verbs: `:editor save|saveas|wrap|find|findprev|undo|redo|goto|revert|insert|text|status|close` (same as `editor.*` RPC and `bilterm_editor` MCP)."),
     (":dos", "", "DOS mode (feature `dos`): `:dos run [--name N | --image FILE] [--drive-c DIR]` opens a FreeDOS pane running QEMU (qemu-curses); `:dos setup|doctor|status|remove|reset|snapshot|restore` manage the host image (same verbs as `bilterm dos`, `dos.*` RPC, `bilterm_dos` MCP)."),
+    (":repaint", "", "Force a full repaint of the screen (clears stale or garbled cells, like a resize); Ctrl+X ), `ui.repaint` RPC, `bilterm repaint`, `bilterm_repaint` MCP."),
+    (":redraw", ":repaint", "Alias of :repaint."),
     (":clear", "", "Clear the focused pane's screen and scrollback and reset the page anchor."),
     (":clipboard", "", "List clipboard history, or run a clipboard subcommand."),
     (":clip", ":clipboard", "Alias of :clipboard."),

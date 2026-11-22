@@ -223,6 +223,7 @@ The previous defaults stay available on the `legacy` profile and, for one releas
 | `Ctrl+Alt+Up` / `Alt+Shift+Up` | — | `:resize up [N]` | Shrink focused pane height (`-2` rows) or move horizontal split divider up |
 | `Ctrl+Alt+Down` / `Alt+Shift+Down` | — | `:resize down [N]` | Grow focused pane height (`+2` rows) or move horizontal split divider down |
 | `Ctrl+X &` (alias `Ctrl+Alt+D`) | — | `:find-prefill` | Session find prefill on the prompt; the leader form works where GNOME/KDE swallow `Ctrl+Alt+D` (show desktop) |
+| `Ctrl+X )` | — | `:repaint` (alias `:redraw`) | Force a full repaint of the screen (what a window resize does) to clear stale or garbled cells, for example after wide-character or emoji width disagreements with the host terminal. Also `bilterm repaint`, `bilterm ctl ui.repaint` and the `bilterm_repaint` MCP tool. Bare `Ctrl+L` is left to the focused program |
 | `Ctrl+X _` (alias `Ctrl+Alt+E`) | — | `:scratch [name]` | Open or focus the scratchpad editor; the leader form works in terminals that do not deliver `Ctrl+Alt+E` |
 | `Ctrl+Shift+Left` / `Ctrl+Alt+h` | — | `:move left [N]` | Move floating Z-Stack window left (`-4` cols) or swap tiled pane |
 | `Ctrl+Shift+Right` / `Ctrl+Alt+l` | — | `:move right [N]` | Move floating Z-Stack window right (`+4` cols) or swap tiled pane |

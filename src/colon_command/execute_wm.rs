@@ -253,6 +253,11 @@ pub fn execute_wm_colon_command(wm: &mut WindowManager, cmd: ColonCommand) -> bo
                 .set_status_message(Some(format!("{note}{report}")));
             false
         }
+        ColonCommand::Repaint => {
+            wm.request_repaint();
+            wm.active_pane_mut().set_status_message(Some("Repainting screen".to_string()));
+            false
+        }
         ColonCommand::ScrollModeSet(mode_opt) => {
             let resolved = match mode_opt {
                 Some(mode) => {

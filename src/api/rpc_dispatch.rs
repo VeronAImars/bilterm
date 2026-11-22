@@ -513,6 +513,7 @@ impl AutomationControlPlane {
             "pane.split" => self.rpc_pane_split(params),
             "pane.focus" => self.rpc_pane_focus(params),
             "pane.zoom" => self.rpc_pane_zoom(params),
+            "ui.repaint" => self.rpc_ui_repaint(),
             "pane.send" => self.rpc_pane_send(params),
             "remote.status" => self.rpc_remote_status(params),
             "pane.mail_state" => self.rpc_pane_mail_state(params),

@@ -4,6 +4,16 @@
 use super::{Modal, WindowManager};
 
 impl WindowManager {
+    /// Asks the host draw loop to repaint every cell on the next frame (`:repaint`, `ui.repaint`).
+    pub fn request_repaint(&mut self) {
+        self.repaint_pending = true;
+    }
+
+    /// Returns and clears the pending repaint request; called once per frame by the draw loop.
+    pub fn take_repaint_request(&mut self) -> bool {
+        std::mem::take(&mut self.repaint_pending)
+    }
+
     /// Toggles the `<F1>` interactive Help Modal.
     pub fn toggle_help(&mut self) {
         if matches!(self.modal, Modal::Help { .. }) {

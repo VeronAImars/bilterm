@@ -37,6 +37,8 @@ pub enum Action {
     /// `:paste` / `:p` / `Ctrl+Shift+V` / `Shift+Insert` / `Ctrl+X p` / `Ctrl+X v`: Paste OS clipboard into active pane/PTY.
     PasteClipboard,
     Clear,
+    /// `:repaint` / `:redraw` / `Ctrl+X )` / RPC `ui.repaint` / MCP `bilterm_repaint`: invalidate the host-terminal diff so the next frame rewrites every cell (what a window resize does).
+    Repaint,
     /// `:scrollback` (report) / `:scrollback clear` (free history).
     Scrollback {
         clear: bool,
@@ -579,6 +581,7 @@ impl Action {
             Self::ZoomToggle => ":zoom".to_string(),
             Self::ClosePane => ":close".to_string(),
             Self::Clear => ":clear".to_string(),
+            Self::Repaint => ":repaint".to_string(),
             Self::PasteClipboard => ":paste".to_string(),
             Self::Yank => ":yank".to_string(),
             Self::PromptTop => ":top".to_string(),

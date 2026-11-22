@@ -672,6 +672,8 @@ pub fn parse_colon_command(input: &str) -> Option<Result<ColonCommand, String>> 
             Some(_) => Some(super::parse_clipboard::parse(&parts[1..])),
         },
         "clear" => Some(Ok(ColonCommand::Clear)),
+        "repaint" | "redraw" if parts.len() == 1 => Some(Ok(ColonCommand::Repaint)),
+        "repaint" | "redraw" => Some(Err("Usage: :repaint".to_string())),
         "scrollback" | "sb" => match parts.get(1).copied() {
             None | Some("info" | "status") => Some(Ok(ColonCommand::Scrollback { clear: false })),
             Some("clear") => Some(Ok(ColonCommand::Scrollback { clear: true })),

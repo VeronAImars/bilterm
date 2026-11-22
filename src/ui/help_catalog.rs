@@ -638,6 +638,7 @@ pub const PALETTE_CATALOG: &[(&str, &str, &str)] = &[
     (":canvas status", "—", "Show canvas rasterizer, resolution and primitive counts"),
     (":yank", "—", "Yank the selection through OSC 52 to the system clipboard"),
     (":clear", "—", "Clear the focused pane's screen and scrollback"),
+    (":repaint", "Ctrl+X )", "Force a full repaint of the screen (fixes stale or garbled cells; alias :redraw)"),
     (":raw", "—", "Toggle manual Raw PTY passthrough override"),
     (":scroll", "—", "Cycle the scroller mode (smooth, page, instant)"),
     (":scroll toggle", "—", "Toggle the page-hold (MORE...) scroller"),
