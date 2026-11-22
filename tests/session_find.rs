@@ -4,8 +4,6 @@
 use bilterm::action::Action;
 use bilterm::api::{AutomationControlPlane, JsonValue};
 use bilterm::colon_command::parse_colon_command;
-use bilterm::pane::CompositePane;
-use bilterm::pty::PtyConfig;
 use bilterm::wm::session_find::{FindAct, SessionFindOp};
 use bilterm::wm::{SplitDirection, WindowManager};
 

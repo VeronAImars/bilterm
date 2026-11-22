@@ -1,3 +1,13 @@
+# UPDATE 2026-11-21 (latest, macOS host): v3.4.1 synced; D7a/D7b verified + PR #166 open
+- Local `main` (`<repo>`) fast-forwarded to `origin/main` @ `2bd6ce7` (`v3.4.1`, includes `#142`–`#165`); stale local branch `feat/windows-arm64` (`9cbcebb`) and old throwaway worktrees (`~/worktrees/bilterm-winarm`, `dos-d0b`, `dos-d0c`) removed.
+- **D7a (macOS arm64, QEMU 11.1.3) & D7b (macOS Intel `x86_64-apple-darwin` under Rosetta) VERIFIED** in `~/worktrees/bilterm-dos-d7` (branch `feat/dos-d7-macos`, PR **#166** open):
+  - `scripts/verify.sh --only clippy unit dos t:dos_surface_parity t:session_transfer t:daemon_restart_live t:session_find`: `PASS 7/7 83s`.
+  - Ignored real-QEMU smokes on macOS arm64: `dos::launch::tests::dos_curses_smoke` (`PASS`), `dos::backend::qemu::tests::smoke_boots_and_reads_seabios_banner` (`PASS`).
+  - macOS GUI & DOS feature compile check (`#138` GUI-socket edits): `cargo check -q --features "gui dos"` (`PASS`).
+  - Rosetta Intel (`--target x86_64-apple-darwin`): `--lib dos::` (`152 passed; 0 failed; 4 ignored`) and `--test dos_surface_parity` (`2 passed; 0 failed`) `PASS`.
+- **PR #166 (`feat/dos-d7-macos`)**: fixes 3 remaining macOS test/clippy failures on `v3.4.1` (`src/dos/launch/tests.rs` `/private/tmp` canonicalization & short `/tmp/btdos-*` prefix for 100-byte `sun_path`, `tests/daemon_restart_live.rs` `set +m` for macOS `bash 3.2` job-control message during live handover, `tests/session_find.rs` unused imports) and records `D7a`/`D7b` in `docs/plans/dos-mode.md`.
+- **Next**: Merge `#166` (on owner's word); `D6`/`D6b` (Windows x64 / ARM64 DOS verification); `P4 C4` (Windows Job Object memory limits); `D4`/`D5` (DOS fun features & docs).
+
 # UPDATE 2026-11-20 (latest): D1b, D1c, D2a, D2b, daemon new + fixes ALL MERGED; origin/main = 3f6c620; next = D3
 - Merged-main verify (3f6c620): PASS 217/217 (226s). Merged this stretch (owner-authorized): #134 (qemu-windows-x64 pin), #135 D1b backend trait, #136 D1c image builder/lifecycle, #137 D2a qemu-curses + `dos run` + Action::DosRun, #138 fix daemon/GUI (no_host_ptys errors, host_ptys in daemon.list/status, GUI binds instances/<pid>.sock, stale BILTERM_SOCKET refused), #139 D2b qemu-textbuf, #140 `daemon new` on every surface, #141 real-boot verification + `dos run --print-argv` fix.
 - Owner decisions: keep `flate2` (zip inflate, under `dos`); Windows sparse via FSCTL_SET_SPARSE deferred to D6; `--drive-c DIR` = DIR read-only as drive after C: (revisit D4); QMP-based clean stop goes in D3; keep Ctrl+X D C for New Daemon (Ctrl+X D N stays Start); 150 ms child-alive check kept for TCP port race; blink toggle deferred (not before v1).
