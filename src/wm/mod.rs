@@ -271,6 +271,8 @@ pub struct WindowManager {
     daemon_window: daemon_window::DaemonWindowState,
     pub(crate) fonts_window: fonts_window::FontsWindowState,
     pub(crate) fonts_window_dirty: bool,
+    /// Set by `Action::Repaint`; the host draw loop consumes it and invalidates the terminal diff.
+    repaint_pending: bool,
     /// Pinnable COMMAND PALETTE first-class window (`WIN-02`, Phase 51.2).
     pub(crate) command_window: command_window::CommandWindowState,
     /// First-class workspace clipboard registry (`CLIP-02`, Phase 57).
@@ -430,6 +432,7 @@ impl WindowManager {
             daemon_window: daemon_window::DaemonWindowState::default(),
             fonts_window: fonts_window::FontsWindowState::default(),
             fonts_window_dirty: false,
+            repaint_pending: false,
             command_window: command_window::CommandWindowState::default(),
             clipboard_registry: clipboard_registry::ClipboardRegistry::new(),
             clipboard_window: clipboard_window::ClipboardWindowState::default(),

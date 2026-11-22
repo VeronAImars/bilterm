@@ -28,7 +28,7 @@ expression: "overlay(KeyEnv::new(HostOs::MacOs, Surface::Gui), KeyProfileName::A
 │      ║.         browser           t/T       prompt top        &         find-prefill      ║      ║
 │      ║'         video             b/B       prompt bottom     _         scratch           ║      ║
 │      ║1         Pane 1            s         prompt split      0         fontsize reset    ║      ║
-│      ║2         Pane 2            e/E/F4    mode cycle        PageUp    block prev        ║      ║
-│      ║3         Pane 3            m         Menu              PageDown  scroll toggle     ║      ║
-│3270-O║4         Pane 4            g/G/F12   raw                                           ║ │ INP║
+│      ║2         Pane 2            e/E/F4    mode cycle        )         repaint           ║      ║
+│      ║3         Pane 3            m         Menu              PageUp    block prev        ║      ║
+│3270-O║4         Pane 4            g/G/F12   raw               PageDown  scroll toggle     ║ │ INP║
 └──────╚════════════════════════════════════════════════════════════════════════════════════◢══════◢

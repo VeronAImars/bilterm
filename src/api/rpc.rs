@@ -78,6 +78,7 @@ pub const RPC_METHODS: &[&str] = &[
     "pane.split",
     "pane.focus",
     "pane.zoom",
+    "ui.repaint",
     "pane.send",
     "remote.status",
     "pane.mail_state",

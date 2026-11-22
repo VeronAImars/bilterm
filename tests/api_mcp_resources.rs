@@ -149,6 +149,7 @@ fn tools_list_only_gains_find() {
             "bilterm_video",
             "bilterm_keys",
             "bilterm_agent_control",
+            "bilterm_repaint",
             "bilterm_coords_resolve",
             "bilterm_coords_format",
             "bilterm_session_find",

@@ -23,6 +23,19 @@ pub const TICK: Duration = Duration::from_millis(16);
 /// The always-on foreground RPC socket: request stream plus its handler.
 pub type LiveRpcPair = (crate::api::live::LiveRpcRx, crate::api::live::LiveRpcHandler);
 
+/// Consumes a pending `Action::Repaint`: invalidates the ratatui diff (clears the back buffer and
+/// the host screen) and refreshes the cell-pixel size, exactly what a host resize forces, so the
+/// next `draw` rewrites every cell. Returns whether a repaint was requested.
+pub fn repaint_if_requested<B: ratatui::backend::Backend>(app: &mut App, terminal: &mut Terminal<B>) -> bool {
+    if !app.wm.take_repaint_request() {
+        return false;
+    }
+    crate::ui::hires_subcell::refresh_terminal_pixel_size();
+    let _ = terminal.clear();
+    app.needs_redraw = true;
+    true
+}
+
 /// Resolves on SIGINT (Ctrl+C), SIGTERM or SIGHUP.
 pub(crate) async fn host_shutdown_signal() {
     #[cfg(unix)]
@@ -175,6 +188,7 @@ impl App {
             crate::pty::set_live_socket(None);
         }
         let draw = |app: &mut App| -> Result<()> {
+            repaint_if_requested(app, terminal);
             terminal.draw(|frame| {
                 let area = frame.area();
                 app.last_viewport = area;

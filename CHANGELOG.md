@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-11-22
+
+### Added
+- **Force repaint (`:repaint` / `:redraw`, `Ctrl+X )`).** Invalidates the host-terminal diff so the next frame rewrites every cell, the same fix a window resize gives for stale or garbled cells (wide characters and emoji whose width the host terminal disagrees on). One `Action::Repaint` on every surface: colon command, leader key (bare `Ctrl+L` stays with the focused program), command palette, `ui.repaint` RPC, `bilterm repaint` CLI and the `bilterm_repaint` MCP tool.
+
+### Fixed
+- Render regression tests for wide/CJK output: VT chunking invariance and incremental-vs-full repaint equivalence, guarding against stale or garbled cells.
+- DOS mode tests and docs are now portable to macOS (arm64 and Intel under Rosetta verified, #166).
+
 ## [3.4.2] - 2026-11-21
 
 ### Fixed

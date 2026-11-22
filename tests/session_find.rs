@@ -4,6 +4,10 @@
 use bilterm::action::Action;
 use bilterm::api::{AutomationControlPlane, JsonValue};
 use bilterm::colon_command::parse_colon_command;
+#[cfg(target_os = "linux")]
+use bilterm::pane::CompositePane;
+#[cfg(target_os = "linux")]
+use bilterm::pty::PtyConfig;
 use bilterm::wm::session_find::{FindAct, SessionFindOp};
 use bilterm::wm::{SplitDirection, WindowManager};
 
