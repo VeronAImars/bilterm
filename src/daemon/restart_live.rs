@@ -34,7 +34,7 @@ pub struct RestartReport {
 
 fn spawn_takeover(runtime_dir: &Path, name: &str) -> Result<Child, String> {
     let sock = super::process::session_daemon_socket_path_in(runtime_dir, name).map_err(|e| e.to_string())?;
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = crate::daemon::process::running_exe().map_err(|e| e.to_string())?;
     let mut args = vec!["--daemon".to_string(), "--name".into(), name.into(), "-l".into(), format!("unix:{}", sock.display()), "--host-ptys".into(), "--takeover".into()];
     if crate::attach::listener::attach_socket_path_in(runtime_dir, name).is_ok_and(|p| p.exists()) {
         args.push("--attach".into());

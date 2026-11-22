@@ -14,6 +14,29 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// Pure helper: on a replaced binary Linux reports `/path/bilterm (deleted)`; strip that suffix
+/// when the stripped path exists (the reinstalled binary), else return `p` unchanged.
+pub(crate) fn strip_deleted_suffix(p: PathBuf, exists: impl Fn(&Path) -> bool) -> PathBuf {
+    let stripped = p.to_str().and_then(|s| s.strip_suffix(" (deleted)")).map(PathBuf::from);
+    if let Some(cand) = stripped
+        && exists(&cand)
+    {
+        return cand;
+    }
+    p
+}
+
+/// `std::env::current_exe()` that survives the running binary being replaced on disk (Linux
+/// appends ` (deleted)`), so daemon/GUI/terminal spawns use the reinstalled binary.
+pub fn running_exe() -> io::Result<PathBuf> {
+    let p = std::env::current_exe()?;
+    if cfg!(target_os = "linux") {
+        Ok(strip_deleted_suffix(p, |c| c.exists()))
+    } else {
+        Ok(p)
+    }
+}
+
 /// Sanitizes an arbitrary session name into a safe `[A-Za-z0-9_-]+` identifier,
 /// defaulting to `"default"` if empty (`SEC-R01`).
 pub fn sanitize_session_name(session: &str) -> String {
@@ -111,7 +134,7 @@ pub fn spawn_background_daemon_for_session(session: &str) -> io::Result<PathBuf>
     }
 
     let safe = sanitize_session_name(session);
-    let exe = std::env::current_exe()?;
+    let exe = crate::daemon::process::running_exe()?;
     let listen_arg = format!("unix:{}", sock_path.display());
 
     let mut cmd = Command::new(exe);
@@ -179,4 +202,27 @@ pub fn list_active_daemon_sessions() -> Vec<(String, PathBuf)> {
     crate::secure_fs::private_runtime_dir()
         .map(|d| list_active_daemon_sessions_in(&d))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod running_exe_tests {
+    use super::*;
+
+    #[test]
+    fn strips_suffix_when_target_exists() {
+        let p = PathBuf::from("/opt/bin/bilterm (deleted)");
+        assert_eq!(strip_deleted_suffix(p, |c| c == Path::new("/opt/bin/bilterm")), PathBuf::from("/opt/bin/bilterm"));
+    }
+
+    #[test]
+    fn keeps_suffix_when_target_missing() {
+        let p = PathBuf::from("/opt/bin/bilterm (deleted)");
+        assert_eq!(strip_deleted_suffix(p.clone(), |_| false), p);
+    }
+
+    #[test]
+    fn leaves_normal_path_alone() {
+        let p = PathBuf::from("/opt/bin/bilterm");
+        assert_eq!(strip_deleted_suffix(p.clone(), |_| true), p);
+    }
 }

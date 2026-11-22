@@ -214,7 +214,7 @@ pub fn ensure_terminal_or_relaunch(passthrough_args: &[String]) -> io::Result<bo
     if std::env::var(RELAUNCH_GUARD_ENV).as_deref() == Ok("1") {
         return Ok(false);
     }
-    let exe = std::env::current_exe()?;
+    let exe = crate::daemon::process::running_exe()?;
     for cmd in candidate_terminal_commands(&exe, passthrough_args) {
         if spawn_terminal(&cmd) {
             return Ok(true);
@@ -232,7 +232,7 @@ pub fn ensure_terminal_or_relaunch(passthrough_args: &[String]) -> io::Result<bo
 pub fn fall_back_to_tui(args: &[String]) -> io::Result<Option<i32>> {
     let tui_args = tui_fallback_args(args);
     if has_controlling_tty() {
-        let status = Command::new(std::env::current_exe()?)
+        let status = Command::new(crate::daemon::process::running_exe()?)
             .args(&tui_args)
             .env("BILTERM_GUI", "0")
             .status()?;
@@ -241,7 +241,7 @@ pub fn fall_back_to_tui(args: &[String]) -> io::Result<Option<i32>> {
     if std::env::var(RELAUNCH_GUARD_ENV).as_deref() == Ok("1") {
         return Ok(None);
     }
-    let exe = std::env::current_exe()?;
+    let exe = crate::daemon::process::running_exe()?;
     for cmd in candidate_terminal_commands(&exe, &tui_args) {
         if spawn_terminal(&cmd) {
             return Ok(None);
