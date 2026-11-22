@@ -1,6 +1,6 @@
 # UPDATE 2026-11-21 (latest, macOS host): v3.4.1 synced; D7a/D7b verified + PR #166 open
-- Local `main` (`/Users/bill/src/tools/bilterm`) fast-forwarded to `origin/main` @ `2bd6ce7` (`v3.4.1`, includes `#142`–`#165`); stale local branch `feat/windows-arm64` (`9cbcebb`) and old throwaway worktrees (`~/worktrees/bilterm-winarm`, `dos-d0b`, `dos-d0c`) removed.
-- **D7a (macOS arm64, QEMU 11.1.3) & D7b (macOS Intel `x86_64-apple-darwin` under Rosetta) VERIFIED** in `/Users/bill/worktrees/bilterm-dos-d7` (branch `feat/dos-d7-macos`, PR **#166** open):
+- Local `main` (`<repo>`) fast-forwarded to `origin/main` @ `2bd6ce7` (`v3.4.1`, includes `#142`–`#165`); stale local branch `feat/windows-arm64` (`9cbcebb`) and old throwaway worktrees (`~/worktrees/bilterm-winarm`, `dos-d0b`, `dos-d0c`) removed.
+- **D7a (macOS arm64, QEMU 11.1.3) & D7b (macOS Intel `x86_64-apple-darwin` under Rosetta) VERIFIED** in `~/worktrees/bilterm-dos-d7` (branch `feat/dos-d7-macos`, PR **#166** open):
   - `scripts/verify.sh --only clippy unit dos t:dos_surface_parity t:session_transfer t:daemon_restart_live t:session_find`: `PASS 7/7 83s`.
   - Ignored real-QEMU smokes on macOS arm64: `dos::launch::tests::dos_curses_smoke` (`PASS`), `dos::backend::qemu::tests::smoke_boots_and_reads_seabios_banner` (`PASS`).
   - macOS GUI & DOS feature compile check (`#138` GUI-socket edits): `cargo check -q --features "gui dos"` (`PASS`).
