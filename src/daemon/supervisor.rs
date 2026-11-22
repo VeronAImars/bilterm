@@ -382,7 +382,7 @@ pub fn spawn_daemon_with_pid(name: &str) -> io::Result<(u32, PathBuf)> {
 /// `never`. Returns `(supervisor_pid, socket_path)`: the pid is the SUPERVISOR's, display-only;
 /// never signal it. The daemon pid comes from the lock/registry once the socket is up.
 pub fn spawn_daemon_in(runtime_dir: &Path, name: &str) -> io::Result<(u32, PathBuf)> {
-    spawn_daemon_with(&std::env::current_exe()?, runtime_dir, name, RestartMode::Never)
+    spawn_daemon_with(&crate::daemon::process::running_exe()?, runtime_dir, name, RestartMode::Never)
 }
 
 /// [`spawn_daemon_in`] with an explicit executable and restart policy.
@@ -455,7 +455,7 @@ pub fn ensure_started_with(runtime_dir: &Path, name: &str, mode: RestartMode) ->
 /// [`ensure_started_with`] plus memory limits for a newly spawned supervisor (P4 / C2). Limits of
 /// an already-running daemon are not changed.
 pub fn ensure_started_limited(runtime_dir: &Path, name: &str, mode: RestartMode, mem: MemoryLimits) -> io::Result<DaemonStartResult> {
-    ensure_started_exe_limited(&std::env::current_exe()?, runtime_dir, name, mode, mem)
+    ensure_started_exe_limited(&crate::daemon::process::running_exe()?, runtime_dir, name, mode, mem)
 }
 
 /// [`ensure_started_with`] for an explicit executable (tests point this at the real binary).
@@ -470,7 +470,7 @@ pub fn ensure_started_exe_limited(exe: &Path, runtime_dir: &Path, name: &str, mo
 
 /// [`ensure_started_limited`] plus `host_ptys` (the host owns real PTYs; applies to a new spawn only).
 pub fn ensure_started_opts(runtime_dir: &Path, name: &str, mode: RestartMode, mem: MemoryLimits, host_ptys: bool) -> io::Result<DaemonStartResult> {
-    ensure_started_exe_opts(&std::env::current_exe()?, runtime_dir, name, mode, mem, host_ptys)
+    ensure_started_exe_opts(&crate::daemon::process::running_exe()?, runtime_dir, name, mode, mem, host_ptys)
 }
 
 /// [`ensure_started_exe_limited`] plus `host_ptys`.

@@ -512,7 +512,7 @@ pub fn run_cli(args: &[String]) -> i32 {
         Ok(d) => d,
         Err(e) => return fail(&format!("runtime dir: {e}")),
     };
-    let exe = match std::env::current_exe() {
+    let exe = match crate::daemon::process::running_exe() {
         Ok(e) => e,
         Err(e) => return fail(&format!("current_exe: {e}")),
     };

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Daemon/terminal spawns no longer fail with "No such file or process" after the installed binary is replaced while running: `running_exe()` strips Linux's ` (deleted)` suffix from `current_exe()` when the reinstalled binary exists.
+
 ## [3.4.3] - 2026-11-22
 
 ### Added

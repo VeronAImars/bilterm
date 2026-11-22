@@ -27,7 +27,7 @@ pub(super) fn execute_dos_run(
         drive_c: drive_c.map(Into::into),
         backend,
     };
-    let exe = match std::env::current_exe() {
+    let exe = match crate::daemon::process::running_exe() {
         Ok(e) => e,
         Err(e) => {
             wm.active_pane_mut().set_status_message(Some(format!("dos run: cannot locate bilterm: {e}")));
