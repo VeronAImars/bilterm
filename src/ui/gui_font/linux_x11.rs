@@ -8,6 +8,7 @@ use std::time::Duration;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
+use super::window_limits::{DEFAULT_WINDOW_PX, clamp_window_px, is_below_min, min_window_px, recovery_size};
 use super::geometric::{draw_geometric_cell_bgra, is_geometric_glyph, resolve_candidate_font_faces};
 use crate::action::Action;
 use crate::app::App;
@@ -89,6 +90,18 @@ struct XConfigureEvent {
     width: c_int, height: c_int, border_width: c_int, above: c_ulong, override_redirect: c_int,
 }
 
+/// `XSizeHints` (ICCCM `WM_NORMAL_HINTS`).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct XSizeHints {
+    flags: c_long, x: c_int, y: c_int, width: c_int, height: c_int,
+    min_width: c_int, min_height: c_int, max_width: c_int, max_height: c_int,
+    width_inc: c_int, height_inc: c_int, min_aspect: [c_int; 2], max_aspect: [c_int; 2],
+    base_width: c_int, base_height: c_int, win_gravity: c_int,
+}
+const P_SIZE: c_long = 1 << 3;
+const P_MIN_SIZE: c_long = 1 << 4;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct XClientMessageEvent {
@@ -143,6 +156,8 @@ pub struct X11Api {
     x_put_image: FnPutImg,
     x_copy_area: FnCopyArea,
     x_flush: unsafe extern "C" fn(*mut c_void) -> c_int,
+    x_set_wm_normal_hints: unsafe extern "C" fn(*mut c_void, c_ulong, *mut XSizeHints),
+    x_resize_window: unsafe extern "C" fn(*mut c_void, c_ulong, c_uint, c_uint) -> c_int,
     xft_font_open_name: Option<unsafe extern "C" fn(*mut c_void, c_int, *const c_char) -> *mut XftFont>,
     xft_font_close: Option<unsafe extern "C" fn(*mut c_void, *mut XftFont)>,
     xft_text_extents_utf8: Option<unsafe extern "C" fn(*mut c_void, *mut XftFont, *const c_uchar, c_int, *mut XGlyphInfo)>,
@@ -200,6 +215,8 @@ impl X11Api {
                 x_put_image: load_sym(lib_x11, b"XPutImage\0")?,
                 x_copy_area: load_sym(lib_x11, b"XCopyArea\0")?,
                 x_flush: load_sym(lib_x11, b"XFlush\0")?,
+                x_set_wm_normal_hints: load_sym(lib_x11, b"XSetWMNormalHints\0")?,
+                x_resize_window: load_sym(lib_x11, b"XResizeWindow\0")?,
                 xft_font_open_name: load_sym(lib_xft, b"XftFontOpenName\0"),
                 xft_font_close: load_sym(lib_xft, b"XftFontClose\0"),
                 xft_text_extents_utf8: load_sym(lib_xft, b"XftTextExtentsUtf8\0"),
@@ -682,6 +699,21 @@ fn translate_x11_key_event(api: &X11Api, kev: &mut XKeyEvent) -> Option<KeyEvent
     translate_x11_keysym_and_bytes(keysym as u32, kev.state, bytes)
 }
 
+/// Publishes `WM_NORMAL_HINTS` with a minimum size (and the program-specified size) so the window
+/// manager can never shrink the window below a usable grid, e.g. on un-maximize.
+fn publish_size_hints(api: &X11Api, dpy: *mut c_void, win: c_ulong, cell_w: u16, cell_h: u16, w: u32, h: u32) {
+    let (mw, mh) = min_window_px(cell_w, cell_h);
+    let mut hints = XSizeHints {
+        flags: P_SIZE | P_MIN_SIZE,
+        width: w as c_int,
+        height: h as c_int,
+        min_width: mw as c_int,
+        min_height: mh as c_int,
+        ..Default::default()
+    };
+    unsafe { (api.x_set_wm_normal_hints)(dpy, win, &mut hints) };
+}
+
 /// Runs Bilterm in a native X11 + Xft/Fontconfig desktop GUI window on Linux/Unix (`GPU-02`).
 pub fn run_x11_gui_window(mut app: App) -> Result<()> {
     let Some(api) = X11Api::load() else {
@@ -695,7 +727,8 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
     }
 
     let root = unsafe { (api.x_default_root_window)(dpy) };
-    let (mut win_w, mut win_h) = (1120u32, 720u32);
+    let (mut win_w, mut win_h) = DEFAULT_WINDOW_PX;
+    let mut last_good: Option<(u32, u32)> = Some(DEFAULT_WINDOW_PX);
     let init_bg = if app.wm.config().is_modern() { 0x000A_101D } else { 0x0000_0084 };
     let win = unsafe { (api.x_create_simple_window)(dpy, root, 80, 60, win_w, win_h, 0, 0, init_bg) };
     let title_str = if crate::ui::design::tron::tron_active(app.wm.config()) {
@@ -717,6 +750,8 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
     }
 
     let mut x11_canvas = X11GuiCanvas::new(&api, dpy, win, &app.wm);
+    let mut hinted_cell = (x11_canvas.cell_width_px, x11_canvas.cell_height_px);
+    publish_size_hints(&api, dpy, win, hinted_cell.0, hinted_cell.1, win_w, win_h);
     let mut gui_renderer = GuiWorkspaceRenderer::new(x11_canvas.cell_width_px, x11_canvas.cell_height_px);
     let mut surface = GuiFrameSurface::new(x11_canvas.cell_width_px, x11_canvas.cell_height_px);
 
@@ -809,11 +844,20 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
                 }
                 CONFIGURE_NOTIFY => {
                     let cev = unsafe { xev.configure };
-                    let (nw, nh) = (cev.width.max(64) as u32, cev.height.max(64) as u32);
-                    if nw != win_w || nh != win_h {
+                    let (nw, nh) = (cev.width.max(0) as u32, cev.height.max(0) as u32);
+                    let (cw, ch) = (x11_canvas.cell_width_px, x11_canvas.cell_height_px);
+                    if is_below_min(nw, nh, cw, ch) {
+                        // The WM ignored (or has no) minimum: force the window back to a sane size.
+                        let (rw, rh) = recovery_size(last_good, cw, ch);
+                        unsafe {
+                            (api.x_resize_window)(dpy, win, rw, rh);
+                            (api.x_flush)(dpy);
+                        }
+                    } else if nw != win_w || nh != win_h {
                         (win_w, win_h) = (nw, nh);
-                        let c = (win_w / u32::from(x11_canvas.cell_width_px.max(1))).clamp(20, 500) as u16;
-                        let r = (win_h / u32::from(x11_canvas.cell_height_px.max(1))).clamp(6, 200) as u16;
+                        last_good = Some((nw, nh));
+                        let c = (win_w / u32::from(cw.max(1))).clamp(20, 500) as u16;
+                        let r = (win_h / u32::from(ch.max(1))).clamp(6, 200) as u16;
                         let new_vp = Rect::new(0, 0, c, r);
                         app.wm.resize_all(new_vp)?;
                         app.last_viewport = new_vp;
@@ -841,6 +885,14 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
         if app.needs_redraw {
             let (cw, ch, _) = x11_canvas.sync_font(&app.wm);
             (gui_renderer.cell_width_px, gui_renderer.cell_height_px) = (cw, ch);
+            if hinted_cell != (cw, ch) {
+                hinted_cell = (cw, ch);
+                publish_size_hints(&api, dpy, win, cw, ch, win_w, win_h);
+                let (fw, fh) = clamp_window_px(win_w, win_h, cw, ch);
+                if (fw, fh) != (win_w, win_h) {
+                    unsafe { (api.x_resize_window)(dpy, win, fw, fh) };
+                }
+            }
             let c = (win_w / u32::from(cw.max(1))).clamp(20, 500) as u16;
             let r = (win_h / u32::from(ch.max(1))).clamp(6, 200) as u16;
             let new_vp = Rect::new(0, 0, c, r);

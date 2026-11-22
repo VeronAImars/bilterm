@@ -11,6 +11,7 @@
 pub mod bundled;
 pub mod geometric;
 pub use geometric::*;
+pub mod window_limits;
 
 #[cfg(windows)]
 pub mod win32_gdi;
