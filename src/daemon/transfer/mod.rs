@@ -115,21 +115,30 @@ impl Drop for TransferListener {
 }
 
 fn peer_uid(stream: &UnixStream) -> Option<u32> {
-    let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
+        // `libc::ucred` exists only on Linux/Android, so it must stay inside this branch.
+        let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
         let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
         // SAFETY: valid out pointers of the stated size.
         let rc = unsafe { libc::getsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&raw mut cred).cast(), &raw mut len) };
         (rc == 0).then_some(cred.uid)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
     {
-        let _ = &mut cred;
-        let (mut uid, mut gid) = (0, 0);
+        let (mut uid, mut gid): (libc::uid_t, libc::gid_t) = (0, 0);
         // SAFETY: valid out pointers.
         let rc = unsafe { libc::getpeereid(stream.as_raw_fd(), &raw mut uid, &raw mut gid) };
         (rc == 0).then_some(uid)
+    }
+    // Unknown target: no way to verify the peer, so refuse (callers treat `None` as untrusted).
+    #[cfg(not(any(
+        target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios",
+        target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"
+    )))]
+    {
+        let _ = stream;
+        None
     }
 }
 
@@ -230,6 +239,21 @@ pub fn serve_connection(wm: &mut WindowManager, mut stream: UnixStream, kind: So
         Err(why) => {
             let _ = wire::write_msg(&mut stream, &Msg::Failed { why: why.clone() });
             Err(why)
+        }
+    }
+}
+
+#[cfg(test)]
+mod peer_uid_tests {
+    use super::*;
+
+    /// Guards the per-OS peer-credential path: a same-process socketpair must report our euid
+    /// (or `None` on targets with no credential API, which callers treat as untrusted).
+    #[test]
+    fn peer_uid_of_socketpair_is_own_euid() {
+        let (a, _b) = UnixStream::pair().expect("socketpair");
+        if let Some(uid) = peer_uid(&a) {
+            assert_eq!(uid, crate::secure_fs::current_euid());
         }
     }
 }
