@@ -40,8 +40,14 @@ pub(crate) struct Fx {
 }
 
 /// Data dir with a (fake, 1 MiB) `default` and `work` C: image.
+/// Uses a short prefix in `/tmp` when writable so macOS per-user `TMPDIR` (`/var/folders/...`)
+/// never pushes Unix QMP socket paths past the 100-byte `sun_path` cap.
 pub(crate) fn fx() -> Fx {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix("btdos-")
+        .tempdir_in("/tmp")
+        .or_else(|_| tempfile::tempdir())
+        .unwrap();
     let paths = DosPaths::new(dir.path().join("dos"));
     paths.ensure_layout().unwrap();
     for n in ["default", "work"] {
@@ -87,8 +93,14 @@ fn normalize(prep: &PreparedRun, fx: &Fx) -> String {
     if let crate::dos::backend::ControlEndpoint::Unix { path } = &prep.plan.control {
         cmd = cmd.replace(path.parent().unwrap().to_str().unwrap(), "<SESSION>");
     }
-    cmd.replace(prep.work_dir.to_str().unwrap(), "<WORK>")
-        .replace(fx.dir.path().to_str().unwrap(), "<TMP>")
+    if let Ok(canon_work) = fs::canonicalize(&prep.work_dir) {
+        cmd = cmd.replace(canon_work.to_str().unwrap(), "<WORK>");
+    }
+    cmd = cmd.replace(prep.work_dir.to_str().unwrap(), "<WORK>");
+    if let Ok(canon_tmp) = fs::canonicalize(fx.dir.path()) {
+        cmd = cmd.replace(canon_tmp.to_str().unwrap(), "<TMP>");
+    }
+    cmd.replace(fx.dir.path().to_str().unwrap(), "<TMP>")
         .split(" -")
         .collect::<Vec<_>>()
         .join("\n -")
