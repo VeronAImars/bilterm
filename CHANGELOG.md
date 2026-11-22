@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-11-21
+
+### Fixed
+- macOS build: `peer_uid()` in the session-transfer code used Linux-only `libc::ucred` outside its cfg block (E0422). macOS and BSD now use `getpeereid`; other targets refuse safely. v3.4.0 was tagged but never published because of this.
+
 ## [3.4.0] - 2026-11-21
 
 Rolls up everything since 3.3.0 (the `v3.3.1-rc1` to `rc10` pre-releases and PRs #130 to #162). Highlights: drawer reorder and drag and drop, a window drag handle with drop zones, session find, a built-in editor and scratchpad, the pane-mail envelope and `[R:host]` badge, live session transfer, and the opt-in DOS mode. Known gaps are listed under each entry.
