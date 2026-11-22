@@ -76,7 +76,10 @@ fn live_restart_keeps_shell_pid_and_terminal_content() {
     wait_for("old host", || pid_of(&dir, "lr") == Some(old_pid) && ctl(&dir, "lr", "workspace.status", "{}").is_some());
 
     // 300 numbers fit on the 24x80 screen without scrolling, so the screen holds the whole stream.
-    let cmd = "echo PID=$$.; i=0; while [ $i -lt 300 ]; do printf '%s,' $i; i=$((i+1)); sleep 0.03; done; echo FIN''ISHED; cat";
+    // Disable job control (`set +m`) inside the subshell loop so macOS `/bin/sh` (`bash 3.2`)
+    // does not emit `sh: child setpgid (...): Operation not permitted` into the middle of an
+    // iteration when its parent daemon exits during live handover.
+    let cmd = "set +m; echo PID=$$.; i=0; while [ $i -lt 300 ]; do printf '%s,' $i; i=$((i+1)); sleep 0.03; done; echo FIN''ISHED; cat";
     let params = format!("{{\"command\":{cmd:?}}}");
     assert!(ctl(&dir, "lr", "pane.exec", &params).is_some());
     let mut sp = None;
