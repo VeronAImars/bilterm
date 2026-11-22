@@ -553,6 +553,7 @@ impl Drop for PtySession {
             self.writer.close();
             return;
         }
+        #[cfg(unix)]
         if let Some(w) = self.watch.as_ref() {
             let _ = w.poll(); // reap when we happen to be the parent; harmless otherwise
         }
