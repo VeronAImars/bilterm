@@ -13,6 +13,8 @@ pub(super) fn parse_editor(p: &Parsed, env: &CliEnv) -> Result<RpcCall, String> 
     let (method, params): (&str, Vec<(&str, JsonValue)>) = match verb.as_str() {
         "open" | "edit" => ("editor.open", if joined.is_empty() { vec![] } else { vec![("path", str_val(&joined))] }),
         "scratch" => ("editor.scratch", p.flag("name").map(|n| ("name", str_val(n))).or_else(|| rest.first().map(|n| ("name", str_val(n)))).into_iter().collect()),
+        "artifact" => ("editor.artifact", p.flag("name").map(|n| ("name", str_val(n))).or_else(|| rest.first().map(|n| ("name", str_val(n)))).into_iter().collect()),
+        "board" => ("editor.board", p.flag("name").map(|n| ("name", str_val(n))).or_else(|| rest.first().map(|n| ("name", str_val(n)))).into_iter().collect()),
         "save" => ("editor.save", vec![force]),
         "saveas" | "save-as" => ("editor.save_as", vec![("path", need("a PATH")?), force]),
         "wrap" => ("editor.wrap", match rest.first().map(String::as_str) {
@@ -21,6 +23,15 @@ pub(super) fn parse_editor(p: &Parsed, env: &CliEnv) -> Result<RpcCall, String> 
             Some("off") => vec![("enabled", JsonValue::Bool(false))],
             Some(o) => return Err(format!("editor wrap takes on|off, got '{o}'")),
         }),
+        "render" | "view" => ("editor.render", match rest.first().map(String::as_str) {
+            None => vec![],
+            Some("on" | "rendered") => vec![("enabled", JsonValue::Bool(true))],
+            Some("off" | "edit") => vec![("enabled", JsonValue::Bool(false))],
+            Some(o) => return Err(format!("editor render takes on|off, got '{o}'")),
+        }),
+        "check" | "toggle-check" => ("editor.check", vec![]),
+        "broadcast" => ("editor.broadcast", if joined.is_empty() { vec![] } else { vec![("note", str_val(&joined))] }),
+        "preview" => ("editor.preview", vec![]),
         "find" | "findprev" => ("editor.find", vec![("query", need("TEXT")?), ("backward", JsonValue::Bool(verb == "findprev"))]),
         "undo" => ("editor.undo", vec![]),
         "redo" => ("editor.redo", vec![]),

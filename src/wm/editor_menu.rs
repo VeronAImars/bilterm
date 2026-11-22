@@ -12,7 +12,7 @@ impl WindowManager {
     /// Executes `EditorOp::Menu`.
     pub(super) fn editor_menu_op(&mut self, op: MenuOp) {
         let Some(id) = self.editor_target() else {
-            return self.editor_reply_pub(false, "no editor window (:edit [path] or :scratch)".into());
+            return self.editor_reply_pub(false, "no editor window (:edit [path], :scratch, or :artifact [name])".into());
         };
         match op {
             MenuOp::Open(name) => {
@@ -59,10 +59,14 @@ impl WindowManager {
         let delegated = match cmd {
             MenuCmd::New => Some(EditorOp::Open { path: None }),
             MenuCmd::Revert => Some(EditorOp::Revert),
+            MenuCmd::Broadcast => Some(EditorOp::Broadcast { note: None }),
             MenuCmd::Close => Some(EditorOp::Close { force: false }),
             MenuCmd::Undo => Some(EditorOp::Undo),
             MenuCmd::Redo => Some(EditorOp::Redo),
+            MenuCmd::ToggleCheck => Some(EditorOp::Check),
             MenuCmd::Wrap => Some(EditorOp::Wrap(None)),
+            MenuCmd::Render => Some(EditorOp::Render(None)),
+            MenuCmd::Preview => Some(EditorOp::Preview),
             _ => None,
         };
         if let Some(op) = delegated {

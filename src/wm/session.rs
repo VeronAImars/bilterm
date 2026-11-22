@@ -23,6 +23,7 @@ use crate::wm::split_tree::{SplitDirection, SplitTree};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SavedEditor {
     Scratch { name: String },
+    Artifact { name: String, #[serde(default)] render_mode: bool },
     File { path: String, wrap: bool },
 }
 
