@@ -839,13 +839,15 @@ pub fn run_x11_gui_window(mut app: App) -> Result<()> {
             break;
         }
         if app.needs_redraw {
-            let (cw, ch, _) = x11_canvas.sync_font(&app.wm);
+            let (cw, ch, font_changed) = x11_canvas.sync_font(&app.wm);
             (gui_renderer.cell_width_px, gui_renderer.cell_height_px) = (cw, ch);
             let c = (win_w / u32::from(cw.max(1))).clamp(20, 500) as u16;
             let r = (win_h / u32::from(ch.max(1))).clamp(6, 200) as u16;
             let new_vp = Rect::new(0, 0, c, r);
-            app.wm.resize_all(new_vp)?;
-            app.last_viewport = new_vp;
+            if font_changed || new_vp != app.last_viewport {
+                app.wm.resize_all(new_vp)?;
+                app.last_viewport = new_vp;
+            }
             gui_renderer.render_workspace_with_cell_size(&app.wm, app.last_viewport, cw, ch, &mut surface);
             let default_bg = match app.wm.config().palette().window_frame_bg {
                 ratatui::style::Color::Rgb(r, g, b) => [r, g, b, 255],

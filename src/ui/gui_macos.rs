@@ -419,11 +419,11 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
     let content_view = unsafe { msg_send_id_0(window, sel(c"contentView")) };
     unsafe {
         msg_send_void_bool(content_view, sel(c"setWantsLayer:"), true);
+        crate::ui::gui_font::apply_macos_dock_icon(ns_app);
+        msg_send_void_0(ns_app, sel(c"finishLaunching"));
         msg_send_void_id(window, sel(c"makeKeyAndOrderFront:"), null_mut());
         msg_send_void_0(window, sel(c"display"));
-        crate::ui::gui_font::apply_macos_dock_icon(ns_app);
         msg_send_void_bool(ns_app, sel(c"activateIgnoringOtherApps:"), true);
-        msg_send_void_0(ns_app, sel(c"finishLaunching"));
     }
 
     let mut scale_factor = unsafe { msg_send_f64_0(window, sel(c"backingScaleFactor")) }.clamp(1.0, 4.0);
@@ -728,9 +728,10 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
             let c = (pixel_w / u32::from(cw.max(1))).clamp(20, 500) as u16;
             let r = (pixel_h / u32::from(ch.max(1))).clamp(6, 200) as u16;
             let desired_vp = Rect::new(0, 0, c, r);
-            app.wm.resize_all(desired_vp)?;
-            app.last_viewport = desired_vp;
-            let _ = font_changed;
+            if font_changed || desired_vp != app.last_viewport {
+                app.wm.resize_all(desired_vp)?;
+                app.last_viewport = desired_vp;
+            }
             gui_renderer.render_workspace_with_cell_size(
                 &app.wm,
                 app.last_viewport,
