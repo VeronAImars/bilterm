@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Linux GUI (`--gui`, X11): un-maximizing the window (double-clicking the title bar) could shrink it to an unseeable size. The window never published `WM_NORMAL_HINTS`, so the window manager had no minimum, and the resize handler only floored at 64 px. It now sets a minimum size (at least 20x6 cells, 320x200 px), and a `ConfigureNotify` below that minimum forces the window back to the last sane size. The limits are pure functions with unit tests.
+- Daemon/terminal spawns no longer fail with "No such file or process" after the installed binary is replaced while running: `running_exe()` strips Linux's ` (deleted)` suffix from `current_exe()` when the reinstalled binary exists.
 
 ## [3.4.3] - 2026-11-22
 
