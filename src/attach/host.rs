@@ -2,14 +2,19 @@
 //! the client registry with the control plane (`attach.clients`) and runs the accept loop.
 
 use std::path::Path;
+#[cfg(unix)]
 use std::sync::Arc;
 
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+#[cfg(unix)]
 use super::conn::{ConnConfig, HostInfo};
+#[cfg(unix)]
 use super::limits::IN_QUEUE_FRAMES;
+#[cfg(unix)]
 use super::listener::{attach_socket_path_in, bind_attach_socket, serve_attach};
+#[cfg(unix)]
 use super::registry::SharedRegistry;
 use crate::api::AutomationControlPlane;
 use crate::error::{BiltermError, Result};

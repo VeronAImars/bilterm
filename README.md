@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bsommers/bilterm/releases/tag/v3.4.1"><img src="https://img.shields.io/badge/version-v3.4.1-blue" alt="Version v3.4.1" /></a>
+  <a href="https://github.com/bsommers/bilterm/releases/tag/v3.4.2"><img src="https://img.shields.io/badge/version-v3.4.2-blue" alt="Version v3.4.2" /></a>
   <img src="https://img.shields.io/badge/rust-1.88%2B%20(2024)-orange" alt="Rust 1.88+ Edition 2024" />
   <img src="https://img.shields.io/badge/tests-31%2F31%20suites%20passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/coverage-84%2B%25-brightgreen" alt="Coverage" />
@@ -81,7 +81,7 @@
 # One-line installer (Linux / macOS) — downloads a prebuilt binary (no Rust needed), manpage & completions.
 # It never builds from source unless you pass --from-source (needs Rust).
 curl -fsSL https://raw.githubusercontent.com/bsommers/bilterm/main/scripts/install.sh | bash
-# Pin a release:  ... | bash -s -- --tag v3.4.1     Build instead: ... | bash -s -- --from-source
+# Pin a release:  ... | bash -s -- --tag v3.4.2     Build instead: ... | bash -s -- --from-source
 
 # Or build & install from source (Rust 1.88+, Edition 2024)
 cargo build --release && install -m 0755 target/release/bilterm ~/.local/bin/bilterm

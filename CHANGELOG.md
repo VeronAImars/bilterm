@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-11-21
+
+### Fixed
+- Windows build (x64 and ARM64): the attach host imported the Unix-only `bind_attach_socket` and `PtySession::drop` touched the Unix-only `watch` field (E0432, E0609). Both are now cfg-gated; `--attach` reports a clear Unix-only error on Windows. Verified with `cargo check --all-targets` for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`. v3.4.1 Windows binaries were never built because of this.
+
 ## [3.4.1] - 2026-11-21
 
 ### Fixed
