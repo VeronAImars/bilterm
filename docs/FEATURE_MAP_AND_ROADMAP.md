@@ -10,6 +10,23 @@ This document maps **Bilterm (`v0.1.0`)** against **Ghostty** (inspected directl
 
 ---
 
+## Shipped in v3.4.0
+
+Bilterm-side features added since v3.3.0 (the Ghostty comparison below is a historical `v0.1.0` snapshot). Details: [CHANGELOG](../CHANGELOG.md) and [USER_GUIDE](USER_GUIDE.md).
+
+| Feature | Surface | Known gaps |
+| :--- | :--- | :--- |
+| Drawer reorder, session/window order, drawer drag and drop | keys, `:window reorder`, `:session reorder`, RPC, MCP | none known |
+| Window drag handle and drop zones | `:window place`, `:drag zones` | tiled layout only |
+| Session find by OS attributes | `Ctrl+X &`, `:find --...`, `bilterm find`, RPC, MCP | degraded on Windows; macOS unverified on a real Mac |
+| Editor, scratchpad, DOS EDIT style menu bar | `:edit`, `:scratch`, `Ctrl+X _`, `F10` | plain text and markdown only |
+| Pane-mail envelope, `[R:host]` badge | `:mail`, `:remote status`, RPC, MCP | none known |
+| Live session transfer, `daemon restart --live` | `:session transfer`, `bilterm daemon ...` | Linux only |
+| DOS mode (FreeDOS) | `:dos ...`, feature `dos` | opt-in build, text mode only, not in release binaries |
+| Browser pane theme, external browser | `Ctrl+Alt+U`, `:web external` | Chrome screencast, not a full browser |
+
+---
+
 ## Table of Contents
 
 1. [Tier 1: Core, Foundational Terminal Features (`Ghostty <-> Bilterm`)](#1-tier-1-core-foundational-terminal-features-ghostty---bilterm)

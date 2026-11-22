@@ -4,7 +4,7 @@
 
 Bilterm can run either **inside any host terminal emulator** (Ratatui + Crossterm TUI mode) or as a **standalone native desktop GUI window** (`bilterm --gui` / `-G`) powered by X11 + Xft/Fontconfig on Linux/Unix and Win32 GDI ClearType + `DIBSection` on Windows.
 
-![3-Way Split with Independent Per-Pane Font Scaling](../assets/screenshot-per-pane-scaling.svg)
+![Three tiled windows with the navigator drawer](../assets/screenshot-drawer.png)
 
 ---
 

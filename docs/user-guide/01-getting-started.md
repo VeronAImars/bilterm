@@ -39,7 +39,7 @@ bilterm --gui --gui-font "IBM 3270" --gui-font-size 18 --theme ibm-3278-green
 
 Bilterm detects your platform's default interactive shell (`$SHELL` on Linux/macOS, or `%COMSPEC%` / `powershell.exe` on Windows) and spawns an interactive PTY session inside **Composite Pane `#1`**.
 
-![Bilterm Multi-Pane Composite Workspace & SSH Fleet](../assets/screenshot-workspace.svg)
+![Bilterm Multi-Pane Composite Workspace & SSH Fleet](../assets/screenshot-workspace.png)
 
 ---
 
@@ -61,7 +61,7 @@ In traditional terminal emulators, your command prompt is etched into the same c
 - **All-Border & All-Corner Mouse Frame Drag Resizing**:
   - Grab **any** pane border (`Top`, `Bottom`, `Left`, `Right`) or **any** corner (`TopLeft`, `TopRight`, `BottomLeft`, `BottomRight`) with the mouse to resize tiled splits or overlapping Z-Stack windows smoothly in 2-pane, 3-pane, or N-pane layouts.
 
-![Bilterm Per-Pane Independent Font Scaling & 3-Way Split](../assets/screenshot-per-pane-scaling.svg)
+![Bilterm navigator drawer with three tiled windows](../assets/screenshot-drawer.png)
 
 ---
 
