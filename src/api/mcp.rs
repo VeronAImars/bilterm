@@ -123,7 +123,7 @@ impl AutomationControlPlane {
                         } else if tool_name == "bilterm_dos" {
                             Err("missing or invalid 'action' parameter: run, setup, doctor, remove, status, reset, snapshot, restore".to_string())
                         } else if tool_name == "bilterm_editor" {
-                            Err("missing or invalid 'action' parameter: open, scratch, save, save_as, wrap, find, undo, redo, goto, revert, insert, text, status or close".to_string())
+                            Err("missing or invalid 'action' parameter: open, scratch, artifact, save, save_as, wrap, render, check, broadcast, find, undo, redo, goto, revert, insert, text, status, close or menu".to_string())
                         } else if tool_name == "bilterm_web_surface" {
                             Err("invalid 'action' parameter: status, open, external, port or stop".to_string())
                         } else if tool_name == "bilterm_clipboard" {

@@ -61,6 +61,18 @@ spans, bold, italic, links); scratchpad autosave and restore; session persistenc
 Known gaps carried to later milestones: unsaved edits of a file buffer are not kept across a
 restart (only scratchpads are); no multi-cursor, no line-number gutter, no replace.
 
+### EDIT-07 Shared artifacts
+
+`:artifact [name]` opens a window whose text is shared through `ContextBus` key `artifact:<name>`
+(names are lowercased; Windows device names are rejected) and autosaved privately. Pushes use
+`ContextBus::set_if_revision` against the last revision the window saw: a concurrent agent write is
+never overwritten, the window shows CONFLICT, keeps the local text and `:editor revert` takes the
+shared version. Bus failures (over 64 KiB, bus full) show as NOT SHARED and are not retried until
+the buffer changes. Bus text is sanitised (controls and Unicode format characters dropped).
+`:editor broadcast [note]` only works on artifact windows; `artifact` and `broadcast` need
+`[api] allow_config_write` for API callers. Open question: an entry that expires is re-seeded from
+the local text on the next edit.
+
 ### E2 Markdown preview and highlight polish
 
 Rendered preview split (headings, emphasis, lists, tables, fenced code with a language hint),
