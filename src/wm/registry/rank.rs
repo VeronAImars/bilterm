@@ -73,6 +73,27 @@ fn score_row(pattern: &Pattern, matcher: &mut Matcher, haystack: &str, q_lower: 
     .ok()
     .flatten()
     .or_else(|| fallback_score(haystack, q_lower))
+    .map(|s| s.saturating_add(name_bonus(haystack, q_lower)))
+}
+
+/// Score bonus for matching the first word of `haystack` (the command name, e.g. `:broadcast`
+/// in `:broadcast - ...`): exact 30000, prefix 20000, subsequence 10000, so a command named by the
+/// query outranks fuzzy hits in longer commands or descriptions. Shared by the palette and `search`
+/// so their orders stay identical.
+pub fn name_bonus(haystack: &str, q_lower: &str) -> u32 {
+    let name = haystack.split_whitespace().next().unwrap_or("").trim_start_matches(':').to_lowercase();
+    let q = q_lower.trim_start_matches(':');
+    if q.is_empty() || name.is_empty() {
+        return 0;
+    }
+    if name == q {
+        return 30_000;
+    }
+    if name.starts_with(q) {
+        return 20_000;
+    }
+    let mut it = name.chars();
+    if q.chars().all(|qc| it.any(|nc| nc == qc)) { 10_000 } else { 0 }
 }
 
 /// Palette fallback: substring scores 100, subsequence scores 10.
