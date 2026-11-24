@@ -34,7 +34,11 @@ impl EditorState {
     }
 
     fn item_label(&self, it: &menu::Item) -> String {
-        if it.cmd == Some(MenuCmd::Wrap) { format!("{} {}", if self.wrap { "\u{2713}" } else { " " }, it.label) } else { format!("  {}", it.label) }
+        match it.cmd {
+            Some(MenuCmd::Wrap) => format!("{} {}", if self.wrap { "\u{2713}" } else { " " }, it.label),
+            Some(MenuCmd::Render) => format!("{} {}", if self.render_mode { "\u{2713}" } else { " " }, it.label),
+            _ => format!("  {}", it.label),
+        }
     }
 
     /// The bar on screen row 1.

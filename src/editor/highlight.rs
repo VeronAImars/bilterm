@@ -13,6 +13,9 @@ pub enum Kind {
     Italic,
     Link,
     Rule,
+    CheckOpen,
+    CheckDone,
+    CheckDoneText,
 }
 
 impl Kind {
@@ -28,6 +31,9 @@ impl Kind {
             Self::Italic => "3",
             Self::Link => "4;34",
             Self::Rule => "2;36",
+            Self::CheckOpen => "1;33",
+            Self::CheckDone => "1;32",
+            Self::CheckDoneText => "2;9",
         }
     }
 }
@@ -86,6 +92,14 @@ pub fn classify(line: &str, in_fence: bool) -> Vec<Kind> {
     if let Some(m) = marker {
         out[i..i + m].fill(Kind::Marker);
         i += m;
+        if let Some(cb) = super::artifact::find_checkbox(line) {
+            out[cb.box_col..cb.end_col].fill(if cb.checked { Kind::CheckDone } else { Kind::CheckOpen });
+            if cb.checked {
+                out[cb.end_col..n].fill(Kind::CheckDoneText);
+                return out;
+            }
+            i = cb.end_col;
+        }
     }
     while i < n {
         match chars[i] {

@@ -195,7 +195,15 @@ impl EditorState {
         self.message = None;
         let (ctrl, shift) = (m.contains(KeyModifiers::CONTROL), m.contains(KeyModifiers::SHIFT));
         let c = self.buf.cursor;
+        if self.render_mode {
+            return self.handle_rendered_key(key, ctrl);
+        }
         match key.code {
+            KeyCode::Char(' ') if ctrl => {
+                if let Err(e) = self.toggle_check() {
+                    self.message = Some(e);
+                }
+            }
             KeyCode::Char(ch) if ctrl => match ch.to_ascii_lowercase() {
                 's' => self.save_or_prompt(false),
                 'o' => self.mode = Mode::SaveAs(String::new()),
@@ -250,6 +258,57 @@ impl EditorState {
             KeyCode::Tab => self.buf.insert("    "),
             KeyCode::Esc => self.buf.anchor = None,
             KeyCode::Char(ch) => self.buf.insert(&ch.to_string()),
+            _ => return false,
+        }
+        true
+    }
+
+    fn handle_rendered_key(&mut self, key: KeyEvent, ctrl: bool) -> bool {
+        match key.code {
+            KeyCode::Char(' ') if ctrl => {
+                if let Err(e) = self.toggle_check() {
+                    self.message = Some(e);
+                }
+            }
+            KeyCode::Char(ch) if ctrl => match ch.to_ascii_lowercase() {
+                's' => self.save_or_prompt(false),
+                'z' => {
+                    if !self.buf.undo() {
+                        self.message = Some("nothing to undo".into());
+                    }
+                }
+                'y' => {
+                    if !self.buf.redo() {
+                        self.message = Some("nothing to redo".into());
+                    }
+                }
+                'f' => self.mode = Mode::Find(self.search.clone()),
+                'n' => self.find_report(true),
+                'p' => self.find_report(false),
+                'g' => self.mode = Mode::Goto(String::new()),
+                _ => {}
+            },
+            KeyCode::Up | KeyCode::Char('k') => self.vertical(-1, false),
+            KeyCode::Down | KeyCode::Char('j') => self.vertical(1, false),
+            KeyCode::PageUp => self.vertical(-(self.page_rows() as i64), false),
+            KeyCode::PageDown => self.vertical(self.page_rows() as i64, false),
+            KeyCode::Home | KeyCode::Char('g') => self.go(Pos::default(), false, false),
+            KeyCode::End | KeyCode::Char('G') => self.go(self.buf.end_pos(), false, false),
+            KeyCode::Char(' ') => {
+                if let Err(e) = self.toggle_check() {
+                    self.message = Some(e);
+                }
+            }
+            KeyCode::Enter => {
+                if self.toggle_check().is_err() {
+                    self.render_mode = false;
+                    self.message = Some("edit mode".into());
+                }
+            }
+            KeyCode::Char('e' | 'i') | KeyCode::Esc => {
+                self.render_mode = false;
+                self.message = Some("edit mode".into());
+            }
             _ => return false,
         }
         true

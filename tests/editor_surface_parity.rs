@@ -51,9 +51,13 @@ const VERBS: &[(&str, &str, &str)] = &[
     // (rpc verb, colon form, palette head)
     ("open", ":edit /tmp/x.md", ":edit"),
     ("scratch", ":scratch", ":scratch"),
+    ("artifact", ":artifact plan", ":artifact"),
     ("save", ":editor save", ":editor save"),
     ("save_as", ":editor saveas /tmp/x.md", ":editor saveas <path>"),
     ("wrap", ":editor wrap on", ":editor wrap"),
+    ("render", ":editor render on", ":editor render"),
+    ("check", ":editor check", ":editor check"),
+    ("broadcast", ":editor broadcast ready", ":editor broadcast [note]"),
     ("find", ":editor find abc", ":editor find <text>"),
     ("undo", ":editor undo", ":editor undo"),
     ("redo", ":editor redo", ":editor redo"),
@@ -81,9 +85,13 @@ fn every_editor_verb_has_colon_palette_rpc_mcp_and_cli() {
     for (args, method) in [
         (vec!["editor", "open", "/tmp/a.md"], "editor.open"),
         (vec!["editor", "scratch"], "editor.scratch"),
+        (vec!["editor", "artifact", "plan"], "editor.artifact"),
         (vec!["editor", "save", "--force"], "editor.save"),
         (vec!["editor", "saveas", "/tmp/b.md"], "editor.save_as"),
         (vec!["editor", "wrap", "off"], "editor.wrap"),
+        (vec!["editor", "render", "on"], "editor.render"),
+        (vec!["editor", "check"], "editor.check"),
+        (vec!["editor", "broadcast", "ready"], "editor.broadcast"),
         (vec!["editor", "find", "x"], "editor.find"),
         (vec!["editor", "findprev", "x"], "editor.find"),
         (vec!["editor", "goto", "4"], "editor.goto"),
@@ -262,4 +270,125 @@ fn editor_op_actions_apply_without_panicking_for_every_verb_with_no_editor() {
         assert!(matches!(wm.apply(Action::Editor(op)).unwrap(), AppAction::Continue | AppAction::Handled));
         assert!(wm.take_command_data().unwrap().contains("error"));
     }
+}
+
+#[test]
+fn shared_artifact_syncs_bidirectionally_with_context_bus() {
+    let (_g, _d) = sandbox();
+    let mut cp = AutomationControlPlane::new_headless(30, 100);
+    // Open a shared artifact via RPC; it seeds ContextBus under artifact:plan.
+    let opened = cp.dispatch_method("editor.artifact", &json(r#"{"name":"plan"}"#)).unwrap();
+    assert_eq!(opened.get("bus_key").and_then(JsonValue::as_str), Some("artifact:plan"));
+    let seeded = cp.wm.context_bus().get("artifact:plan").expect("ContextBus seeded");
+    assert!(seeded.value.contains("Shared Artifact: plan"), "{}", seeded.value);
+
+    // External agent writes to ContextBus -> editor_tick() live-updates the open artifact pane
+    // and marks autosave pending so synced bus content persists to disk.
+    cp.dispatch_method(
+        "context.set",
+        &json(r##"{"key":"artifact:plan","value":"# Plan\n- [ ] Step A\n- [x] Step B"}"##),
+    )
+    .unwrap();
+    assert!(cp.wm.editor_tick(), "editor_tick should report repaint after external ContextBus write");
+    assert!(
+        cp.wm.active_pane().editor().unwrap().autosave_pending(),
+        "bus-synced artifact update must arm autosave"
+    );
+    let t = cp.dispatch_method("editor.text", &json("{}")).unwrap();
+    assert_eq!(t.get("text").and_then(JsonValue::as_str), Some("# Plan\n- [ ] Step A\n- [x] Step B"));
+
+    // Refocusing an already-open artifact still returns bus_key.
+    let refocused = cp.dispatch_method("editor.artifact", &json(r#"{"name":"plan"}"#)).unwrap();
+    assert_eq!(refocused.get("bus_key").and_then(JsonValue::as_str), Some("artifact:plan"));
+
+    // Interactive checklist toggle updates buffer + status progress + pushes back to ContextBus.
+    cp.dispatch_method("editor.goto", &json(r#"{"line":2}"#)).unwrap();
+    cp.dispatch_method("editor.check", &json("{}")).unwrap();
+    let st = cp.dispatch_method("editor.status", &json("{}")).unwrap();
+    let ed = st.get("editor").unwrap();
+    assert_eq!(ed.get("tasks_done").and_then(JsonValue::as_usize), Some(2));
+    assert_eq!(ed.get("tasks_total").and_then(JsonValue::as_usize), Some(2));
+    let bus_val = cp.wm.context_bus().get("artifact:plan").unwrap().value;
+    assert!(bus_val.contains("- [x] Step A"), "{bus_val}");
+
+    // Undo restores the unchecked state cleanly.
+    cp.dispatch_method("editor.undo", &json("{}")).unwrap();
+    let bus_val = cp.wm.context_bus().get("artifact:plan").unwrap().value;
+    assert!(bus_val.contains("- [ ] Step A"), "{bus_val}");
+}
+
+#[test]
+fn rendered_view_and_checkbox_interaction_work_end_to_end() {
+    let (_g, _d) = sandbox();
+    let mut wm = WindowManager::new_headless(30, 100);
+    colon(&mut wm, ":artifact tasks");
+    colon(&mut wm, ":editor render on");
+    assert!(wm.active_pane().editor().unwrap().render_mode);
+    let view = screen(&wm);
+    assert!(view.contains("☐") && view.contains("VIEW"), "{view}");
+
+    // Navigate to first checklist item (line 7 in template) and press Space to check it.
+    colon(&mut wm, ":editor goto 7");
+    press(&mut wm, k(KeyCode::Char(' ')));
+    let view_after = screen(&wm);
+    assert!(view_after.contains("☑"), "{view_after}");
+
+    // Pressing 'e' drops right back to Edit mode.
+    press(&mut wm, k(KeyCode::Char('e')));
+    assert!(!wm.active_pane().editor().unwrap().render_mode);
+
+    // Checkboxes inside fenced code blocks must not toggle, and ESC sequences must be stripped from rendered rows.
+    let mut tb = bilterm::editor::buffer::TextBuffer::from_text("```md\n- [ ] fenced\n```\n\x1b]52;c;evil\x07ok");
+    assert_eq!(bilterm::editor::artifact::toggle_checkbox_on_line(&mut tb, 1), None);
+    let rows = bilterm::editor::artifact::render_markdown_rows(&tb, 40);
+    assert!(rows.iter().all(|r| !r.ansi.contains("\x1b]52")));
+}
+
+#[test]
+fn file_editor_auto_reloads_when_clean_and_flags_when_dirty() {
+    let (_g, d) = sandbox();
+    let path = d.path().join("CHECKLIST.md");
+    std::fs::write(&path, "# List\n- [ ] first\n").unwrap();
+    let mut wm = WindowManager::new_headless(30, 100);
+    colon(&mut wm, &format!(":edit {}", path.display()));
+    assert_eq!(wm.active_pane().editor().unwrap().buf.text(), "# List\n- [ ] first");
+
+    // Agent modifies file on disk while buffer is clean -> auto-reloads cleanly.
+    std::fs::write(&path, "# List\n- [x] first\n- [ ] second\n").unwrap();
+    let changed = wm.active_pane_mut().editor_mut().unwrap().poll_external_file_change(true);
+    assert!(changed);
+    assert_eq!(wm.active_pane().editor().unwrap().buf.text(), "# List\n- [x] first\n- [ ] second");
+    assert!(!wm.active_pane().editor().unwrap().external_change);
+
+    // User edits buffer (now dirty); agent modifies disk again -> flagged, NOT clobbered.
+    type_str(&mut wm, "LOCAL ");
+    assert!(wm.active_pane().editor().unwrap().is_dirty());
+    std::fs::write(&path, "# List\n- [x] overwritten externally\n").unwrap();
+    let flagged = wm.active_pane_mut().editor_mut().unwrap().poll_external_file_change(true);
+    assert!(flagged);
+    let ed = wm.active_pane().editor().unwrap();
+    assert!(ed.external_change);
+    assert!(ed.buf.text().starts_with("LOCAL "), "dirty user edits must not be clobbered");
+}
+
+#[test]
+fn editor_broadcast_notifies_named_agents_and_slugifies_dotted_filenames() {
+    let (_g, d) = sandbox();
+    let mut cp = AutomationControlPlane::new_headless(30, 100);
+    cp.wm.set_agent_messaging_enabled(true);
+    let worker_id = cp.wm.active_pane_id();
+    cp.dispatch_method("agent.name", &json(&format!(r#"{{"pane_id":{worker_id},"name":"worker-1"}}"#))).unwrap();
+    cp.dispatch_method("editor.artifact", &json(r#"{"name":"spec"}"#)).unwrap();
+    let b = cp.dispatch_method("editor.broadcast", &json(r#"{"note":"updated acceptance criteria"}"#)).unwrap();
+    assert_eq!(b.get("notified_agents").and_then(JsonValue::as_bool), Some(true));
+    let inbox = cp.dispatch_method("agent.inbox", &json(r#"{"agent":"worker-1"}"#)).unwrap().to_json_string();
+    assert!(inbox.contains("updated acceptance criteria") && inbox.contains("bilterm://context/artifact:spec"), "{inbox}");
+
+    // Dotted filenames (like README.md) slugify to validate_safe_name-compliant artifact names.
+    let md_path = d.path().join("README.md");
+    std::fs::write(&md_path, "# Hi").unwrap();
+    let md_ed = bilterm::editor::EditorState::open_file(&md_path).unwrap();
+    let slug = md_ed.studio_artifact_name();
+    assert_eq!(slug, "readme-md");
+    assert!(bilterm::secure_fs::validate_safe_name(&slug).is_ok());
 }

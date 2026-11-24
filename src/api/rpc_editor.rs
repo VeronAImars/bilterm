@@ -9,7 +9,8 @@ use crate::action::Action;
 use crate::editor::EditorOp;
 
 pub const EDITOR_METHODS: &[&str] = &[
-    "editor.open", "editor.scratch", "editor.save", "editor.save_as", "editor.wrap", "editor.find", "editor.undo",
+    "editor.open", "editor.scratch", "editor.artifact", "editor.save", "editor.save_as", "editor.wrap",
+    "editor.render", "editor.check", "editor.broadcast", "editor.find", "editor.undo",
     "editor.redo", "editor.goto", "editor.revert", "editor.insert", "editor.text", "editor.status", "editor.close", "editor.menu",
 ];
 
@@ -34,9 +35,13 @@ pub(super) fn editor_op(verb: &str, p: &JsonValue) -> Result<Option<EditorOp>, S
     Ok(Some(match verb {
         "open" => EditorOp::Open { path: opt_str(p, "path")? },
         "scratch" => EditorOp::Scratch { name: opt_str(p, "name")? },
+        "artifact" => EditorOp::Artifact { name: opt_str(p, "name")? },
         "save" => EditorOp::Save { force: flag(p, "force") },
         "save_as" => EditorOp::SaveAs { path: req_str(p, "path")?, force: flag(p, "force") },
         "wrap" => EditorOp::Wrap(p.get("enabled").and_then(JsonValue::as_bool)),
+        "render" => EditorOp::Render(p.get("enabled").and_then(JsonValue::as_bool)),
+        "check" => EditorOp::Check,
+        "broadcast" => EditorOp::Broadcast { note: opt_str(p, "note")? },
         "find" => EditorOp::Find { query: req_str(p, "query")?, backward: flag(p, "backward") },
         "undo" => EditorOp::Undo,
         "redo" => EditorOp::Redo,

@@ -3,7 +3,7 @@
 
 use super::menu::{MenuCmd, menu_by_name};
 
-pub const EDITOR_USAGE: &str = "Usage: :edit [path] | :scratch [name] | :editor save [--force] | saveas <path> [--force] | wrap [on|off] | find <text> | findprev <text> | undo | redo | goto <line> | revert | insert <text> | text | status | close [--force] | menu [open [file|edit|search|view|help] | close | do <item>]";
+pub const EDITOR_USAGE: &str = "Usage: :edit [path] | :scratch [name] | :artifact [name] | :editor save [--force] | saveas <path> [--force] | wrap [on|off] | render [on|off] | check | broadcast [note] | find <text> | findprev <text> | undo | redo | goto <line> | revert | insert <text> | text | status | close [--force] | menu [open [file|edit|search|view|help] | close | do <item>]";
 
 /// Menu bar verbs (`:editor menu ...`, `editor.menu`): the keyboard menu lowers to these too.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,9 +21,17 @@ pub enum EditorOp {
     Open { path: Option<String> },
     /// Open or focus the scratchpad `name` (default `scratch`).
     Scratch { name: Option<String> },
+    /// Open or focus a shared cross-pane artifact backed by `ContextBus` (default `shared`).
+    Artifact { name: Option<String> },
     Save { force: bool },
     SaveAs { path: String, force: bool },
     Wrap(Option<bool>),
+    /// Toggle or set Rendered Markdown / Checklist view (`:editor render [on|off]`).
+    Render(Option<bool>),
+    /// Toggle a Markdown task checkbox (`- [ ]` <-> `- [x]`) on the current line.
+    Check,
+    /// Sync current artifact/file and notify named agents via `AgentMail`.
+    Broadcast { note: Option<String> },
     Find { query: String, backward: bool },
     Undo,
     Redo,
@@ -48,10 +56,17 @@ impl EditorOp {
             Self::Open { path: None } => ":edit".into(),
             Self::Scratch { name: Some(n) } => format!(":scratch {n}"),
             Self::Scratch { name: None } => ":scratch".into(),
+            Self::Artifact { name: Some(n) } => format!(":artifact {n}"),
+            Self::Artifact { name: None } => ":artifact".into(),
             Self::Save { force } => format!(":editor save{}", f(force)),
             Self::SaveAs { path, force } => format!(":editor saveas {path}{}", f(force)),
             Self::Wrap(None) => ":editor wrap".into(),
             Self::Wrap(Some(b)) => format!(":editor wrap {}", if *b { "on" } else { "off" }),
+            Self::Render(None) => ":editor render".into(),
+            Self::Render(Some(b)) => format!(":editor render {}", if *b { "on" } else { "off" }),
+            Self::Check => ":editor check".into(),
+            Self::Broadcast { note: Some(n) } => format!(":editor broadcast {n}"),
+            Self::Broadcast { note: None } => ":editor broadcast".into(),
             Self::Find { query, backward } => format!(":editor {} {query}", if *backward { "findprev" } else { "find" }),
             Self::Undo => ":editor undo".into(),
             Self::Redo => ":editor redo".into(),
@@ -68,7 +83,7 @@ impl EditorOp {
         }
     }
 
-    /// Parses `:edit ...`, `:scratch ...` and `:editor <verb> ...`; `None` when `head` is not ours.
+    /// Parses `:edit ...`, `:scratch ...`, `:artifact ...`, and `:editor <verb> ...`; `None` when `head` is not ours.
     pub fn parse(head: &str, parts: &[&str]) -> Option<Result<Self, String>> {
         let rest = |from: usize| parts.get(from..).unwrap_or(&[]).to_vec();
         let joined = |from: usize| rest(from).join(" ");
@@ -81,6 +96,11 @@ impl EditorOp {
                 [n] => Ok(Self::Scratch { name: Some((*n).to_string()) }),
                 _ => bad(),
             },
+            "artifact" => match rest(1).as_slice() {
+                [] => Ok(Self::Artifact { name: None }),
+                [n] => Ok(Self::Artifact { name: Some((*n).to_string()) }),
+                _ => bad(),
+            },
             "editor" => {
                 let verb = parts.get(1).copied().unwrap_or("");
                 let force = rest(2).contains(&"--force");
@@ -91,6 +111,11 @@ impl EditorOp {
                     ("wrap", []) => Ok(Self::Wrap(None)),
                     ("wrap", ["on"]) => Ok(Self::Wrap(Some(true))),
                     ("wrap", ["off"]) => Ok(Self::Wrap(Some(false))),
+                    ("render" | "view", []) => Ok(Self::Render(None)),
+                    ("render" | "view", ["on" | "rendered"]) => Ok(Self::Render(Some(true))),
+                    ("render" | "view", ["off" | "edit"]) => Ok(Self::Render(Some(false))),
+                    ("check" | "toggle-check", []) => Ok(Self::Check),
+                    ("broadcast", _) => Ok(Self::Broadcast { note: opt(joined(2)) }),
                     ("find", a) if !a.is_empty() => Ok(Self::Find { query: a.join(" "), backward: false }),
                     ("findprev", a) if !a.is_empty() => Ok(Self::Find { query: a.join(" "), backward: true }),
                     ("undo", []) => Ok(Self::Undo),

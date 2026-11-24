@@ -1,14 +1,15 @@
-//! Editor windows (`EDIT-01..06`): `Action::Editor` execution, window creation, scratchpad
-//! autosave and the close guard. The editor is an ordinary window: it joins the split tree and
-//! z-stack, is saved in sessions, and closes through `remove_pane` like any other.
+//! Editor windows (`EDIT-01..07`): `Action::Editor` execution, window creation, scratchpad/artifact
+//! autosave, ContextBus sync, and the close guard. The editor is an ordinary window: it joins the
+//! split tree and z-stack, is saved in sessions, and closes through `remove_pane`.
 
 use std::path::PathBuf;
 
 use super::WindowManager;
 use crate::api::JsonValue;
-use crate::editor::{EditorKind, EditorOp, EditorState, io};
+use crate::editor::{DEFAULT_ARTIFACT, EditorKind, EditorOp, EditorState, artifact_bus_key, io};
 use crate::error::{BiltermError, Result};
 use crate::pane::PaneId;
+use crate::wm::agent_mail::AgentMailOp;
 use crate::wm::split_tree::SplitDirection;
 
 pub const DEFAULT_SCRATCH: &str = "scratch";
@@ -18,6 +19,12 @@ impl WindowManager {
     pub(super) fn scratch_dir(&self) -> Result<PathBuf> {
         let sessions = self.resolve_session_dir()?;
         Ok(sessions.parent().map_or_else(|| sessions.join("scratch"), |p| p.join("scratch")))
+    }
+
+    /// Private directory of persisted shared artifact buffers, next to the sessions directory.
+    pub(super) fn artifact_dir(&self) -> Result<PathBuf> {
+        let sessions = self.resolve_session_dir()?;
+        Ok(sessions.parent().map_or_else(|| sessions.join("artifacts"), |p| p.join("artifacts")))
     }
 
     /// Editor windows in id order.
@@ -47,6 +54,18 @@ impl WindowManager {
                 let file = io::scratch_file(&self.scratch_dir().ok()?, name).ok()?;
                 Some(EditorState::open_scratch(name, file))
             }
+            super::SavedEditor::Artifact { name, render_mode } => {
+                let file = io::scratch_file(&self.artifact_dir().ok()?, name).ok()?;
+                let key = artifact_bus_key(name);
+                let bus = self.context_bus.get(&key).map(|e| (e.value, e.revision));
+                let mut ed = EditorState::open_artifact(name, file, bus);
+                if ed.bus_rev == 0 {
+                    ed.bus_rev = self.context_bus.set(&key, &ed.buf.text(), None).unwrap_or(0);
+                    ed.bus_pushed_rev = ed.buf.revision();
+                }
+                ed.render_mode = *render_mode;
+                Some(ed)
+            }
             super::SavedEditor::File { path, wrap } => EditorState::open_file(std::path::Path::new(path)).ok().map(|mut e| {
                 e.wrap = *wrap;
                 e
@@ -59,6 +78,7 @@ impl WindowManager {
         let ed = p.editor()?;
         match (&ed.kind, &ed.path) {
             (EditorKind::Scratch(n), _) => Some(super::SavedEditor::Scratch { name: n.clone() }),
+            (EditorKind::Artifact(n), _) => Some(super::SavedEditor::Artifact { name: n.clone(), render_mode: ed.render_mode }),
             (_, Some(p)) => Some(super::SavedEditor::File { path: p.to_string_lossy().into_owned(), wrap: ed.wrap }),
             _ => None,
         }
@@ -85,11 +105,13 @@ impl WindowManager {
         match op {
             EditorOp::Open { path } => self.editor_open(path),
             EditorOp::Scratch { name } => self.editor_scratch(name.as_deref().unwrap_or(DEFAULT_SCRATCH)),
+            EditorOp::Artifact { name } => self.editor_artifact(name.as_deref().unwrap_or(DEFAULT_ARTIFACT)),
+            EditorOp::Broadcast { note } => self.editor_broadcast(note),
             EditorOp::Close { force } => self.editor_close(force),
             EditorOp::Menu(m) => self.editor_menu_op(m),
             op => {
                 let Some(id) = self.editor_target() else {
-                    return self.editor_reply(false, "no editor window (:edit [path] or :scratch)".into(), vec![]);
+                    return self.editor_reply(false, "no editor window (:edit [path], :scratch, or :artifact)".into(), vec![]);
                 };
                 self.editor_run(id, op);
             }
@@ -143,6 +165,106 @@ impl WindowManager {
         self.finish_open(EditorState::open_scratch(name, file));
     }
 
+    fn editor_artifact(&mut self, name: &str) {
+        if let Err(e) = crate::secure_fs::validate_safe_name(name) {
+            return self.editor_reply(false, format!("artifact name: {e}"), vec![]);
+        }
+        let existing = self.editor_pane_ids().into_iter().find(|id| {
+            matches!(&self.panes[id].editor().map(|e| &e.kind), Some(EditorKind::Artifact(n)) if n == name)
+        });
+        if let Some(id) = existing {
+            self.focus_and_raise(id);
+            let key = artifact_bus_key(name);
+            let status = self.panes[&id].editor().map(EditorState::status_json).and_then(|s| JsonValue::parse(&s)).unwrap_or(JsonValue::Null);
+            return self.editor_reply(
+                true,
+                format!("artifact {name}"),
+                vec![("pane", JsonValue::Number(id as i64)), ("bus_key", JsonValue::String(key)), ("editor", status)],
+            );
+        }
+        let file = match self.artifact_dir().map_err(|e| e.to_string()).and_then(|d| io::scratch_file(&d, name)) {
+            Ok(f) => f,
+            Err(e) => return self.editor_reply(false, e, vec![]),
+        };
+        let key = artifact_bus_key(name);
+        let bus_entry = self.context_bus.get(&key).map(|e| (e.value, e.revision));
+        let mut ed = EditorState::open_artifact(name, file, bus_entry);
+        let text = ed.buf.text();
+        let seed_rev = if ed.bus_rev == 0 {
+            self.context_bus.set(&key, &text, None).unwrap_or(0)
+        } else {
+            ed.bus_rev
+        };
+        ed.bus_rev = seed_rev;
+        ed.bus_pushed_rev = ed.buf.revision();
+        let status = JsonValue::parse(&ed.status_json()).unwrap_or(JsonValue::Null);
+        match self.spawn_editor_pane(ed) {
+            Ok(id) => self.editor_reply(
+                true,
+                format!("shared artifact '{name}' (bilterm://context/{key})"),
+                vec![("pane", JsonValue::Number(id as i64)), ("bus_key", JsonValue::String(key)), ("editor", status)],
+            ),
+            Err(e) => self.editor_reply(false, format!("artifact: {e}"), vec![]),
+        }
+    }
+
+    fn editor_broadcast(&mut self, note: Option<String>) {
+        let Some(id) = self.editor_target() else {
+            return self.editor_reply(false, "no editor window (:edit [path], :scratch, or :artifact)".into(), vec![]);
+        };
+        self.sync_editor_to_bus_and_preview(id);
+        let Some((name, bus_key, text, path)) = self.panes.get(&id).and_then(|p| p.editor()).map(|ed| {
+            let key = ed.artifact_bus_key().unwrap_or_else(|| artifact_bus_key(&ed.studio_artifact_name()));
+            (ed.display_name(), key, ed.buf.text(), ed.path.clone())
+        }) else { return };
+        let rev = match self.context_bus.set(&bus_key, &text, Some(id)) {
+            Ok(r) => {
+                if let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut())
+                    && ed.is_artifact()
+                {
+                    ed.bus_rev = r;
+                    ed.bus_pushed_rev = ed.buf.revision();
+                }
+                r
+            }
+            Err(e) => return self.editor_reply(false, format!("artifact sync failed: {e}"), vec![]),
+        };
+        let loc = path
+            .as_ref()
+            .map(|p| format!("{} (bilterm://context/{bus_key})", p.display()))
+            .unwrap_or_else(|| format!("bilterm://context/{bus_key}"));
+        let body = match note.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(n) => format!("[artifact] {name} rev {rev} updated: {n} — read {loc}"),
+            None => format!("[artifact] {name} rev {rev} updated — read {loc}"),
+        };
+        let mail_result = self.agent_mail_apply(&AgentMailOp::Broadcast {
+            from: Some("operator".into()),
+            subtree: None,
+            body,
+            kind: "artifact".into(),
+        });
+        let (notified, msg) = match mail_result {
+            Ok(m) => (true, format!("synced {bus_key} (rev {rev}); {m}")),
+            Err(e) => (false, format!("synced {bus_key} (rev {rev}); agent mail: {e}")),
+        };
+        if let Some(p) = self.panes.get_mut(&id) {
+            if let Some(ed) = p.editor_mut() {
+                ed.message = Some(msg.clone());
+            }
+            p.paint_editor();
+        }
+        self.editor_reply(
+            true,
+            msg,
+            vec![
+                ("pane", JsonValue::Number(id as i64)),
+                ("bus_key", JsonValue::String(bus_key)),
+                ("revision", JsonValue::Number(rev as i64)),
+                ("notified_agents", JsonValue::Bool(notified)),
+            ],
+        );
+    }
+
     fn editor_close(&mut self, force: bool) {
         let Some(id) = self.editor_target() else {
             return self.editor_reply(false, "no editor window".into(), vec![]);
@@ -173,6 +295,8 @@ impl WindowManager {
             }
             EditorOp::SaveAs { path, force } => io::resolve_path(&path, &ed.cwd).and_then(|p| ed.save_as(&p, force).map_err(|e| e.to_string())),
             EditorOp::Wrap(w) => Ok(format!("soft wrap {}", if ed.set_wrap(w) { "on" } else { "off" })),
+            EditorOp::Render(r) => Ok(format!("rendered view {}", if ed.set_render_mode(r) { "on" } else { "off" })),
+            EditorOp::Check => ed.toggle_check().map(|c| if c { "checked".into() } else { "unchecked".into() }),
             EditorOp::Find { query, backward } => {
                 if ed.find(&query, !backward) { Ok(format!("found: {query}")) } else { Err(format!("not found: {query}")) }
             }
@@ -192,11 +316,17 @@ impl WindowManager {
                 Ok("text".into())
             }
             EditorOp::Status => Ok("status".into()),
-            EditorOp::Open { .. } | EditorOp::Scratch { .. } | EditorOp::Close { .. } | EditorOp::Menu(_) => return,
+            EditorOp::Open { .. }
+            | EditorOp::Scratch { .. }
+            | EditorOp::Artifact { .. }
+            | EditorOp::Broadcast { .. }
+            | EditorOp::Close { .. }
+            | EditorOp::Menu(_) => return,
         };
         extra.push(("editor", JsonValue::parse(&ed.status_json()).unwrap_or(JsonValue::Null)));
         extra.push(("pane", JsonValue::Number(id as i64)));
         pane.paint_editor();
+        self.sync_editor_to_bus_and_preview(id);
         match result {
             Ok(m) => self.editor_reply(true, m, extra),
             Err(m) => self.editor_reply(false, m, extra),
@@ -228,10 +358,29 @@ impl WindowManager {
         true
     }
 
-    /// Repaints the active editor window.
+    /// Repaints the active editor window and syncs shared artifacts / linked preview panes.
     pub(crate) fn after_editor_change(&mut self) {
-        if let Some(pane) = self.z_stack.top().and_then(|id| self.panes.get_mut(&id)) {
-            pane.paint_editor();
+        if let Some(id) = self.z_stack.top() {
+            if let Some(pane) = self.panes.get_mut(&id) {
+                pane.paint_editor();
+            }
+            self.sync_editor_to_bus_and_preview(id);
+        }
+    }
+
+    /// Pushes local edits of an `EditorKind::Artifact` to `ContextBus`.
+    pub(crate) fn sync_editor_to_bus_and_preview(&mut self, id: PaneId) {
+        if let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut()) {
+            let cur_rev = ed.buf.revision();
+            if let Some(key) = ed.artifact_bus_key()
+                && cur_rev != ed.bus_pushed_rev
+            {
+                let text = ed.buf.text();
+                if let Ok(rev) = self.context_bus.set(&key, &text, Some(id)) {
+                    ed.bus_rev = rev;
+                    ed.bus_pushed_rev = cur_rev;
+                }
+            }
         }
     }
 
@@ -246,15 +395,54 @@ impl WindowManager {
         true
     }
 
-    /// Periodic work: writes changed scratchpads (0600, atomic).
-    pub fn editor_tick(&mut self) {
-        for p in self.panes.values_mut() {
-            if let Some(ed) = p.editor_mut().filter(|e| e.autosave_due())
-                && let Err(e) = ed.autosave()
+    /// Periodic work: writes changed scratchpads/artifacts (0600, atomic), syncs shared artifacts
+    /// bidirectionally with `ContextBus`, and auto-reloads clean file buffers modified on disk.
+    pub fn editor_tick(&mut self) -> bool {
+        let ids: Vec<PaneId> = self.editor_pane_ids();
+        let mut changed = false;
+        for id in ids {
+            let mut needs_paint = false;
+            let mut push_bus: Option<(String, String)> = None;
+            let mut pull_key: Option<String> = None;
+            if let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut()) {
+                if ed.autosave_due()
+                    && let Err(e) = ed.autosave()
+                {
+                    ed.message = Some(format!("autosave failed: {e}"));
+                    needs_paint = true;
+                }
+                if let Some(key) = ed.artifact_bus_key() {
+                    if ed.buf.revision() != ed.bus_pushed_rev {
+                        push_bus = Some((key, ed.buf.text()));
+                    } else {
+                        pull_key = Some(key);
+                    }
+                } else if ed.poll_external_file_change(false) {
+                    needs_paint = true;
+                }
+            }
+            if let Some((key, text)) = push_bus
+                && let Ok(rev) = self.context_bus.set(&key, &text, Some(id))
+                && let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut())
             {
-                ed.message = Some(format!("scratch autosave failed: {e}"));
+                ed.bus_rev = rev;
+                ed.bus_pushed_rev = ed.buf.revision();
+            }
+            if let Some(key) = pull_key
+                && let Some(entry) = self.context_bus.get(&key)
+                && let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut())
+                && ed.sync_from_bus(&entry.value, entry.revision)
+            {
+                needs_paint = true;
+            }
+            if needs_paint {
+                if let Some(p) = self.panes.get_mut(&id) {
+                    p.paint_editor();
+                }
+                changed = true;
             }
         }
+        changed
     }
 
     /// Flushes a scratchpad before its window goes away.
