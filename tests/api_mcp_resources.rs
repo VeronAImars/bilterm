@@ -156,3 +156,38 @@ fn tools_list_only_gains_find() {
         ]
     );
 }
+
+#[test]
+fn mcp_context_resources_only_expose_capped_artifact_prefix() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    plane.wm.context_bus().set("artifact:plan", "# Plan\n- [ ] Task 1", None).unwrap();
+    plane.wm.context_bus().set("secret:token", "do-not-expose", None).unwrap();
+    let oversized = "x".repeat(bilterm::api::mcp_resources::MAX_MCP_ARTIFACT_BYTES + 1);
+    plane.wm.context_bus().set("artifact:huge", &oversized, None).unwrap();
+
+    // resources/list includes artifact:* entries and omits non-artifact ContextBus keys.
+    let list = call(&mut plane, r#"{"jsonrpc":"2.0","id":20,"method":"resources/list"}"#);
+    let Some(JsonValue::Array(items)) = list.get("result").and_then(|r| r.get("resources")) else {
+        panic!("no resources");
+    };
+    let uris: Vec<&str> = items
+        .iter()
+        .filter_map(|i| i.get("uri").and_then(JsonValue::as_str))
+        .collect();
+    assert!(uris.contains(&"bilterm://context/artifact:plan"), "missing artifact:plan in {uris:?}");
+    assert!(!uris.contains(&"bilterm://context/secret:token"), "non-artifact key leaked in {uris:?}");
+
+    // Reading an artifact:* resource returns its Markdown content (read-only).
+    let ok_resp = read(&mut plane, "bilterm://context/artifact:plan");
+    let Some(JsonValue::Array(contents)) = ok_resp.get("result").and_then(|r| r.get("contents")) else {
+        panic!("no contents: {}", ok_resp.to_json_string());
+    };
+    assert_eq!(contents[0].get("mimeType").and_then(JsonValue::as_str), Some("text/markdown"));
+    assert_eq!(contents[0].get("text").and_then(JsonValue::as_str), Some("# Plan\n- [ ] Task 1"));
+
+    // Reading a non-artifact ContextBus key is refused with -32602.
+    assert_eq!(err_code(&read(&mut plane, "bilterm://context/secret:token")), -32602);
+
+    // Reading an oversized artifact exceeding MAX_MCP_ARTIFACT_BYTES is refused with -32602.
+    assert_eq!(err_code(&read(&mut plane, "bilterm://context/artifact:huge")), -32602);
+}

@@ -1,8 +1,13 @@
 //! MCP read-only resources (`resources/list`, `resources/read`): state, config, commands, the
-//! agent guide (`bilterm://agents-md`, Markdown), panes.
+//! agent guide (`bilterm://agents-md`, Markdown), panes, agent inboxes, and scoped `artifact:*`
+//! entries from `ContextBus` (`bilterm://context/artifact:<name>`).
 
 use super::json::JsonValue;
 use super::rpc::AutomationControlPlane;
+use crate::editor::artifact::ARTIFACT_KEY_PREFIX;
+
+/// Maximum byte length of a shared artifact value served over MCP `resources/read`.
+pub const MAX_MCP_ARTIFACT_BYTES: usize = 32 * 1024;
 
 type McpResult = std::result::Result<JsonValue, (i64, String)>;
 
@@ -58,6 +63,16 @@ impl AutomationControlPlane {
                 &format!("Inbox messages for agent '{name}' (pane #{pid}, {unread} unread)."),
             ));
         }
+        // Only expose `artifact:*` ContextBus entries (never arbitrary internal bus keys).
+        for entry in self.wm.context_bus().list(Some(ARTIFACT_KEY_PREFIX)) {
+            let name = entry.key.strip_prefix(ARTIFACT_KEY_PREFIX).unwrap_or(&entry.key);
+            list.push(JsonValue::obj([
+                ("uri", s(format!("bilterm://context/{}", entry.key))),
+                ("name", s(format!("Shared Artifact '{name}'"))),
+                ("description", s(format!("Read-only shared Markdown artifact (rev {}, {} bytes).", entry.revision, entry.value.len()))),
+                ("mimeType", s("text/markdown")),
+            ]));
+        }
         JsonValue::obj([("resources", JsonValue::Array(list))])
     }
 
@@ -73,6 +88,33 @@ impl AutomationControlPlane {
                     ("uri", s(uri)),
                     ("mimeType", s("text/markdown")),
                     ("text", s(crate::agent_guide::GUIDE)),
+                ])]),
+            )]));
+        }
+        if let Some(ctx_key) = uri.strip_prefix("bilterm://context/") {
+            if !ctx_key.starts_with(ARTIFACT_KEY_PREFIX) {
+                return Err((-32602, format!("Invalid params: non-artifact context key refused: {uri}")));
+            }
+            let entry = self
+                .wm
+                .context_bus()
+                .get(ctx_key)
+                .ok_or_else(|| (-32602, format!("Invalid params: unknown artifact resource: {uri}")))?;
+            if entry.value.len() > MAX_MCP_ARTIFACT_BYTES {
+                return Err((
+                    -32602,
+                    format!(
+                        "Invalid params: artifact resource exceeds {MAX_MCP_ARTIFACT_BYTES}-byte MCP read limit ({} bytes)",
+                        entry.value.len()
+                    ),
+                ));
+            }
+            return Ok(JsonValue::obj([(
+                "contents",
+                JsonValue::Array(vec![JsonValue::obj([
+                    ("uri", s(uri)),
+                    ("mimeType", s("text/markdown")),
+                    ("text", s(entry.value)),
                 ])]),
             )]));
         }
