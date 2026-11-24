@@ -56,6 +56,7 @@ pub mod shell;
 pub mod status_bar;
 pub mod theme;
 pub mod theme_import;
+pub mod tui_media_gfx;
 pub mod typography;
 pub mod visual_style;
 pub mod which_key_ui;
@@ -179,14 +180,52 @@ impl Widget for CompositePaneWidget<'_> {
             let body = Rect::new(canvas.x, canvas.y + 1, canvas.width, canvas.height - 1);
             let page_bg = resolve_ratatui_color_rgb(palette.window_frame_bg, cfg.theme, (18, 24, 36));
             let page_fg = resolve_ratatui_color_rgb(palette.text_fg.unwrap_or(palette.title_fg), cfg.theme, (230, 235, 240));
-            rasterize_frame_halfblocks(buf, body, browser.cached_frame(), Some((page_bg, page_fg)));
+            let is_gui = self.surface_badge == Some(true);
+            let tui_true_pixel = !is_gui
+                && tui_media_gfx::use_true_pixel_for_frame()
+                && !self.pane.is_prompt_visible();
+            if (is_gui || tui_true_pixel) && browser.cached_frame().is_some() {
+                // Keep cells blank behind the GPU texture (GUI) or Kitty/iTerm2 pixel layer (TUI)
+                // so geometric `▀` glyphs never paint over the full-resolution webpage image.
+                let bg = Color::Rgb(page_bg.0, page_bg.1, page_bg.2);
+                for y in body.y..body.bottom() {
+                    for x in body.x..body.right() {
+                        if let Some(cell) = buf.cell_mut((x, y)) {
+                            cell.set_symbol(" ");
+                            cell.set_style(Style::default().bg(bg));
+                        }
+                    }
+                }
+                if tui_true_pixel {
+                    tui_media_gfx::record_placement(self.pane.id(), false, body, Some((page_bg, page_fg)));
+                }
+            } else {
+                rasterize_frame_halfblocks(buf, body, browser.cached_frame(), Some((page_bg, page_fg)));
+            }
             crate::pane::browser_canvas::render_browser_status_overlay(buf, body, browser);
         }
         if let Some(video) = self.pane.video_canvas()
             && canvas.height > 1
         {
             let body = Rect::new(canvas.x, canvas.y, canvas.width, canvas.height - 1);
-            rasterize_frame_halfblocks(buf, body, video.cached_frame(), None);
+            let is_gui = self.surface_badge == Some(true);
+            let tui_true_pixel = !is_gui
+                && tui_media_gfx::use_true_pixel_for_frame()
+                && !self.pane.is_prompt_visible();
+            if (is_gui || tui_true_pixel) && video.cached_frame().is_some() {
+                for y in body.y..body.bottom() {
+                    for x in body.x..body.right() {
+                        if let Some(cell) = buf.cell_mut((x, y)) {
+                            cell.set_symbol(" ");
+                        }
+                    }
+                }
+                if tui_true_pixel {
+                    tui_media_gfx::record_placement(self.pane.id(), true, body, None);
+                }
+            } else {
+                rasterize_frame_halfblocks(buf, body, video.cached_frame(), None);
+            }
         }
         if let Some(browser) = self.pane.browser_canvas() {
             crate::pane::browser_canvas::render_browser_nav_bar(

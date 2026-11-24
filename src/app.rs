@@ -187,8 +187,10 @@ impl App {
         if live.is_none() {
             crate::pty::set_live_socket(None);
         }
+        let mut media_gfx = crate::ui::tui_media_gfx::TuiMediaGfxState::default();
         let draw = |app: &mut App| -> Result<()> {
             repaint_if_requested(app, terminal);
+            let _gfx_guard = crate::ui::tui_media_gfx::begin_frame();
             terminal.draw(|frame| {
                 let area = frame.area();
                 app.last_viewport = area;
@@ -199,6 +201,12 @@ impl App {
                     app.wm.config().glyphs,
                 );
             })?;
+            drop(_gfx_guard);
+            crate::ui::tui_media_gfx::flush_tui_media_gfx(
+                &app.wm,
+                &mut io::stdout(),
+                &mut media_gfx,
+            )?;
             Ok(())
         };
         let events = reader.inspect(|item| {
@@ -206,7 +214,9 @@ impl App {
                 input_tap.event(1);
             }
         });
-        self.run_loop(events, draw, live, host_shutdown_signal(), &LoopStats::default()).await
+        let res = self.run_loop(events, draw, live, host_shutdown_signal(), &LoopStats::default()).await;
+        let _ = crate::ui::tui_media_gfx::clear_all_tui_media_gfx(&mut io::stdout());
+        res
     }
 
     /// The event loop proper, generic over the host so it can be driven headlessly: `events` is
