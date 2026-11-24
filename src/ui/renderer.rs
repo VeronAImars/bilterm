@@ -51,16 +51,9 @@ pub struct WorkspaceFrameSnapshot {
 impl WorkspaceFrameSnapshot {
     /// Captures a complete point-in-time [`WorkspaceFrameSnapshot`] from `wm` at `viewport`.
     pub fn capture(wm: &WindowManager, viewport: Rect) -> Self {
-        let workspace_area = if wm.config().show_dos_fkey_bar && viewport.height > 2 {
-            Rect {
-                x: viewport.x,
-                y: viewport.y,
-                width: viewport.width,
-                height: viewport.height - 1,
-            }
-        } else {
-            viewport
-        };
+        let shell = crate::ui::shell::ShellLayout::compute(viewport, wm.config(), wm.pane_count());
+        let workspace_area = shell.workspace;
+        let framed = wm.is_framed();
 
         let rects = wm.compute_workspace_rects(workspace_area);
         let top_id = wm.z_stack().top();
@@ -72,9 +65,10 @@ impl WorkspaceFrameSnapshot {
                 continue;
             };
             let active = !qt_visible && top_id == Some(id);
-            let canvas_rect = pane.canvas_rect(outer);
-            let prompt_rect = pane.is_prompt_visible().then(|| pane.prompt_rect(outer));
-            let status_bar_rect = pane.status_bar_rect(outer);
+            let inner = if framed { crate::wm::inset_window_frame(outer) } else { outer };
+            let canvas_rect = pane.canvas_rect(inner);
+            let prompt_rect = pane.is_prompt_visible().then(|| pane.prompt_rect(inner));
+            let status_bar_rect = pane.status_bar_rect(inner);
             panes.push(PaneFrameSnapshot {
                 id,
                 title: pane.title().to_string(),

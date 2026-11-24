@@ -55,6 +55,7 @@ pub mod keyboard_focus;
 pub mod session_find;
 pub mod key_mode;
 pub mod which_key_state;
+pub mod layout_key;
 pub mod layout_profile;
 pub mod lightcycle;
 pub mod dos_jobs;
