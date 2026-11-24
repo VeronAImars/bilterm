@@ -30,6 +30,9 @@ pub enum ContextBusError {
     InvalidKeyChar,
     ValueTooLarge { len: usize, max: usize },
     TooManyEntries { max: usize },
+    /// Compare-and-set failed: the entry's revision is not the expected one
+    /// (`actual == 0` means the key does not exist).
+    Conflict { expected: u64, actual: u64 },
 }
 
 impl std::fmt::Display for ContextBusError {
@@ -40,6 +43,9 @@ impl std::fmt::Display for ContextBusError {
             Self::InvalidKeyChar => write!(f, "key contains a control character"),
             Self::ValueTooLarge { len, max } => write!(f, "value is {len} bytes (max {max})"),
             Self::TooManyEntries { max } => write!(f, "context bus is full ({max} entries)"),
+            Self::Conflict { expected, actual } => {
+                write!(f, "entry changed since revision {expected} (now {actual})")
+            }
         }
     }
 }
@@ -190,12 +196,55 @@ impl ContextBus {
         ttl_ms: Option<u64>,
         now: u64,
     ) -> Result<u64, ContextBusError> {
+        self.set_inner(key, value, sender, ttl_ms, now, None)
+    }
+
+    /// Compare-and-set: writes only when the live entry's revision is `expected_rev`
+    /// (`0` = the key must not exist). Returns the new revision, or
+    /// [`ContextBusError::Conflict`] carrying the entry's current revision (`0` = absent).
+    pub fn set_if_revision(
+        &self,
+        key: &str,
+        value: &str,
+        sender: Option<PaneId>,
+        expected_rev: u64,
+    ) -> Result<u64, ContextBusError> {
+        self.set_if_revision_at(key, value, sender, expected_rev, wall_ms())
+    }
+
+    /// Deterministic [`Self::set_if_revision`] with an injected clock.
+    pub fn set_if_revision_at(
+        &self,
+        key: &str,
+        value: &str,
+        sender: Option<PaneId>,
+        expected_rev: u64,
+        now: u64,
+    ) -> Result<u64, ContextBusError> {
+        self.set_inner(key, value, sender, None, now, Some(expected_rev))
+    }
+
+    fn set_inner(
+        &self,
+        key: &str,
+        value: &str,
+        sender: Option<PaneId>,
+        ttl_ms: Option<u64>,
+        now: u64,
+        expected_rev: Option<u64>,
+    ) -> Result<u64, ContextBusError> {
         validate_key(key)?;
         if value.len() > MAX_VALUE_BYTES {
             return Err(ContextBusError::ValueTooLarge { len: value.len(), max: MAX_VALUE_BYTES });
         }
         let mut g = self.lock();
         g.purge(now);
+        if let Some(expected) = expected_rev {
+            let actual = g.entries.get(key).map_or(0, |e| e.revision);
+            if actual != expected {
+                return Err(ContextBusError::Conflict { expected, actual });
+            }
+        }
         if !g.entries.contains_key(key) && g.entries.len() >= MAX_ENTRIES {
             return Err(ContextBusError::TooManyEntries { max: MAX_ENTRIES });
         }

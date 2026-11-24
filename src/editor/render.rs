@@ -9,7 +9,13 @@ use super::{EditorState, Mode};
 const TAB: usize = 4;
 
 fn cell_width(c: char, col: usize) -> usize {
-    if c == '\t' { TAB - col % TAB } else { c.width().unwrap_or(0) }
+    if c == '\t' {
+        TAB - col % TAB
+    } else if c.is_control() {
+        1 // painted as a visible placeholder, never emitted raw
+    } else {
+        c.width().unwrap_or(0)
+    }
 }
 
 /// Display width of the first `n` chars of `line`.
@@ -89,9 +95,14 @@ impl EditorState {
             Mode::Goto(n) => format!(" Go to line: {n}_   Enter go  Esc cancel"),
             Mode::ConfirmOverwrite(p) => format!(" {} exists or changed on disk. Overwrite? (y/n)", p.display()),
             Mode::Edit => {
-                let (done, total) = super::artifact::checklist_progress(&self.buf);
+                let (done, total) = if self.markdown { self.progress_cache.map_or((0, 0), |c| c.1) } else { (0, 0) };
                 let tasks = if total > 0 { format!("  [{done}/{total}]") } else { String::new() };
-                let shared = if self.is_artifact() { "  SHARED" } else { "" };
+                let shared = match (self.is_artifact(), self.bus_conflict, self.bus_error.is_some()) {
+                    (false, ..) => "",
+                    (_, true, _) => "  CONFLICT",
+                    (_, _, true) => "  NOT SHARED",
+                    _ => "  SHARED",
+                };
                 let ext = if self.external_change { "  !EXT" } else { "" };
                 let kind_tag = if self.render_mode {
                     "VIEW (e=edit, Space=check)"
@@ -130,8 +141,16 @@ impl EditorState {
         let off = self.bar_rows();
         let mut out = String::from("\x1b[?25l");
         let mut cursor_xy = (0usize, 0usize);
+        let version = self.buf.version();
+        if self.markdown && self.progress_cache.is_none_or(|c| c.0 != version) {
+            self.progress_cache = Some((version, super::artifact::checklist_progress(&self.buf)));
+        }
         if self.render_mode {
-            let rendered = super::artifact::render_markdown_rows(&self.buf, w.saturating_sub(2));
+            let rw = w.saturating_sub(2);
+            let (_, _, rendered) = match self.rows_cache.take() {
+                Some(c) if c.0 == version && c.1 == rw => c,
+                _ => (version, rw, super::artifact::render_markdown_rows(&self.buf, rw)),
+            };
             let cur_line = self.buf.cursor.line;
             let mut start_row = rendered.iter().position(|r| r.src_line >= self.top).unwrap_or(0);
             if let Some(cur_row) = rendered.iter().position(|r| r.src_line == cur_line) {
@@ -161,6 +180,7 @@ impl EditorState {
                 }
                 out.push_str("\x1b[0m\x1b[K");
             }
+            self.rows_cache = Some((version, rw, rendered));
         } else {
             self.rendered_rows.clear();
             let fences = if self.markdown { highlight::fence_states((0..self.buf.line_count()).map(|l| self.buf.line(l))) } else { Vec::new() };
@@ -203,6 +223,8 @@ impl EditorState {
                         }
                         if c == '\t' {
                             out.push_str(&" ".repeat(cw));
+                        } else if c.is_control() {
+                            out.push('\u{FFFD}');
                         } else {
                             out.push(c);
                         }

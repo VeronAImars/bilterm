@@ -137,14 +137,49 @@ pub struct RenderedRow {
     pub is_checkbox: bool,
 }
 
-/// Strips C0/C1 control characters (including ESC `\x1b`) from untrusted buffer text before
-/// emitting it into a terminal VT stream; expands tabs to four spaces.
+/// `true` for Unicode format characters (general category Cf) that can reorder or hide text
+/// (bidi overrides, zero-width characters, tag characters, BOM).
+pub fn is_format_char(c: char) -> bool {
+    matches!(c as u32,
+        0x00AD | 0x0600..=0x0605 | 0x061C | 0x06DD | 0x070F | 0x0890..=0x0891 | 0x08E2 | 0x180E
+        | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0x2066..=0x206F | 0xFEFF
+        | 0xFFF9..=0xFFFB | 0x110BD | 0x110CD | 0x13430..=0x1343F | 0x1BCA0..=0x1BCA3
+        | 0x1D173..=0x1D17A | 0xE0001 | 0xE0020..=0xE007F)
+}
+
+/// `true` for characters never emitted from untrusted text: Cc (C0/C1 controls incl. ESC), Cf,
+/// and the Zl/Zp line and paragraph separators.
+pub fn is_unsafe_char(c: char) -> bool {
+    c.is_control() || is_format_char(c) || matches!(c, '\u{2028}' | '\u{2029}')
+}
+
+/// Sanitiser for multi-line untrusted text (bus-originated artifact text): CRLF/CR become `\n`,
+/// `\n` and `\t` are kept, everything in [`is_unsafe_char`] is dropped.
+pub fn sanitize_multiline(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n").chars().filter(|&c| c == '\n' || c == '\t' || !is_unsafe_char(c)).collect()
+}
+
+/// Sanitiser for single-line untrusted text (broadcast notes): whitespace controls become a
+/// space, [`is_unsafe_char`] characters are dropped, the result is trimmed and capped at
+/// `max_chars` characters.
+pub fn sanitize_inline(s: &str, max_chars: usize) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| if matches!(c, '\n' | '\r' | '\t') { ' ' } else { c })
+        .filter(|&c| !is_unsafe_char(c))
+        .take(max_chars)
+        .collect();
+    cleaned.trim().to_string()
+}
+
+/// Drops unsafe characters (see [`is_unsafe_char`]) from untrusted buffer text before emitting it
+/// into a terminal VT stream; expands tabs to four spaces.
 fn sanitize_terminal_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         if c == '\t' {
             out.push_str("    ");
-        } else if !c.is_control() {
+        } else if !is_unsafe_char(c) {
             out.push(c);
         }
     }
@@ -381,31 +416,4 @@ pub fn render_markdown_rows(buf: &TextBuffer, width: usize) -> Vec<RenderedRow> 
         }
     }
     rows
-}
-
-/// Normalizes a user-entered title or filename (e.g. `"UI Spec 2"`, `"README.md"`) into a
-/// `validate_safe_name`-compliant artifact slug (`[a-z0-9_-]{1,64}`, no dots).
-pub fn slugify_artifact_name(raw: &str) -> String {
-    let mut out = String::new();
-    let mut prev_dash = false;
-    for ch in raw.trim().chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
-            out.push(ch.to_ascii_lowercase());
-            prev_dash = false;
-        } else if !prev_dash && !out.is_empty() {
-            out.push('-');
-            prev_dash = true;
-        }
-        if out.len() >= 64 {
-            break;
-        }
-    }
-    out.trim_matches('-').to_string()
-}
-
-/// Returns `true` for raw HTML / SVG paths whose buffer should be previewed directly.
-pub fn is_raw_html_path(path: Option<&std::path::Path>) -> bool {
-    path.and_then(|p| p.extension())
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "html" | "htm" | "svg"))
 }

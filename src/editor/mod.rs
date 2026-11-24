@@ -84,6 +84,18 @@ pub struct EditorState {
     pub(crate) bus_rev: u64,
     /// Buffer revision last pushed to `ContextBus`.
     pub(crate) bus_pushed_rev: u64,
+    /// Buffer revision whose last bus push failed; no push is retried until the buffer changes.
+    pub(crate) bus_blocked_rev: Option<u64>,
+    /// Why the buffer is not shared (oversize, bus full, ...); `None` while sharing works.
+    pub(crate) bus_error: Option<String>,
+    /// Another writer changed the shared entry while local edits were pending.
+    pub(crate) bus_conflict: bool,
+    /// Number of bus write attempts made by this buffer (diagnostics and tests).
+    pub(crate) bus_attempts: u64,
+    /// `(buffer version, (done, total))` of the last checklist scan painted.
+    pub(crate) progress_cache: Option<((u64, u64), (usize, usize))>,
+    /// `(buffer version, text width, rows)` of the last rendered-view pass.
+    pub(crate) rows_cache: Option<RowsCache>,
     last_disk_check: Option<std::time::Instant>,
     /// Row-to-source-line map from the latest rendered view pass (used for click-to-toggle).
     pub(crate) rendered_rows: Vec<(usize, bool)>,
@@ -92,6 +104,8 @@ pub struct EditorState {
     view: (u16, u16),
     pub(crate) close_armed: bool,
 }
+
+pub(crate) type RowsCache = ((u64, u64), usize, Vec<artifact::RenderedRow>);
 
 fn is_markdown_path(p: &Path) -> bool {
     p.extension().and_then(|e| e.to_str()).is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "md" | "markdown" | "mdown" | "mkd"))
@@ -121,6 +135,12 @@ impl EditorState {
             last_autosave: None,
             bus_rev: 0,
             bus_pushed_rev: 0,
+            bus_blocked_rev: None,
+            bus_error: None,
+            bus_conflict: false,
+            bus_attempts: 0,
+            progress_cache: None,
+            rows_cache: None,
             last_disk_check: None,
             rendered_rows: Vec::new(),
             top: 0,
@@ -165,7 +185,7 @@ impl EditorState {
     /// Opens a shared cross-pane artifact backed by `ContextBus` + private autosave `file`.
     pub fn open_artifact(name: &str, file: PathBuf, bus_text: Option<(String, u64)>) -> Self {
         let (text, bus_rev) = match bus_text {
-            Some((t, rev)) => (t, rev),
+            Some((t, rev)) => (artifact::sanitize_multiline(&t), rev),
             None => {
                 let loaded = io::load(&file).ok().flatten().map(|l| l.text);
                 (loaded.unwrap_or_else(|| artifact::artifact_template(name)), 0)
@@ -343,9 +363,19 @@ impl EditorState {
         if !self.is_artifact() || rev <= self.bus_rev {
             return false;
         }
-        let norm = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.accept_bus(text, rev)
+    }
+
+    /// Replaces an artifact buffer with the shared entry (`text`, `rev`), discarding local edits.
+    /// Bus text is untrusted, so it is sanitised (controls, format characters) first.
+    pub(crate) fn accept_bus(&mut self, text: &str, rev: u64) -> bool {
+        let norm = artifact::sanitize_multiline(text);
         self.bus_rev = rev;
+        self.bus_blocked_rev = None;
+        self.bus_error = None;
+        self.bus_conflict = false;
         if self.buf.text() == norm {
+            self.bus_pushed_rev = self.buf.revision();
             return false;
         }
         let prev_cursor = self.buf.cursor;
@@ -360,6 +390,48 @@ impl EditorState {
         self.external_change = false;
         self.message = Some(format!("synced from shared bus (rev {rev})"));
         true
+    }
+
+    /// Records a successful bus write of buffer revision `buf_rev`.
+    pub(crate) fn bus_push_ok(&mut self, rev: u64, buf_rev: u64) {
+        self.bus_rev = rev;
+        self.bus_pushed_rev = buf_rev;
+        self.bus_blocked_rev = None;
+        self.bus_error = None;
+        self.bus_conflict = false;
+    }
+
+    /// Records a failed bus write of buffer revision `buf_rev` and returns the user message. The
+    /// same revision is not retried; a conflict keeps the local text and flags the buffer.
+    pub(crate) fn bus_push_failed(&mut self, err: &crate::wm::context_bus::ContextBusError, buf_rev: u64) -> String {
+        use crate::wm::context_bus::ContextBusError as E;
+        self.bus_blocked_rev = Some(buf_rev);
+        let msg = match err {
+            E::Conflict { .. } => {
+                self.bus_conflict = true;
+                self.bus_error = None;
+                "shared artifact changed elsewhere; local edits kept but NOT shared (:editor revert takes the shared version)".to_string()
+            }
+            E::ValueTooLarge { len, max } => {
+                self.bus_conflict = false;
+                let m = format!("not shared (too large: {len} bytes, max {max})");
+                self.bus_error = Some(m.clone());
+                m
+            }
+            e => {
+                self.bus_conflict = false;
+                let m = format!("not shared ({e})");
+                self.bus_error = Some(m.clone());
+                m
+            }
+        };
+        self.message = Some(msg.clone());
+        msg
+    }
+
+    /// Bus write attempts made by this buffer so far.
+    pub fn bus_attempts(&self) -> u64 {
+        self.bus_attempts
     }
 
     /// Toggles the Markdown task checkbox (`- [ ]` <-> `- [x]`) on the current line.
@@ -383,15 +455,6 @@ impl EditorState {
         self.render_mode = on.unwrap_or(!self.render_mode);
         self.left = 0;
         self.render_mode
-    }
-
-    /// Safe artifact name (`validate_safe_name`-compliant) derived from this buffer's name.
-    pub fn studio_artifact_name(&self) -> String {
-        if let Some(n) = self.artifact_name() {
-            return n.to_string();
-        }
-        let slug = artifact::slugify_artifact_name(&self.display_name());
-        if slug.is_empty() { DEFAULT_ARTIFACT.to_string() } else { slug }
     }
 
     pub fn set_wrap(&mut self, on: Option<bool>) -> bool {
@@ -434,9 +497,11 @@ impl EditorState {
             EditorKind::Artifact(_) => "artifact",
         };
         let (tasks_done, tasks_total) = artifact::checklist_progress(&self.buf);
+        let shared = self.is_artifact() && self.bus_error.is_none() && !self.bus_conflict && self.bus_rev > 0;
+        let bus_error = self.bus_error.as_ref().map_or("null".into(), |e| format!("\"{}\"", esc(e)));
         let bus_key = self.artifact_bus_key().map_or("null".into(), |k| format!("\"{}\"", esc(&k)));
         format!(
-            "{{\"kind\":\"{kind}\",\"name\":\"{}\",\"path\":{},\"dirty\":{},\"lines\":{},\"line\":{},\"col\":{},\"wrap\":{},\"markdown\":{},\"render_mode\":{},\"external_change\":{},\"tasks_done\":{tasks_done},\"tasks_total\":{tasks_total},\"bus_key\":{bus_key},\"focused\":{},\"menu\":{}}}",
+            "{{\"kind\":\"{kind}\",\"name\":\"{}\",\"path\":{},\"dirty\":{},\"lines\":{},\"line\":{},\"col\":{},\"wrap\":{},\"markdown\":{},\"render_mode\":{},\"external_change\":{},\"tasks_done\":{tasks_done},\"tasks_total\":{tasks_total},\"bus_key\":{bus_key},\"shared\":{shared},\"bus_conflict\":{},\"bus_error\":{bus_error},\"focused\":{},\"menu\":{}}}",
             esc(&self.display_name()),
             self.path.as_ref().map_or("null".into(), |p| format!("\"{}\"", esc(&p.to_string_lossy()))),
             self.is_dirty(),
@@ -447,6 +512,7 @@ impl EditorState {
             self.markdown,
             self.render_mode,
             self.external_change,
+            self.bus_conflict,
             self.focused,
             self.menu.open.map_or("null".into(), |i| format!("\"{}\"", menu::MENUS[i].title.to_ascii_lowercase()))
         )

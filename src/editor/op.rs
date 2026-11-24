@@ -144,8 +144,10 @@ impl EditorOp {
         }
     }
 
-    /// `true` for verbs that read or write host files (gated for API callers).
+    /// `true` for verbs that read or write host files or the shared bus/state directory (gated
+    /// for API callers by `[api] allow_config_write`): `Artifact` creates and persists files under
+    /// the state directory and `Broadcast` publishes buffer text to every pane and agent.
     pub fn touches_files(&self) -> bool {
-        matches!(self, Self::Open { path: Some(_) } | Self::Save { .. } | Self::SaveAs { .. } | Self::Revert | Self::Menu(MenuOp::Do(MenuCmd::Save | MenuCmd::SaveAs | MenuCmd::Revert)))
+        matches!(self, Self::Open { path: Some(_) } | Self::Artifact { .. } | Self::Broadcast { .. } | Self::Save { .. } | Self::SaveAs { .. } | Self::Revert | Self::Menu(MenuOp::Do(MenuCmd::Save | MenuCmd::SaveAs | MenuCmd::Revert)))
     }
 }
