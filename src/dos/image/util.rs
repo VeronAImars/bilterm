@@ -104,24 +104,54 @@ pub fn remove_if_exists(path: &Path) -> Res<()> {
 }
 
 /// Makes `len` bytes of address space that stays sparse where the filesystem allows it.
-pub fn set_sparse_len(f: &File, path: &Path, len: u64) -> Res<()> {
-    mark_sparse(path);
+pub fn set_sparse_len(f: &File, _path: &Path, len: u64) -> Res<()> {
+    let _ = mark_sparse(f);
     f.set_len(len)?;
     Ok(())
 }
 
-/// NTFS only allocates lazily for files with the sparse attribute (spike D0c: plain `set_len`
-/// allocated all 128 MiB). UNVERIFIED in this form; ideally `DeviceIoControl(FSCTL_SET_SPARSE)`.
+/// NTFS only allocates lazily for files with the sparse attribute (`FSCTL_SET_SPARSE = 0x000900C4`);
+/// without it, `File::set_len` physically zeroes all 128 MiB (spike D0c). Best effort: filesystems
+/// without sparse support (FAT/exFAT) return 0 from `DeviceIoControl` and still succeed via `set_len`.
 #[cfg(windows)]
-fn mark_sparse(path: &Path) {
-    let _ = std::process::Command::new("fsutil")
-        .arg("sparse")
-        .arg("setflag")
-        .arg(path)
-        .output();
+pub(crate) fn mark_sparse(f: &File) -> bool {
+    use std::os::windows::io::AsRawHandle;
+    use std::ptr::{null, null_mut};
+    const FSCTL_SET_SPARSE: u32 = 0x0009_00C4;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn DeviceIoControl(
+            h_device: *mut std::ffi::c_void,
+            dw_io_control_code: u32,
+            lp_in_buffer: *const std::ffi::c_void,
+            n_in_buffer_size: u32,
+            lp_out_buffer: *mut std::ffi::c_void,
+            n_out_buffer_size: u32,
+            lp_bytes_returned: *mut u32,
+            lp_overlapped: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+    let mut returned: u32 = 0;
+    // SAFETY: `f.as_raw_handle()` is a valid open writeable file handle for the duration of this
+    // synchronous (`lp_overlapped = null`) call; `FSCTL_SET_SPARSE` accepts null input/output
+    // buffers when setting the sparse flag to TRUE, and `returned` is a valid stack `u32` pointer.
+    unsafe {
+        DeviceIoControl(
+            f.as_raw_handle(),
+            FSCTL_SET_SPARSE,
+            null(),
+            0,
+            null_mut(),
+            0,
+            &mut returned,
+            null_mut(),
+        ) != 0
+    }
 }
 #[cfg(not(windows))]
-fn mark_sparse(_path: &Path) {}
+pub(crate) fn mark_sparse(_f: &File) -> bool {
+    true
+}
 
 /// Copies `src` to a new private file `dst`, keeping all-zero 64 KiB blocks as holes.
 pub fn copy_sparse(src: &Path, dst: &Path) -> Res<u64> {
