@@ -6,13 +6,16 @@ use std::path::PathBuf;
 
 use super::WindowManager;
 use crate::api::JsonValue;
-use crate::editor::{DEFAULT_ARTIFACT, EditorKind, EditorOp, EditorState, artifact_bus_key, io};
+use crate::editor::{DEFAULT_ARTIFACT, EditorKind, EditorOp, EditorState, artifact, artifact_bus_key, io};
 use crate::error::{BiltermError, Result};
 use crate::pane::PaneId;
 use crate::wm::agent_mail::AgentMailOp;
+use crate::wm::context_bus::{ContextBusError, MAX_VALUE_BYTES};
 use crate::wm::split_tree::SplitDirection;
 
 pub const DEFAULT_SCRATCH: &str = "scratch";
+/// Longest broadcast note (characters) sent to agents.
+const BROADCAST_NOTE_MAX: usize = 512;
 
 impl WindowManager {
     /// Private directory of scratchpad buffers, next to the sessions directory.
@@ -55,13 +58,22 @@ impl WindowManager {
                 Some(EditorState::open_scratch(name, file))
             }
             super::SavedEditor::Artifact { name, render_mode } => {
+                // Names are canonicalised to lowercase so `Plan` and `plan` never diverge on
+                // case-insensitive filesystems (older sessions may hold mixed case).
+                let name = &name.to_ascii_lowercase();
                 let file = io::scratch_file(&self.artifact_dir().ok()?, name).ok()?;
                 let key = artifact_bus_key(name);
                 let bus = self.context_bus.get(&key).map(|e| (e.value, e.revision));
                 let mut ed = EditorState::open_artifact(name, file, bus);
                 if ed.bus_rev == 0 {
-                    ed.bus_rev = self.context_bus.set(&key, &ed.buf.text(), None).unwrap_or(0);
-                    ed.bus_pushed_rev = ed.buf.revision();
+                    let rev = ed.buf.revision();
+                    ed.bus_attempts += 1;
+                    match self.context_bus.set_if_revision(&key, &ed.buf.text(), None, 0) {
+                        Ok(r) => ed.bus_push_ok(r, rev),
+                        Err(e) => {
+                            ed.bus_push_failed(&e, rev);
+                        }
+                    }
                 }
                 ed.render_mode = *render_mode;
                 Some(ed)
@@ -169,8 +181,12 @@ impl WindowManager {
         if let Err(e) = crate::secure_fs::validate_safe_name(name) {
             return self.editor_reply(false, format!("artifact name: {e}"), vec![]);
         }
+        // One canonical (lowercase) name per artifact: key and autosave file agree on
+        // case-insensitive filesystems.
+        let name = name.to_ascii_lowercase();
+        let name = name.as_str();
         let existing = self.editor_pane_ids().into_iter().find(|id| {
-            matches!(&self.panes[id].editor().map(|e| &e.kind), Some(EditorKind::Artifact(n)) if n == name)
+            matches!(&self.panes[id].editor().map(|e| &e.kind), Some(EditorKind::Artifact(n)) if n.eq_ignore_ascii_case(name))
         });
         if let Some(id) = existing {
             self.focus_and_raise(id);
@@ -189,14 +205,20 @@ impl WindowManager {
         let key = artifact_bus_key(name);
         let bus_entry = self.context_bus.get(&key).map(|e| (e.value, e.revision));
         let mut ed = EditorState::open_artifact(name, file, bus_entry);
-        let text = ed.buf.text();
-        let seed_rev = if ed.bus_rev == 0 {
-            self.context_bus.set(&key, &text, None).unwrap_or(0)
-        } else {
-            ed.bus_rev
-        };
-        ed.bus_rev = seed_rev;
-        ed.bus_pushed_rev = ed.buf.revision();
+        if ed.bus_rev == 0 {
+            let text = ed.buf.text();
+            if text.len() > MAX_VALUE_BYTES {
+                return self.editor_reply(
+                    false,
+                    format!("artifact '{name}' is {} bytes; shared artifacts are limited to {MAX_VALUE_BYTES} bytes", text.len()),
+                    vec![],
+                );
+            }
+            match self.context_bus.set_if_revision(&key, &text, None, 0) {
+                Ok(rev) => ed.bus_push_ok(rev, ed.buf.revision()),
+                Err(e) => return self.editor_reply(false, format!("artifact '{name}' not shared: {e}"), vec![]),
+            }
+        }
         let status = JsonValue::parse(&ed.status_json()).unwrap_or(JsonValue::Null);
         match self.spawn_editor_pane(ed) {
             Ok(id) => self.editor_reply(
@@ -212,28 +234,28 @@ impl WindowManager {
         let Some(id) = self.editor_target() else {
             return self.editor_reply(false, "no editor window (:edit [path], :scratch, or :artifact)".into(), vec![]);
         };
-        self.sync_editor_to_bus_and_preview(id);
-        let Some((name, bus_key, text, path)) = self.panes.get(&id).and_then(|p| p.editor()).map(|ed| {
-            let key = ed.artifact_bus_key().unwrap_or_else(|| artifact_bus_key(&ed.studio_artifact_name()));
-            (ed.display_name(), key, ed.buf.text(), ed.path.clone())
-        }) else { return };
-        let rev = match self.context_bus.set(&bus_key, &text, Some(id)) {
-            Ok(r) => {
-                if let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut())
-                    && ed.is_artifact()
-                {
-                    ed.bus_rev = r;
-                    ed.bus_pushed_rev = ed.buf.revision();
-                }
-                r
-            }
-            Err(e) => return self.editor_reply(false, format!("artifact sync failed: {e}"), vec![]),
+        // Only shared artifacts are published: broadcasting a host file or scratchpad would leak
+        // its text (and path) to every pane and agent, and file names make colliding bus keys.
+        let Some((name, bus_key)) = self.panes.get(&id).and_then(|p| p.editor()).and_then(|ed| Some((ed.display_name(), ed.artifact_bus_key()?))) else {
+            return self.editor_reply(false, "broadcast needs a shared artifact window (:artifact [name]); file and scratch buffers are not published".into(), vec![]);
         };
-        let loc = path
-            .as_ref()
-            .map(|p| format!("{} (bilterm://context/{bus_key})", p.display()))
-            .unwrap_or_else(|| format!("bilterm://context/{bus_key}"));
-        let body = match note.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        // An explicit broadcast retries a previously blocked push (still compare-and-set).
+        if let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut()) {
+            ed.bus_blocked_rev = None;
+        }
+        if let Err(e) = self.sync_editor_to_bus_and_preview(id) {
+            return self.editor_reply(false, format!("artifact sync failed: {e}"), vec![]);
+        }
+        let rev = match self.panes.get(&id).and_then(|p| p.editor()) {
+            Some(ed) if ed.bus_conflict || ed.bus_error.is_some() => {
+                return self.editor_reply(false, ed.bus_error.clone().unwrap_or_else(|| "artifact conflict: :editor revert first".into()), vec![]);
+            }
+            Some(ed) => ed.bus_rev,
+            None => return,
+        };
+        let loc = format!("bilterm://context/{bus_key}");
+        let note = note.map(|n| artifact::sanitize_inline(&n, BROADCAST_NOTE_MAX)).filter(|n| !n.is_empty());
+        let body = match note {
             Some(n) => format!("[artifact] {name} rev {rev} updated: {n} — read {loc}"),
             None => format!("[artifact] {name} rev {rev} updated — read {loc}"),
         };
@@ -306,6 +328,14 @@ impl WindowManager {
                 ed.goto_line(n);
                 Ok(format!("line {n}"))
             }
+            EditorOp::Revert if ed.is_artifact() => match ed.artifact_bus_key().and_then(|k| self.context_bus.get(&k)) {
+                Some(e) => {
+                    ed.accept_bus(&e.value, e.revision);
+                    ed.message = Some("reverted to the shared artifact".into());
+                    Ok("reverted to the shared artifact".into())
+                }
+                None => Err("shared artifact is no longer on the bus".into()),
+            },
             EditorOp::Revert => ed.revert(),
             EditorOp::Insert(t) => {
                 ed.paste(&t);
@@ -323,13 +353,16 @@ impl WindowManager {
             | EditorOp::Close { .. }
             | EditorOp::Menu(_) => return,
         };
+        let sync = self.sync_editor_to_bus_and_preview(id);
+        let Some(pane) = self.panes.get_mut(&id) else { return };
+        let Some(ed) = pane.editor_mut() else { return };
         extra.push(("editor", JsonValue::parse(&ed.status_json()).unwrap_or(JsonValue::Null)));
         extra.push(("pane", JsonValue::Number(id as i64)));
         pane.paint_editor();
-        self.sync_editor_to_bus_and_preview(id);
-        match result {
-            Ok(m) => self.editor_reply(true, m, extra),
-            Err(m) => self.editor_reply(false, m, extra),
+        match (result, sync) {
+            (Ok(m), Ok(_)) => self.editor_reply(true, m, extra),
+            (Ok(m), Err(e)) => self.editor_reply(true, format!("{m}; {e}"), extra),
+            (Err(m), _) => self.editor_reply(false, m, extra),
         }
     }
 
@@ -361,26 +394,39 @@ impl WindowManager {
     /// Repaints the active editor window and syncs shared artifacts / linked preview panes.
     pub(crate) fn after_editor_change(&mut self) {
         if let Some(id) = self.z_stack.top() {
+            let _ = self.sync_editor_to_bus_and_preview(id);
             if let Some(pane) = self.panes.get_mut(&id) {
                 pane.paint_editor();
             }
-            self.sync_editor_to_bus_and_preview(id);
         }
     }
 
-    /// Pushes local edits of an `EditorKind::Artifact` to `ContextBus`.
-    pub(crate) fn sync_editor_to_bus_and_preview(&mut self, id: PaneId) {
-        if let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut()) {
-            let cur_rev = ed.buf.revision();
-            if let Some(key) = ed.artifact_bus_key()
-                && cur_rev != ed.bus_pushed_rev
-            {
-                let text = ed.buf.text();
-                if let Ok(rev) = self.context_bus.set(&key, &text, Some(id)) {
-                    ed.bus_rev = rev;
-                    ed.bus_pushed_rev = cur_rev;
-                }
+    /// Pushes local edits of an `EditorKind::Artifact` to `ContextBus` with compare-and-set on the
+    /// last revision this buffer saw, so a concurrent agent write is never overwritten.
+    /// `Ok(Some(rev))` pushed, `Ok(None)` nothing to do (clean, not an artifact, or this buffer
+    /// revision already failed and is not retried), `Err(message)` the push failed (the message
+    /// is also stored on the editor and status).
+    pub(crate) fn sync_editor_to_bus_and_preview(&mut self, id: PaneId) -> std::result::Result<Option<u64>, String> {
+        let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut()) else { return Ok(None) };
+        let Some(key) = ed.artifact_bus_key() else { return Ok(None) };
+        let cur_rev = ed.buf.revision();
+        if cur_rev == ed.bus_pushed_rev || ed.bus_blocked_rev == Some(cur_rev) {
+            return Ok(None);
+        }
+        let text = ed.buf.text();
+        ed.bus_attempts += 1;
+        let mut res = self.context_bus.set_if_revision(&key, &text, Some(id), ed.bus_rev);
+        if matches!(res, Err(ContextBusError::Conflict { actual: 0, .. })) && ed.bus_rev != 0 {
+            // The entry expired or was deleted: re-seed it from the local text.
+            ed.bus_attempts += 1;
+            res = self.context_bus.set_if_revision(&key, &text, Some(id), 0);
+        }
+        match res {
+            Ok(rev) => {
+                ed.bus_push_ok(rev, cur_rev);
+                Ok(Some(rev))
             }
+            Err(e) => Err(ed.bus_push_failed(&e, cur_rev)),
         }
     }
 
@@ -402,7 +448,6 @@ impl WindowManager {
         let mut changed = false;
         for id in ids {
             let mut needs_paint = false;
-            let mut push_bus: Option<(String, String)> = None;
             let mut pull_key: Option<String> = None;
             if let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut()) {
                 if ed.autosave_due()
@@ -412,21 +457,19 @@ impl WindowManager {
                     needs_paint = true;
                 }
                 if let Some(key) = ed.artifact_bus_key() {
-                    if ed.buf.revision() != ed.bus_pushed_rev {
-                        push_bus = Some((key, ed.buf.text()));
-                    } else {
+                    if ed.buf.revision() == ed.bus_pushed_rev {
                         pull_key = Some(key);
                     }
                 } else if ed.poll_external_file_change(false) {
                     needs_paint = true;
                 }
             }
-            if let Some((key, text)) = push_bus
-                && let Ok(rev) = self.context_bus.set(&key, &text, Some(id))
-                && let Some(ed) = self.panes.get_mut(&id).and_then(|p| p.editor_mut())
-            {
-                ed.bus_rev = rev;
-                ed.bus_pushed_rev = ed.buf.revision();
+            // A failed push (conflict, oversize) is reported once through the editor message and
+            // not retried until the buffer changes.
+            let had_attempts = self.panes.get(&id).and_then(|p| p.editor()).map_or(0, |e| e.bus_attempts);
+            let _ = self.sync_editor_to_bus_and_preview(id);
+            if self.panes.get(&id).and_then(|p| p.editor()).map_or(0, |e| e.bus_attempts) != had_attempts {
+                needs_paint = true;
             }
             if let Some(key) = pull_key
                 && let Some(entry) = self.context_bus.get(&key)

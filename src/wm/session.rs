@@ -141,7 +141,7 @@ impl WindowManager {
                 .ok()
                 .flatten()
                 .or_else(|| fallback_subsequence_score(&combined, &q_lower));
-                score_opt.map(|score| (score, item))
+                score_opt.map(|score| (score.saturating_add(crate::wm::registry::rank::name_bonus(&combined, &q_lower)), item))
             })
             .collect();
         scored.sort_by_key(|a| std::cmp::Reverse(a.0));

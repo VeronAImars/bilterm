@@ -276,6 +276,7 @@ fn editor_op_actions_apply_without_panicking_for_every_verb_with_no_editor() {
 fn shared_artifact_syncs_bidirectionally_with_context_bus() {
     let (_g, _d) = sandbox();
     let mut cp = AutomationControlPlane::new_headless(30, 100);
+    cp.wm.config_mut().api.allow_config_write = true; // `editor.artifact` is gated for API callers
     // Open a shared artifact via RPC; it seeds ContextBus under artifact:plan.
     let opened = cp.dispatch_method("editor.artifact", &json(r#"{"name":"plan"}"#)).unwrap();
     assert_eq!(opened.get("bus_key").and_then(JsonValue::as_str), Some("artifact:plan"));
@@ -372,9 +373,10 @@ fn file_editor_auto_reloads_when_clean_and_flags_when_dirty() {
 }
 
 #[test]
-fn editor_broadcast_notifies_named_agents_and_slugifies_dotted_filenames() {
+fn editor_broadcast_notifies_named_agents_and_refuses_file_buffers() {
     let (_g, d) = sandbox();
     let mut cp = AutomationControlPlane::new_headless(30, 100);
+    cp.wm.config_mut().api.allow_config_write = true;
     cp.wm.set_agent_messaging_enabled(true);
     let worker_id = cp.wm.active_pane_id();
     cp.dispatch_method("agent.name", &json(&format!(r#"{{"pane_id":{worker_id},"name":"worker-1"}}"#))).unwrap();
@@ -384,11 +386,11 @@ fn editor_broadcast_notifies_named_agents_and_slugifies_dotted_filenames() {
     let inbox = cp.dispatch_method("agent.inbox", &json(r#"{"agent":"worker-1"}"#)).unwrap().to_json_string();
     assert!(inbox.contains("updated acceptance criteria") && inbox.contains("bilterm://context/artifact:spec"), "{inbox}");
 
-    // Dotted filenames (like README.md) slugify to validate_safe_name-compliant artifact names.
+    // Broadcasting a host file buffer is refused: only shared artifacts are published.
     let md_path = d.path().join("README.md");
     std::fs::write(&md_path, "# Hi").unwrap();
-    let md_ed = bilterm::editor::EditorState::open_file(&md_path).unwrap();
-    let slug = md_ed.studio_artifact_name();
-    assert_eq!(slug, "readme-md");
-    assert!(bilterm::secure_fs::validate_safe_name(&slug).is_ok());
+    cp.dispatch_method("editor.open", &json(&format!(r#"{{"path":"{}"}}"#, md_path.display()))).unwrap();
+    let e = cp.dispatch_method("editor.broadcast", &json("{}")).unwrap_err();
+    assert!(e.contains("shared artifact"), "{e}");
+    assert!(cp.wm.context_bus().list(Some("artifact:")).iter().all(|e| e.key == "artifact:spec"));
 }

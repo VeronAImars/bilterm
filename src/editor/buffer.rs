@@ -21,6 +21,8 @@ struct Edit {
 
 const UNDO_CAP: usize = 2000;
 
+static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 #[derive(Clone, Debug)]
 pub struct TextBuffer {
     lines: Vec<String>,
@@ -32,6 +34,9 @@ pub struct TextBuffer {
     /// Bumped on every content change (drives autosave and dirty tracking).
     revision: u64,
     saved_revision: u64,
+    /// Unique per constructed buffer (`from_text` resets `revision`), so `(generation, revision)`
+    /// identifies buffer content for caches.
+    generation: u64,
     /// Preferred display column for vertical movement.
     pub goal_col: Option<usize>,
 }
@@ -61,6 +66,7 @@ impl TextBuffer {
             redo: Vec::new(),
             revision: 0,
             saved_revision: 0,
+            generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             goal_col: None,
         }
     }
@@ -79,6 +85,10 @@ impl TextBuffer {
     }
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+    /// Cache key that changes whenever the content (or the whole buffer) changes.
+    pub fn version(&self) -> (u64, u64) {
+        (self.generation, self.revision)
     }
     pub fn is_dirty(&self) -> bool {
         self.revision != self.saved_revision

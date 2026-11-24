@@ -909,7 +909,7 @@ pub(super) fn route_wm_mouse_event(
     let pane_id = pane.id();
     if let Some(action) = super::editor_keys::editor_mouse(pane, pane_mouse, pane_inner) {
         wm.editor_menu_pending();
-        wm.sync_editor_to_bus_and_preview(pane_id);
+        let _ = wm.sync_editor_to_bus_and_preview(pane_id);
         return Ok(action);
     }
     let route = crate::input::mouse_select::route(
