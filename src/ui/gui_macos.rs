@@ -442,6 +442,7 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
     let init_vp = Rect::new(0, 0, init_cols, init_rows);
     app.wm.resize_all(init_vp)?;
     app.last_viewport = init_vp;
+    let mut last_layout_key: Option<crate::wm::layout_key::LayoutKey> = None;
 
     let font_pt = app.wm.config().scaled_font_size_pt();
     app.wm.active_pane_mut().set_status_message(Some(format!(
@@ -728,9 +729,17 @@ pub fn run_macos_gui_window(mut app: App) -> Result<()> {
             let c = (pixel_w / u32::from(cw.max(1))).clamp(20, 500) as u16;
             let r = (pixel_h / u32::from(ch.max(1))).clamp(6, 200) as u16;
             let desired_vp = Rect::new(0, 0, c, r);
-            if font_changed || desired_vp != app.last_viewport {
+            let layout_key = app.wm.layout_key();
+            if crate::wm::layout_key::needs_resize(
+                font_changed,
+                desired_vp,
+                app.last_viewport,
+                &layout_key,
+                last_layout_key.as_ref(),
+            ) {
                 app.wm.resize_all(desired_vp)?;
                 app.last_viewport = desired_vp;
+                last_layout_key = Some(layout_key);
             }
             gui_renderer.render_workspace_with_cell_size(
                 &app.wm,
