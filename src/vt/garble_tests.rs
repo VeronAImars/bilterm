@@ -14,7 +14,7 @@ fn row_text(vt: &VtParser, r: u16) -> String {
             if cell.width == 0 {
                 continue;
             }
-            if cell.grapheme.is_empty() { s.push(' ') } else { s.push_str(&cell.grapheme) }
+            if cell.grapheme.is_empty() { s.push(' ') } else { s.push_str(cell.grapheme) }
         }
     }
     s
