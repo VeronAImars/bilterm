@@ -59,6 +59,15 @@ pub struct ContextEntry {
     pub expires_at: Option<u64>,
 }
 
+/// Metadata of a live entry (no value clone): used by listings that only need sizes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextEntryMeta {
+    pub key: String,
+    pub revision: u64,
+    /// Byte length of the value.
+    pub len: usize,
+}
+
 /// One change-log record. `value == None` is a tombstone (delete or expiry).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextChange {
@@ -255,6 +264,37 @@ impl ContextBus {
             .filter(|e| prefix.is_none_or(|p| e.key.starts_with(p)))
             .cloned()
             .collect()
+    }
+
+    pub fn list_meta(&self, prefix: &str, after: Option<&str>, limit: usize) -> (Vec<ContextEntryMeta>, bool) {
+        self.list_meta_at(prefix, after, limit, wall_ms())
+    }
+
+    /// Metadata-only page of live entries whose key starts with `prefix`, sorted by key, strictly
+    /// after key `after`, at most `limit` items. Values are never cloned. The flag is true when
+    /// more entries follow the page.
+    pub fn list_meta_at(
+        &self,
+        prefix: &str,
+        after: Option<&str>,
+        limit: usize,
+        now: u64,
+    ) -> (Vec<ContextEntryMeta>, bool) {
+        use std::ops::Bound::{Excluded, Included, Unbounded};
+        let mut g = self.lock();
+        g.purge(now);
+        let lower = match after {
+            Some(a) if a >= prefix => Excluded(a.to_string()),
+            _ => Included(prefix.to_string()),
+        };
+        let mut it = g
+            .entries
+            .range((lower, Unbounded))
+            .take_while(|(k, _)| k.starts_with(prefix))
+            .map(|(_, e)| ContextEntryMeta { key: e.key.clone(), revision: e.revision, len: e.value.len() });
+        let page: Vec<_> = it.by_ref().take(limit).collect();
+        let more = it.next().is_some();
+        (page, more)
     }
 
     /// Changes with `revision > rev`, in order (tombstones included). Expiry is applied
