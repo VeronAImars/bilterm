@@ -6,6 +6,7 @@
 #   scripts/verify.sh --integration every tests/*.rs, without clippy/unit (CI runs those in the quick job)
 #   scripts/verify.sh --shard K/N  with full/--integration: only every N-th tests/*.rs stage, slice K (1-based); CI fan-out
 #   scripts/verify.sh --tier <name> smoke|unit|integration|system|perf|stress|torture|security
+#                                  (security also runs optional semgrep, cargo-audit, cargo-deny; SKIPPED if tool absent)
 #   scripts/verify.sh --only a b   named stages or hierarchical groups g:<name> (see --list / --groups)
 #   scripts/verify.sh --match <pat> pass pattern to cargo test stages
 #   scripts/verify.sh --coverage   run cargo llvm-cov --summary-only -> target/verify/coverage.txt
@@ -157,6 +158,8 @@ tier_stages() {
       for s in t:phase19_security_cli t:security_hardening_audit; do
         if [ -f "tests/${s#t:}.rs" ]; then echo "$s"; fi
       done
+      # Optional tool stages: graceful SKIPPED when the tool is absent (scripts/sec-tool.sh).
+      echo semgrep; echo cargo-audit; echo cargo-deny
       ;;
     *)
       return 1
@@ -171,7 +174,7 @@ group_stages() {
     g:vt)       printf '%s\n' t:vt_worker_and_snapshot_seam t:pty_lifecycle t:vttest_esctest_fuzz_torture t:font_scaling_and_dec_line_attrs t:tektronix_and_graphical_canvas t:v040_v050_gpu_ghostty_tmux_graphics ;;
     g:wm)       printf '%s\n' t:phase2_prompt_ergonomics t:phase3_window_manager t:phase5_tmux_and_platform t:layout_profiles_and_autosave t:live_daemon_detach_attach t:smooth_and_mainframe_page_scrolling t:tab_completion_and_streaming ;;
     g:api)      printf '%s\n' t:mcp_interactive_navigation t:v110_v120_v130_automation_api_mcp_playbooks t:v020_features t:v030_features t:v060_v070_v100_release_features t:v2_phases_30_to_34_integration t:session_lessons_and_regression_suite ;;
-    g:security) printf '%s\n' t:phase19_security_cli ;;
+    g:security) printf '%s\n' t:phase19_security_cli semgrep cargo-audit cargo-deny ;;
     g:perf)     printf '%s\n' t:full_suite_battle_and_perf t:terminal_torture_and_stress ;;
     g:find)     printf '%s\n' t:phase50_1_find_seam t:phase50_1_redact t:phase50_1_registry t:phase50_1_rank t:phase50_1_remote t:phase50_1_find_ui t:phase50_1_find_input t:phase50_1_surfaces t:phase50_1_capture t:phase50_1_saved t:phase50_1_find_ops t:phase50_1_api t:phase50_1_parity t:phase50_1_e2e ;;
     *)          return 1 ;;
@@ -201,6 +204,7 @@ cmd_for() {
     clippy) echo "cargo clippy -q --all-targets -- -D warnings" ;;
     unit)   echo "cargo test -q --lib --bins --no-fail-fast$extra" ;;
     dos)    echo "cargo clippy -q --features dos --lib --bins -- -D warnings && cargo test -q --features dos --lib dos:: --no-fail-fast" ;;
+    semgrep|cargo-audit|cargo-deny) echo "bash scripts/sec-tool.sh $1" ;;
     t:*)    echo "cargo test -q --test ${1#t:} --no-fail-fast$extra" ;;
     *)      return 1 ;;
   esac
@@ -502,7 +506,7 @@ fi
 # Nothing may be skipped silently: list `#[ignore]`d tests (with the stage they belong to) and
 # every runtime `SKIPPED <test>: <reason>` line (tests/common `skip()`) from this run's logs.
 {
-  for d in "$OUT"/t_* "$OUT"/unit; do
+  for d in "$OUT"/t_* "$OUT"/unit "$OUT"/semgrep "$OUT"/cargo-audit "$OUT"/cargo-deny; do
     [ -f "$d/log" ] || continue
     ign=$(awk '/^test result:/ { for (i = 1; i < NF; i++) if ($(i + 1) ~ /^ignored/) n += $i } END { print n + 0 }' "$d/log")
     [ "$ign" -gt 0 ] && printf 'IGNORED\t%s\t%s test(s) marked #[ignore] (reasons: cargo test --test %s -- --ignored --list)\n' "$(basename "$d")" "$ign" "$(basename "$d" | sed 's/^t_//')"
