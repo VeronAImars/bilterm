@@ -398,6 +398,14 @@ pub fn validate_plain_file_name(name: &str) -> std::result::Result<(), String> {
     }
 }
 
+/// `true` for Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0-9`, `LPT0-9`),
+/// case-insensitively; such a stem opens the device instead of a file on Windows.
+fn is_windows_device_name(name: &str) -> bool {
+    let up = name.to_ascii_uppercase();
+    matches!(up.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|p| up.strip_prefix(p).is_some_and(|d| d.len() == 1 && d.as_bytes()[0].is_ascii_digit()))
+}
+
 /// Validates that `name` is a safe identifier matching `^[A-Za-z0-9_-]{1,64}$` (`SEC-R01`, `D-03`).
 ///
 /// Rejects empty names, names exceeding 64 characters, names containing directory separators
@@ -414,6 +422,9 @@ pub fn validate_safe_name(name: &str) -> std::result::Result<(), String> {
     }
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return Err("identifier must contain only ASCII alphanumeric, '-', or '_' characters".to_string());
+    }
+    if is_windows_device_name(name) {
+        return Err("identifier is a reserved Windows device name".to_string());
     }
     Ok(())
 }
@@ -684,6 +695,16 @@ mod tests {
         assert!(validate_safe_name("worker-1").is_ok());
         assert!(validate_safe_name("sess_01").is_ok());
         assert!(validate_safe_name("A-Z_0-9").is_ok());
+    }
+
+    #[test]
+    fn validate_safe_name_rejects_windows_device_names() {
+        for n in ["CON", "con", "nul", "Aux", "prn", "com1", "COM9", "lpt1", "LPT0"] {
+            assert!(validate_safe_name(n).is_err(), "{n}");
+        }
+        for n in ["console", "com10", "lpt", "com", "nulx", "con-1"] {
+            assert!(validate_safe_name(n).is_ok(), "{n}");
+        }
     }
 
     #[test]
