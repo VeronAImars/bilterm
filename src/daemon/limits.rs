@@ -81,8 +81,10 @@ pub fn parse_bytes(s: &str) -> Result<u64, String> {
 /// How a limit is enforced.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LimitBackend {
-    /// Kernel cgroup limit through a transient systemd user scope.
+    /// Kernel cgroup limit through a transient systemd user scope (Linux).
     SystemdScope,
+    /// Windows Job Object (`JOB_OBJECT_LIMIT_JOB_MEMORY` + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`).
+    JobObject,
     /// Userspace RSS polling by the supervisor (cooperative, best effort).
     Watchdog,
 }
@@ -91,6 +93,7 @@ impl LimitBackend {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SystemdScope => "systemd-scope",
+            Self::JobObject => "job-object",
             Self::Watchdog => "watchdog",
         }
     }
@@ -98,18 +101,20 @@ impl LimitBackend {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "systemd-scope" => Some(Self::SystemdScope),
+            "job-object" | "job" => Some(Self::JobObject),
             "watchdog" => Some(Self::Watchdog),
             _ => None,
         }
     }
 }
 
-/// User preference for the backend (`BILTERM_LIMIT_BACKEND=auto|systemd|watchdog`).
+/// User preference for the backend (`BILTERM_LIMIT_BACKEND=auto|systemd|job-object|watchdog`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BackendPref {
     #[default]
     Auto,
     Systemd,
+    JobObject,
     Watchdog,
 }
 
@@ -117,6 +122,7 @@ impl BackendPref {
     pub fn from_env_value(v: Option<&str>) -> Self {
         match v.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
             Some("systemd") | Some("systemd-scope") => Self::Systemd,
+            Some("job") | Some("job-object") => Self::JobObject,
             Some("watchdog") => Self::Watchdog,
             _ => Self::Auto,
         }
@@ -145,11 +151,25 @@ pub struct Selection {
     pub note: String,
 }
 
-/// Picks the backend. A systemd preference that the probe cannot satisfy falls back to the
-/// watchdog (never fails the start) and says so in `note`.
+/// Picks the backend (Unix default: `job_object_available = false`). A systemd preference that the
+/// probe cannot satisfy falls back to the watchdog (never fails the start) and says so in `note`.
 pub fn choose_backend(pref: BackendPref, probe: &Probe) -> Selection {
+    choose_backend_with_job(pref, probe, false)
+}
+
+/// Picks the backend with explicit Windows Job Object availability (`true` on Windows).
+pub fn choose_backend_with_job(pref: BackendPref, probe: &Probe, job_object_available: bool) -> Selection {
     match pref {
         BackendPref::Watchdog => Selection { backend: LimitBackend::Watchdog, note: "watchdog requested".to_string() },
+        BackendPref::Auto | BackendPref::JobObject if job_object_available => Selection {
+            backend: LimitBackend::JobObject,
+            note: "Windows Job Object (JOB_OBJECT_LIMIT_JOB_MEMORY + KILL_ON_JOB_CLOSE)".to_string(),
+        },
+        BackendPref::JobObject => {
+            let mut s = choose_backend_with_job(BackendPref::Auto, probe, false);
+            s.note = format!("Windows Job Object unavailable on this OS; {}", s.note);
+            s
+        }
         BackendPref::Auto | BackendPref::Systemd if probe.supported() => {
             Selection { backend: LimitBackend::SystemdScope, note: "systemd user scope available".to_string() }
         }
@@ -212,9 +232,13 @@ pub fn probe_systemd_scope() -> Probe {
 /// Probes once and applies `BILTERM_LIMIT_BACKEND`.
 pub fn select_backend_for_host() -> Selection {
     let pref = BackendPref::from_env_value(std::env::var("BILTERM_LIMIT_BACKEND").ok().as_deref());
-    // A watchdog preference needs no probe (and must not pay for one).
-    let probe = if pref == BackendPref::Watchdog { Probe::default() } else { probe_systemd_scope() };
-    choose_backend(pref, &probe)
+    // A watchdog preference or Windows Job Object needs no systemd probe.
+    let probe = if pref == BackendPref::Watchdog || cfg!(windows) {
+        Probe::default()
+    } else {
+        probe_systemd_scope()
+    };
+    choose_backend_with_job(pref, &probe, cfg!(windows))
 }
 
 /// `systemd-run` argv (program first) that runs `exe args` inside a limited transient scope.
@@ -322,12 +346,174 @@ impl ExitCause {
 /// with a recent peak at/above 80% of the max is attributed to the limit (cgroup OOM kill).
 /// Either way the exit is a crash for the restart policy; this only adds the cause.
 pub fn classify_exit(signal: Option<i32>, limits: &MemoryLimits, peak_rss: u64, watchdog_killed: bool) -> Option<ExitCause> {
+    classify_exit_with_code(signal, None, LimitBackend::SystemdScope, limits, peak_rss, watchdog_killed)
+}
+
+/// Classifies an exit across Unix (`SIGKILL`/watchdog) and Windows (`LimitBackend::JobObject`,
+/// where hitting `JOB_OBJECT_LIMIT_JOB_MEMORY` fails allocations and causes a non-zero exit with
+/// peak memory near `max_bytes`).
+pub fn classify_exit_with_code(
+    signal: Option<i32>,
+    code: Option<i32>,
+    backend: LimitBackend,
+    limits: &MemoryLimits,
+    peak_rss: u64,
+    watchdog_killed: bool,
+) -> Option<ExitCause> {
     let max = limits.max_bytes?;
-    if watchdog_killed || (signal == Some(9) && peak_rss >= max / 10 * 8) {
+    let near_limit = peak_rss >= max / 10 * 8;
+    let job_abort = backend == LimitBackend::JobObject && code.is_some_and(|c| c != 0) && near_limit;
+    if watchdog_killed || (signal == Some(9) && near_limit) || job_abort {
         Some(ExitCause::Limit)
     } else {
         None
     }
+}
+
+/// Windows Job Object guard (P4 / C4): enforces `JOB_OBJECT_LIMIT_JOB_MEMORY`,
+/// `JOB_OBJECT_LIMIT_PROCESS_MEMORY`, and `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` over the supervised
+/// host and its child processes.
+#[cfg(windows)]
+pub struct WinJobGuard {
+    handle: *mut std::ffi::c_void,
+}
+
+#[cfg(windows)]
+impl WinJobGuard {
+    /// Creates an anonymous Job Object configured with `max_bytes` and assigns `process_handle`.
+    pub fn create_and_assign(process_handle: *mut std::ffi::c_void, max_bytes: u64) -> std::io::Result<Self> {
+        use std::ffi::c_void;
+        use std::ptr::{null, null_mut};
+        const JOB_OBJECT_EXTENDED_LIMIT_INFO_CLASS: i32 = 9;
+        const JOB_OBJECT_LIMIT_PROCESS_MEMORY: u32 = 0x0000_0100;
+        const JOB_OBJECT_LIMIT_JOB_MEMORY: u32 = 0x0000_0200;
+        const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn CreateJobObjectW(lp_job_attributes: *mut c_void, lp_name: *const u16) -> *mut c_void;
+            fn SetInformationJobObject(
+                h_job: *mut c_void,
+                job_object_information_class: i32,
+                lp_job_object_information: *const c_void,
+                cb_job_object_information_length: u32,
+            ) -> i32;
+            fn AssignProcessToJobObject(h_job: *mut c_void, h_process: *mut c_void) -> i32;
+        }
+        // SAFETY: `CreateJobObjectW(null, null)` creates a fresh anonymous job handle owned by
+        // `WinJobGuard`. `SetInformationJobObject` reads a stack `JobObjectExtendedLimitInformation`
+        // with exact size, and `AssignProcessToJobObject` attaches the caller-owned `Child` handle.
+        unsafe {
+            let job = CreateJobObjectW(null_mut(), null());
+            if job.is_null() {
+                return Err(std::io::Error::last_os_error());
+            }
+            let guard = Self { handle: job };
+            let cap = max_bytes.min(usize::MAX as u64) as usize;
+            let mut info = JobObjectExtendedLimitInformation::default();
+            info.basic_limit_information.limit_flags =
+                JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            info.process_memory_limit = cap;
+            info.job_memory_limit = cap;
+            let ok = SetInformationJobObject(
+                guard.handle,
+                JOB_OBJECT_EXTENDED_LIMIT_INFO_CLASS,
+                (&raw const info).cast::<c_void>(),
+                std::mem::size_of::<JobObjectExtendedLimitInformation>() as u32,
+            );
+            if ok == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if AssignProcessToJobObject(guard.handle, process_handle) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(guard)
+        }
+    }
+
+    /// Queries peak committed memory (`PeakJobMemoryUsed` / `PeakProcessMemoryUsed`) recorded by the kernel.
+    pub fn peak_memory_bytes(&self) -> Option<u64> {
+        use std::ffi::c_void;
+        const JOB_OBJECT_EXTENDED_LIMIT_INFO_CLASS: i32 = 9;
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn QueryInformationJobObject(
+                h_job: *mut c_void,
+                job_object_information_class: i32,
+                lp_job_object_information: *mut c_void,
+                cb_job_object_information_length: u32,
+                lp_return_length: *mut u32,
+            ) -> i32;
+        }
+        let mut info = JobObjectExtendedLimitInformation::default();
+        let mut ret: u32 = 0;
+        // SAFETY: `self.handle` is a valid job object handle owned by `self`; `info` and `ret` are
+        // stack-allocated and sized to `size_of::<JobObjectExtendedLimitInformation>()`.
+        let ok = unsafe {
+            QueryInformationJobObject(
+                self.handle,
+                JOB_OBJECT_EXTENDED_LIMIT_INFO_CLASS,
+                (&raw mut info).cast::<c_void>(),
+                std::mem::size_of::<JobObjectExtendedLimitInformation>() as u32,
+                &mut ret,
+            ) != 0
+        };
+        ok.then_some(info.peak_job_memory_used.max(info.peak_process_memory_used) as u64)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WinJobGuard {
+    fn drop(&mut self) {
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn CloseHandle(h_object: *mut std::ffi::c_void) -> i32;
+        }
+        if !self.handle.is_null() {
+            // SAFETY: `self.handle` was returned by `CreateJobObjectW` and is closed once on drop.
+            unsafe {
+                let _ = CloseHandle(self.handle);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct JobObjectBasicLimitInformation {
+    per_process_user_time_limit: i64,
+    per_job_user_time_limit: i64,
+    limit_flags: u32,
+    minimum_working_set_size: usize,
+    maximum_working_set_size: usize,
+    active_process_limit: u32,
+    affinity: usize,
+    priority_class: u32,
+    scheduling_class: u32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct IoCounters {
+    read_operation_count: u64,
+    write_operation_count: u64,
+    other_operation_count: u64,
+    read_transfer_count: u64,
+    write_transfer_count: u64,
+    other_transfer_count: u64,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct JobObjectExtendedLimitInformation {
+    basic_limit_information: JobObjectBasicLimitInformation,
+    io_info: IoCounters,
+    process_memory_limit: usize,
+    job_memory_limit: usize,
+    peak_process_memory_used: usize,
+    peak_job_memory_used: usize,
 }
 
 /// Sum of resident bytes over every process in process group `pgid` (host plus PTY children).
@@ -460,12 +646,27 @@ mod tests {
         assert_eq!(s.backend, LimitBackend::Watchdog, "forced systemd still falls back, never fails");
         assert!(s.note.contains("unavailable"));
         assert_eq!(BackendPref::from_env_value(Some("Systemd")), Systemd);
+        assert_eq!(BackendPref::from_env_value(Some("job-object")), JobObject);
+        assert_eq!(BackendPref::from_env_value(Some("job")), JobObject);
         assert_eq!(BackendPref::from_env_value(Some("watchdog")), Watchdog);
         assert_eq!(BackendPref::from_env_value(Some("x")), Auto);
         assert_eq!(BackendPref::from_env_value(None), Auto);
         assert!(controllers_include_memory("cpu io memory pids"));
         assert!(!controllers_include_memory("cpu io pids"));
         assert_eq!(LimitBackend::parse("watchdog"), Some(LimitBackend::Watchdog));
+        assert_eq!(LimitBackend::parse("job-object"), Some(LimitBackend::JobObject));
+        assert_eq!(LimitBackend::parse("job"), Some(LimitBackend::JobObject));
+        assert_eq!(LimitBackend::JobObject.as_str(), "job-object");
+
+        // Windows Job Object selection table.
+        let win_auto = choose_backend_with_job(Auto, &none, true);
+        assert_eq!(win_auto.backend, LimitBackend::JobObject);
+        assert!(win_auto.note.contains("Windows Job Object"));
+        let win_wd = choose_backend_with_job(Watchdog, &none, true);
+        assert_eq!(win_wd.backend, LimitBackend::Watchdog);
+        let unix_job_fallback = choose_backend_with_job(JobObject, &full, false);
+        assert_eq!(unix_job_fallback.backend, LimitBackend::SystemdScope);
+        assert!(unix_job_fallback.note.contains("Windows Job Object unavailable"));
     }
 
     #[test]
@@ -521,6 +722,16 @@ mod tests {
         assert_eq!(classify_exit(Some(15), &l, 10 * MIB, true), Some(ExitCause::Limit));
         assert_eq!(classify_exit(Some(9), &MemoryLimits::default(), u64::MAX, true), None, "no limit, no cause");
         assert_eq!(ExitCause::parse("limit"), Some(ExitCause::Limit));
+        assert_eq!(
+            classify_exit_with_code(None, Some(101), LimitBackend::JobObject, &l, 90 * MIB, false),
+            Some(ExitCause::Limit),
+            "Windows JobObject allocation failure with peak near max is a limit exit"
+        );
+        assert_eq!(
+            classify_exit_with_code(None, Some(0), LimitBackend::JobObject, &l, 95 * MIB, false),
+            None,
+            "clean exit is never classified as limit without watchdog kill"
+        );
     }
 
     #[test]

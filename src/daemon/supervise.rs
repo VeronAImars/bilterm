@@ -280,6 +280,8 @@ pub struct ProcessRunner {
     name: String,
     exe: PathBuf,
     child: Option<std::process::Child>,
+    #[cfg(windows)]
+    win_job: Option<limits::WinJobGuard>,
     limits: MemoryLimits,
     backend: LimitBackend,
     /// Systemd scope unit counter (unit names must be unique per spawn).
@@ -298,6 +300,8 @@ impl ProcessRunner {
             name: name.to_string(),
             exe,
             child: None,
+            #[cfg(windows)]
+            win_job: None,
             limits: MemoryLimits::default(),
             backend: LimitBackend::Watchdog,
             spawns: 0,
@@ -340,14 +344,23 @@ impl ProcessRunner {
         let (mut peak, mut sent) = (0u64, None);
         loop {
             if let Some(st) = child.try_wait()? {
+                #[cfg(windows)]
+                if let Some(job_peak) = self.win_job.as_ref().and_then(limits::WinJobGuard::peak_memory_bytes) {
+                    peak = peak.max(job_peak);
+                }
                 return Ok((st, sent, peak));
             }
             let now = t0.elapsed().as_millis() as u64;
             if now >= next_sample {
                 next_sample = now + self.poll_ms;
                 let rss = limits::group_rss_bytes(pid);
+                #[cfg(windows)]
+                let rss = match self.win_job.as_ref().and_then(limits::WinJobGuard::peak_memory_bytes) {
+                    Some(job_peak) => Some(rss.unwrap_or(0).max(job_peak)),
+                    None => rss,
+                };
                 peak = peak.max(rss.unwrap_or(0));
-                if self.backend == LimitBackend::Watchdog {
+                if matches!(self.backend, LimitBackend::Watchdog | LimitBackend::JobObject) {
                     let signalable = self.pid_is_lock_verified(pid);
                     match dog.observe(now, rss, signalable) {
                         WdAction::Term => {
@@ -377,7 +390,27 @@ fn send_signal(pid: u32, sig: i32) -> i32 {
             libc::kill(pid as libc::pid_t, sig);
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    if pid > 1 {
+        use std::ffi::c_void;
+        const PROCESS_TERMINATE: u32 = 0x0001;
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn OpenProcess(dw_desired_access: u32, b_inherit_handle: i32, dw_process_id: u32) -> *mut c_void;
+            fn TerminateProcess(h_process: *mut c_void, u_exit_code: u32) -> i32;
+            fn CloseHandle(h_object: *mut c_void) -> i32;
+        }
+        // SAFETY: `pid` was verified against the daemon lock by the caller; `OpenProcess` opens a
+        // termination handle, `TerminateProcess` terminates that process, and `CloseHandle` closes it.
+        unsafe {
+            let h = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if !h.is_null() {
+                let _ = TerminateProcess(h, 137);
+                let _ = CloseHandle(h);
+            }
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     let _ = pid;
     sig
 }
@@ -420,6 +453,20 @@ impl HostRunner for ProcessRunner {
         if limited {
             limits::bias_oom_score(pid);
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            self.win_job = match (self.limits.max_bytes, self.backend) {
+                (Some(max), LimitBackend::JobObject) => match limits::WinJobGuard::create_and_assign(child.as_raw_handle(), max) {
+                    Ok(g) => Some(g),
+                    Err(e) => {
+                        tracing::warn!(daemon = %self.name, pid, err = %e, "failed to attach Windows Job Object; falling back to watchdog");
+                        None
+                    }
+                },
+                _ => None,
+            };
+        }
         self.cause = None;
         self.child = Some(child);
         Ok(pid)
@@ -433,12 +480,16 @@ impl HostRunner for ProcessRunner {
             Some(max) => self.wait_limited(&mut child, max)?,
             None => (child.wait()?, None, 0),
         };
+        #[cfg(windows)]
+        {
+            self.win_job = None;
+        }
         #[cfg(unix)]
         let mut signal = std::os::unix::process::ExitStatusExt::signal(&status);
         #[cfg(not(unix))]
         let mut signal = None;
         let mut code = status.code();
-        self.cause = limits::classify_exit(signal, &self.limits, peak, wd_signal.is_some());
+        self.cause = limits::classify_exit_with_code(signal, code, self.backend, &self.limits, peak, wd_signal.is_some());
         // A host that exits cleanly after our SIGTERM was still killed by the limit: it is a
         // crash for the restart policy, never a clean exit.
         if let Some(sig) = wd_signal.filter(|_| code == Some(0) || signal.is_none()) {

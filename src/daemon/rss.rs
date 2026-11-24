@@ -1,8 +1,9 @@
-//! Resident-memory sampler for `daemon list` (P4 / C1). Read-only; never signals anything.
+//! Resident-memory sampler for `daemon list` (P4 / C1 & C4). Read-only; never signals anything.
 //!
 //! Linux: `/proc/<pid>/statm` (resident pages x page size). macOS: `proc_pid_rusage`
 //! `ri_phys_footprint` (what Activity Monitor and jetsam use; see
-//! `docs/plans/session-host-p4-limits.md` section 1). Other platforms report `None`.
+//! `docs/plans/session-host-p4-limits.md` section 1). Windows: `K32GetProcessMemoryInfo`
+//! (`WorkingSetSize`). Other platforms report `None`.
 
 /// Resident bytes of this process, or `None` when the platform cannot say.
 pub fn current_rss_bytes() -> Option<u64> {
@@ -23,7 +24,11 @@ pub fn rss_bytes_of(pid: u32) -> Option<u64> {
     {
         macos_footprint(pid)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(target_os = "windows")]
+    {
+        windows_footprint(pid)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         None
     }
@@ -49,6 +54,53 @@ fn macos_footprint(pid: u32) -> Option<u64> {
     // so pass the struct's address cast to that type (not the address of a pointer variable).
     let rc = unsafe { libc::proc_pid_rusage(pid as libc::c_int, RUSAGE_INFO_V4, &mut info as *mut libc::rusage_info_v4 as *mut libc::rusage_info_t) };
     (rc == 0).then_some(info.ri_phys_footprint)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_footprint(pid: u32) -> Option<u64> {
+    use std::ffi::c_void;
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const PROCESS_VM_READ: u32 = 0x0010;
+    #[repr(C)]
+    #[derive(Default)]
+    struct ProcessMemoryCountersEx {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+        private_usage: usize,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn OpenProcess(dw_desired_access: u32, b_inherit_handle: i32, dw_process_id: u32) -> *mut c_void;
+        fn K32GetProcessMemoryInfo(process: *mut c_void, ppsmem_counters: *mut ProcessMemoryCountersEx, cb: u32) -> i32;
+        fn CloseHandle(h_object: *mut c_void) -> i32;
+    }
+    // SAFETY: `OpenProcess` opens a read-only process query handle for `pid` (returning null if not
+    // found/permitted); `K32GetProcessMemoryInfo` writes into stack `ProcessMemoryCountersEx` with
+    // exact byte size `cb`; `CloseHandle` always closes the returned handle before returning.
+    unsafe {
+        let mut h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, 0, pid);
+        if h.is_null() {
+            h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        }
+        if h.is_null() {
+            return None;
+        }
+        let mut pmc = ProcessMemoryCountersEx {
+            cb: std::mem::size_of::<ProcessMemoryCountersEx>() as u32,
+            ..Default::default()
+        };
+        let ok = K32GetProcessMemoryInfo(h, &mut pmc, pmc.cb) != 0;
+        let _ = CloseHandle(h);
+        ok.then_some(pmc.working_set_size as u64)
+    }
 }
 
 /// Human form for table cells: `812K`, `12.3M`, `1.5G`, `-` when unknown.
@@ -88,7 +140,7 @@ mod tests {
         assert_eq!(rss_bytes_of(0), None);
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     #[test]
     fn own_rss_is_plausible() {
         let rss = current_rss_bytes().expect("own rss");
