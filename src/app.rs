@@ -187,8 +187,11 @@ impl App {
         if live.is_none() {
             crate::pty::set_live_socket(None);
         }
+        let mut media_gfx = crate::ui::tui_media_gfx::TuiMediaGfxState::default();
         let draw = |app: &mut App| -> Result<()> {
             repaint_if_requested(app, terminal);
+            let viewport = terminal.size().map(|s| ratatui::layout::Rect::new(0, 0, s.width, s.height)).unwrap_or(app.last_viewport);
+            let _gfx_guard = crate::ui::tui_media_gfx::begin_frame(&app.wm, viewport);
             terminal.draw(|frame| {
                 let area = frame.area();
                 app.last_viewport = area;
@@ -199,6 +202,17 @@ impl App {
                     app.wm.config().glyphs,
                 );
             })?;
+            drop(_gfx_guard);
+            crate::ui::tui_media_gfx::flush_tui_media_gfx(
+                &app.wm,
+                &mut io::stdout(),
+                &mut media_gfx,
+            )?;
+            if media_gfx.take_repaint_request() {
+                // iTerm2 pixels were blanked behind the diff: clear the screen and redraw.
+                let _ = terminal.clear();
+                app.needs_redraw = true;
+            }
             Ok(())
         };
         let events = reader.inspect(|item| {
@@ -206,7 +220,9 @@ impl App {
                 input_tap.event(1);
             }
         });
-        self.run_loop(events, draw, live, host_shutdown_signal(), &LoopStats::default()).await
+        let res = self.run_loop(events, draw, live, host_shutdown_signal(), &LoopStats::default()).await;
+        let _ = media_gfx.clear_all(&mut io::stdout());
+        res
     }
 
     /// The event loop proper, generic over the host so it can be driven headlessly: `events` is

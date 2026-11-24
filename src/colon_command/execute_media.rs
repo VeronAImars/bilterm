@@ -8,7 +8,15 @@ use crossterm::event::{KeyModifiers, MouseButton};
 const TUI_SURFACE_HINT: &str = " [TUI half-block; run bilterm --gui for GPU canvas]";
 
 fn surface_hint(wm: &WindowManager) -> &'static str {
-    if wm.gui_surface { "" } else { TUI_SURFACE_HINT }
+    if wm.gui_surface {
+        ""
+    } else {
+        match crate::ui::tui_media_gfx::TuiPixelProto::detect() {
+            crate::ui::tui_media_gfx::TuiPixelProto::Kitty => " [TUI Kitty true-pixel]",
+            crate::ui::tui_media_gfx::TuiPixelProto::ITerm2 => " [TUI iTerm2 true-pixel]",
+            crate::ui::tui_media_gfx::TuiPixelProto::HalfBlock => TUI_SURFACE_HINT,
+        }
+    }
 }
 
 /// Status-line label for what is really running, e.g. `cdp`, `cdp (starting)`,
