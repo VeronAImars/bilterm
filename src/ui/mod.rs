@@ -183,6 +183,8 @@ impl Widget for CompositePaneWidget<'_> {
             let is_gui = self.surface_badge == Some(true);
             let tui_true_pixel = !is_gui
                 && tui_media_gfx::use_true_pixel_for_frame()
+                && tui_media_gfx::pane_id_supported(self.pane.id())
+                && browser.cached_frame().is_some_and(|f| tui_media_gfx::frame_fits(f.width_px, f.height_px))
                 && !self.pane.is_prompt_visible();
             if (is_gui || tui_true_pixel) && browser.cached_frame().is_some() {
                 // Keep cells blank behind the GPU texture (GUI) or Kitty/iTerm2 pixel layer (TUI)
@@ -211,6 +213,8 @@ impl Widget for CompositePaneWidget<'_> {
             let is_gui = self.surface_badge == Some(true);
             let tui_true_pixel = !is_gui
                 && tui_media_gfx::use_true_pixel_for_frame()
+                && tui_media_gfx::pane_id_supported(self.pane.id())
+                && video.cached_frame().is_some_and(|f| tui_media_gfx::frame_fits(f.width_px, f.height_px))
                 && !self.pane.is_prompt_visible();
             if (is_gui || tui_true_pixel) && video.cached_frame().is_some() {
                 for y in body.y..body.bottom() {

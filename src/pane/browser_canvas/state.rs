@@ -361,6 +361,14 @@ impl BrowserCanvasState {
         self.cached_frame.as_ref()
     }
 
+    /// Test hook: bumps the cached frame's `seq` as a live page repaint would.
+    #[cfg(test)]
+    pub(crate) fn bump_cached_frame_seq_for_test(&mut self) {
+        if let Some(f) = self.cached_frame.as_mut() {
+            f.seq += 1;
+        }
+    }
+
     pub fn current_url(&self) -> &str {
         self.engine.current_url()
     }
