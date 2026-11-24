@@ -46,17 +46,36 @@ def read_until(fd, needle, timeout=15):
                 return True, buf
     return needle in buf, buf
 
-def wait_exit(pid, timeout=10):
-    end = time.time() + timeout
-    while time.time() < end:
-        p, st = os.waitpid(pid, os.WNOHANG)
-        if p:
-            return os.waitstatus_to_exitcode(st)
-        time.sleep(0.1)
-    os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
-    return None
+def drain_fd(fd):
+    while True:
+        r, _, _ = select.select([fd], [], [], 0)
+        if not r:
+            break
+        try:
+            if not os.read(fd, 65536):
+                break
+        except OSError:
+            break
 
-rt = tempfile.mkdtemp(prefix="bt-smoke-", dir=os.environ.get("SMOKE_TMPDIR", "/datanapps" if os.path.isdir("/datanapps") else None))
+def wait_exit(pid, fd, timeout=10):
+    end = time.time() + timeout
+    try:
+        while time.time() < end:
+            drain_fd(fd)
+            p, st = os.waitpid(pid, os.WNOHANG)
+            if p:
+                return os.waitstatus_to_exitcode(st)
+            time.sleep(0.05)
+        os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
+        return None
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+default_tmp = "/datanapps" if os.path.isdir("/datanapps") else ("/tmp" if os.path.isdir("/tmp") else None)
+rt = tempfile.mkdtemp(prefix="bt-smoke-", dir=os.environ.get("SMOKE_TMPDIR", default_tmp))
 os.chmod(rt, 0o700)
 env = dict(os.environ, BILTERM_RUNTIME_DIR=rt, SHELL="/bin/sh", TERM="xterm-256color")
 host = subprocess.Popen([BIN, "--headless", "--host-ptys", "--attach", "--name", NAME], env=env,
@@ -75,7 +94,7 @@ try:
     ok, _ = read_until(fd, b"SMOKE42")
     check(ok, "rw client sees command output rendered from host pane")
     os.write(fd, b"\x1dd")
-    check(wait_exit(pid) == 0, "Ctrl-] d detaches with exit 0")
+    check(wait_exit(pid, fd) == 0, "Ctrl-] d detaches with exit 0")
 
     pid, fd = spawn_client(env, "--ro")
     time.sleep(1.0)
@@ -83,12 +102,12 @@ try:
     ok, _ = read_until(fd, b"ROTEST2", timeout=3)
     check(not ok, "--ro client input is not applied")
     os.write(fd, b"\x1dd")
-    check(wait_exit(pid) == 0, "ro client detaches with exit 0")
+    check(wait_exit(pid, fd) == 0, "ro client detaches with exit 0")
 
     pid, fd = spawn_client(env)
     time.sleep(1.0)
     host.kill(); host.wait()
-    code = wait_exit(pid, 30)
+    code = wait_exit(pid, fd, 30)
     check(code not in (None, 0), "client exits non-zero when host dies (got %r)" % (code,))
 finally:
     if host.poll() is None:
