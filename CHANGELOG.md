@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- MCP resources: shared `artifact:*` `ContextBus` entries are listed and readable as `bilterm://context/artifact:<name>` (`text/markdown`, read-only, scoped to the `artifact:` prefix, capped at the 64 KiB bus value limit). `resources/list` uses a metadata-only bus listing (no value clones) with `cursor`/`nextCursor` pagination (100 entries per page), keys are percent-encoded in URIs, artifact content is labelled untrusted data, and unknown resources return `-32002`. See `docs/API.md` section 5.
+
 ## [3.4.4] - 2026-11-22
 
 ### Fixed
