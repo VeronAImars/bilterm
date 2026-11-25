@@ -156,3 +156,165 @@ fn tools_list_only_gains_find() {
         ]
     );
 }
+
+const MAX: usize = bilterm::api::mcp_resources::MAX_MCP_ARTIFACT_BYTES;
+const PAGE: usize = bilterm::api::mcp_resources::MCP_LIST_PAGE_SIZE;
+
+fn list_page(plane: &mut AutomationControlPlane, cursor: Option<&str>) -> JsonValue {
+    let params = cursor.map_or(String::new(), |c| format!(r#","params":{{"cursor":"{c}"}}"#));
+    let line = format!(r#"{{"jsonrpc":"2.0","id":20,"method":"resources/list"{params}}}"#);
+    call(plane, &line)
+}
+
+fn page_items(resp: &JsonValue) -> Vec<JsonValue> {
+    match resp.get("result").and_then(|r| r.get("resources")) {
+        Some(JsonValue::Array(a)) => a.clone(),
+        _ => panic!("no resources: {}", resp.to_json_string()),
+    }
+}
+
+fn uris_of(items: &[JsonValue]) -> Vec<String> {
+    items.iter().filter_map(|i| i.get("uri").and_then(JsonValue::as_str).map(String::from)).collect()
+}
+
+fn next_cursor(resp: &JsonValue) -> Option<String> {
+    resp.get("result").and_then(|r| r.get("nextCursor")).and_then(JsonValue::as_str).map(String::from)
+}
+
+#[test]
+fn context_list_exposes_artifact_prefix_only() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    plane.wm.context_bus().set("artifact:plan", "# Plan", None).unwrap();
+    plane.wm.context_bus().set("secret:token", "do-not-expose", None).unwrap();
+    let uris = uris_of(&page_items(&list_page(&mut plane, None)));
+    assert!(uris.contains(&"bilterm://context/artifact:plan".to_string()), "{uris:?}");
+    assert!(!uris.iter().any(|u| u.contains("secret")), "{uris:?}");
+}
+
+#[test]
+fn context_read_returns_markdown_labeled_untrusted() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    plane.wm.context_bus().set("artifact:plan", "# Plan\n- [ ] Task 1", None).unwrap();
+    let resp = read(&mut plane, "bilterm://context/artifact:plan");
+    let Some(JsonValue::Array(contents)) = resp.get("result").and_then(|r| r.get("contents")) else {
+        panic!("no contents: {}", resp.to_json_string());
+    };
+    assert_eq!(contents[0].get("mimeType").and_then(JsonValue::as_str), Some("text/markdown"));
+    assert_eq!(contents[0].get("text").and_then(JsonValue::as_str), Some("# Plan\n- [ ] Task 1"));
+    assert_eq!(contents[0].get("_meta").and_then(|m| m.get("untrusted")).and_then(JsonValue::as_bool), Some(true));
+    let items = page_items(&list_page(&mut plane, None));
+    let desc = items
+        .iter()
+        .find(|i| i.get("uri").and_then(JsonValue::as_str) == Some("bilterm://context/artifact:plan"))
+        .and_then(|i| i.get("description").and_then(JsonValue::as_str))
+        .unwrap()
+        .to_string();
+    assert!(desc.contains("Untrusted"), "{desc}");
+}
+
+#[test]
+fn context_read_refuses_non_artifact_and_lookalike_keys() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    for k in ["secret:token", "artifactx:foo", "Artifact:foo", "artifact", ""] {
+        plane.wm.context_bus().set(if k.is_empty() { "other" } else { k }, "v", None).unwrap();
+        assert_eq!(err_code(&read(&mut plane, &format!("bilterm://context/{k}"))), -32602, "{k}");
+    }
+    // Empty artifact name and a non-percent-encoded bare prefix are refused.
+    assert_eq!(err_code(&read(&mut plane, "bilterm://context/artifact:")), -32602);
+    assert_eq!(err_code(&read(&mut plane, "bilterm://context/")), -32602);
+}
+
+#[test]
+fn context_read_unknown_and_expired_is_not_found() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    assert_eq!(err_code(&read(&mut plane, "bilterm://context/artifact:missing")), -32002);
+    plane.wm.context_bus().set_with_ttl("artifact:soon", "x", None, 1).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(err_code(&read(&mut plane, "bilterm://context/artifact:soon")), -32002);
+}
+
+#[test]
+fn context_cap_boundary_exact_and_over() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    let exact = "x".repeat(MAX);
+    plane.wm.context_bus().set("artifact:exact", &exact, None).unwrap();
+    let resp = read(&mut plane, "bilterm://context/artifact:exact");
+    let Some(JsonValue::Array(c)) = resp.get("result").and_then(|r| r.get("contents")) else {
+        panic!("exact-size artifact must be readable");
+    };
+    assert_eq!(c[0].get("text").and_then(JsonValue::as_str).map(str::len), Some(MAX));
+    // The bus refuses anything larger, so no listed artifact can exceed the read cap.
+    assert!(plane.wm.context_bus().set("artifact:over", &"x".repeat(MAX + 1), None).is_err());
+    assert_eq!(MAX, bilterm::wm::context_bus::MAX_VALUE_BYTES);
+}
+
+#[test]
+fn context_list_is_paginated_without_duplicates() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    let total = PAGE * 2 + 7;
+    let big = "y".repeat(MAX);
+    for i in 0..total {
+        plane.wm.context_bus().set(&format!("artifact:n{i:04}"), &big, None).unwrap();
+    }
+    let mut seen = Vec::new();
+    let mut cursor = None;
+    let mut pages = 0;
+    loop {
+        let resp = list_page(&mut plane, cursor.as_deref());
+        let items = page_items(&resp);
+        seen.extend(uris_of(&items).into_iter().filter(|u| u.starts_with("bilterm://context/artifact:")));
+        pages += 1;
+        // Listing never embeds artifact bodies.
+        assert!(resp.to_json_string().len() < 64 * 1024, "page too large");
+        match next_cursor(&resp) {
+            Some(c) => cursor = Some(c),
+            None => break,
+        }
+    }
+    assert_eq!(pages, 3);
+    assert_eq!(seen.len(), total);
+    let mut dedup = seen.clone();
+    dedup.sort();
+    dedup.dedup();
+    assert_eq!(dedup.len(), total, "duplicates across pages");
+    // Static resources appear on the first page only.
+    let first_cursor = next_cursor(&list_page(&mut plane, None));
+    let second = page_items(&list_page(&mut plane, first_cursor.as_deref()));
+    assert!(!uris_of(&second).contains(&"bilterm://state".to_string()));
+    assert_eq!(err_code(&list_page(&mut plane, Some("bogus"))), -32602);
+}
+
+#[test]
+fn context_every_listed_uri_reads_back_including_odd_keys() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    let odd = "artifact:a b?c#d%e\u{e9}";
+    plane.wm.context_bus().set(odd, "odd body", None).unwrap();
+    let uris: Vec<String> = uris_of(&page_items(&list_page(&mut plane, None)))
+        .into_iter()
+        .filter(|u| u.starts_with("bilterm://context/"))
+        .collect();
+    assert_eq!(uris.len(), 1);
+    assert!(!uris[0].contains([' ', '?', '#']), "{}", uris[0]);
+    let resp = read(&mut plane, &uris[0]);
+    let Some(JsonValue::Array(c)) = resp.get("result").and_then(|r| r.get("contents")) else {
+        panic!("not readable: {}", resp.to_json_string());
+    };
+    assert_eq!(c[0].get("text").and_then(JsonValue::as_str), Some("odd body"));
+    // Malformed escapes are rejected strictly.
+    for bad in ["artifact:a%", "artifact:a%2", "artifact:a%zz", "artifact:a%ff"] {
+        assert_eq!(err_code(&read(&mut plane, &format!("bilterm://context/{bad}"))), -32602, "{bad}");
+    }
+}
+
+#[test]
+fn context_name_label_is_sanitised() {
+    let mut plane = AutomationControlPlane::new_headless(24, 80);
+    plane.wm.context_bus().set("artifact:ok\u{202e}evil\u{2066}x", "v", None).unwrap();
+    let items = page_items(&list_page(&mut plane, None));
+    let name = items
+        .iter()
+        .filter(|i| i.get("uri").and_then(JsonValue::as_str).is_some_and(|u| u.starts_with("bilterm://context/")))
+        .find_map(|i| i.get("name").and_then(JsonValue::as_str))
+        .unwrap();
+    assert_eq!(name, "Shared Artifact 'okevilx'");
+}

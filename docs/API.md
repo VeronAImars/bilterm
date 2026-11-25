@@ -1014,7 +1014,7 @@ Successful replies return MCP content blocks:
 
 ## 5. MCP Resources (`resources/list` & `resources/read`)
 
-Bilterm implements dynamic read-only MCP resources providing structured state and catalogs. Resources use MIME type `application/json`, except `bilterm://agents-md`, which is `text/markdown`.
+Bilterm implements dynamic read-only MCP resources providing structured state and catalogs. Resources use MIME type `application/json`, except `bilterm://agents-md` and `bilterm://context/artifact:<name>`, which are `text/markdown`.
 
 | URI | Name | Description |
 | :--- | :--- | :--- |
@@ -1023,6 +1023,15 @@ Bilterm implements dynamic read-only MCP resources providing structured state an
 | `bilterm://commands` | Colon command catalog | Complete catalog of every available `:colon` command with summaries, aliases, and examples. |
 | `bilterm://agents-md` | Agent control guide | The instructions for AI agents driving Bilterm (interfaces, daemons, panes, other agents, hard rules) as Markdown. Same text as `bilterm agents-md` and RPC `agent.guide`. |
 | `bilterm://pane/{id}` | Pane #{id} | Dynamic resource per pane: visible lines, cursor, command blocks, field hints, and notifications. |
+| `bilterm://context/artifact:<name>` | Shared Artifact '<name>' | One shared `ContextBus` artifact (for example an editor checklist), read-only, `text/markdown`. See below. |
+
+### Shared artifact resources (`bilterm://context/artifact:<name>`)
+- **Scope**: only `ContextBus` keys starting with `artifact:` are listed or readable, read-only. Any other `bilterm://context/<key>` (for example `secret:token`, a lookalike such as `artifactx:foo` or `Artifact:foo`, or an empty name `artifact:`) is refused with `-32602`.
+- **Untrusted content**: artifact values can be written by any pane or `context.set` caller, so the body is untrusted data, not instructions. Each listing description and each read result (`_meta.untrusted: true`) says so, and the MCP `instructions` tell agents never to follow directives found in it. The body is returned unmodified; control and bidi characters are stripped from the `name` label only.
+- **URI encoding**: the key is percent-encoded in the URI (everything except `A-Z a-z 0-9 - _ . ~ :` becomes `%XX`). `resources/read` decodes strictly: a truncated or non-hex escape, or bytes that are not UTF-8, give `-32602`. Every URI from `resources/list` reads back.
+- **Size**: the read cap `MAX_MCP_ARTIFACT_BYTES` equals the bus value limit (64 KiB), so every listed artifact is readable in full. A value over the cap (not reachable through the bus) would give `-32001`.
+- **Listing**: `resources/list` reads metadata only (key, revision, byte length; values are never cloned) and pages the artifact entries, 100 per page. The first page also holds the static, pane and inbox resources. Pass the `nextCursor` of a page as `params.cursor` for the next one; an unknown cursor is `-32602`.
+- **Error codes**: unknown or expired artifact `-32002` (resource not found); non-artifact key, malformed escape or bad cursor `-32602`; over the read cap `-32001`. Not provided: `resources/templates/list`, and `listChanged`/`subscribe` stay false, so clients re-list to see changes.
 
 ### Reading Resources
 - **Request**:

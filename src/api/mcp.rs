@@ -58,7 +58,7 @@ impl AutomationControlPlane {
             ])),
             "ping" => Ok(JsonValue::Object(BTreeMap::new())),
             "tools/list" => Ok(Self::mcp_tools_list()),
-            "resources/list" => Ok(self.mcp_resources_list()),
+            "resources/list" => self.mcp_resources_list_page(&params),
             "resources/read" => self.mcp_resources_read(&params),
             "tools/call" => {
                 if !matches!(params.get("arguments"), None | Some(JsonValue::Object(_))) {
