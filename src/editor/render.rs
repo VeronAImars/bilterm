@@ -9,7 +9,13 @@ use super::{EditorState, Mode};
 const TAB: usize = 4;
 
 fn cell_width(c: char, col: usize) -> usize {
-    if c == '\t' { TAB - col % TAB } else { c.width().unwrap_or(0) }
+    if c == '\t' {
+        TAB - col % TAB
+    } else if c.is_control() {
+        1 // painted as a visible placeholder, never emitted raw
+    } else {
+        c.width().unwrap_or(0)
+    }
 }
 
 /// Display width of the first `n` chars of `line`.
@@ -88,17 +94,38 @@ impl EditorState {
             Mode::SaveAs(p) => format!(" Save as: {p}_   Enter save  Esc cancel"),
             Mode::Goto(n) => format!(" Go to line: {n}_   Enter go  Esc cancel"),
             Mode::ConfirmOverwrite(p) => format!(" {} exists or changed on disk. Overwrite? (y/n)", p.display()),
-            Mode::Edit => format!(
-                " {}{}  Ln {}/{} Col {}  {}  {}  F10=Menu{}",
-                self.display_name(),
-                if self.is_dirty() { " *" } else { "" },
-                c.line + 1,
-                self.buf.line_count(),
-                c.col + 1,
-                if self.wrap { "WRAP" } else { "NOWRAP" },
-                if self.markdown { "MD" } else { "TXT" },
-                self.message.as_ref().map_or(String::new(), |m| format!("  | {m}")),
-            ),
+            Mode::Edit => {
+                let (done, total) = if self.markdown { self.progress_cache.map_or((0, 0), |c| c.1) } else { (0, 0) };
+                let tasks = if total > 0 { format!("  [{done}/{total}]") } else { String::new() };
+                let shared = match (self.is_artifact(), self.bus_conflict, self.bus_error.is_some()) {
+                    (false, ..) => "",
+                    (_, true, _) => "  CONFLICT",
+                    (_, _, true) => "  NOT SHARED",
+                    _ => "  SHARED",
+                };
+                let ext = if self.external_change { "  !EXT" } else { "" };
+                let kind_tag = if self.render_mode {
+                    "VIEW (e=edit, Space=check)"
+                } else if self.markdown {
+                    "MD"
+                } else {
+                    "TXT"
+                };
+                format!(
+                    " {}{}{}  Ln {}/{} Col {}  {}  {}{}{}  F10=Menu{}",
+                    self.display_name(),
+                    if self.is_dirty() { " *" } else { "" },
+                    ext,
+                    c.line + 1,
+                    self.buf.line_count(),
+                    c.col + 1,
+                    if self.wrap { "WRAP" } else { "NOWRAP" },
+                    kind_tag,
+                    shared,
+                    tasks,
+                    self.message.as_ref().map_or(String::new(), |m| format!("  | {m}")),
+                )
+            }
         };
         let mut out: String = s.chars().filter(|c| !c.is_control()).collect();
         let mut w = 0;
@@ -112,59 +139,104 @@ impl EditorState {
         self.ensure_visible(rows, cols);
         let (h, w) = self.text_area();
         let off = self.bar_rows();
-        let fences = if self.markdown { highlight::fence_states((0..self.buf.line_count()).map(|l| self.buf.line(l))) } else { Vec::new() };
-        let sel = self.buf.selection();
         let mut out = String::from("\x1b[?25l");
-        let mut row = 0;
-        let mut line = self.top;
         let mut cursor_xy = (0usize, 0usize);
-        while row < h {
-            if line >= self.buf.line_count() {
-                out.push_str(&format!("\x1b[{};1H\x1b[0;2m~\x1b[0m\x1b[K", row + 1 + off));
-                row += 1;
-                continue;
+        let version = self.buf.version();
+        if self.markdown && self.progress_cache.is_none_or(|c| c.0 != version) {
+            self.progress_cache = Some((version, super::artifact::checklist_progress(&self.buf)));
+        }
+        if self.render_mode {
+            let rw = w.saturating_sub(2);
+            let (_, _, rendered) = match self.rows_cache.take() {
+                Some(c) if c.0 == version && c.1 == rw => c,
+                _ => (version, rw, super::artifact::render_markdown_rows(&self.buf, rw)),
+            };
+            let cur_line = self.buf.cursor.line;
+            let mut start_row = rendered.iter().position(|r| r.src_line >= self.top).unwrap_or(0);
+            if let Some(cur_row) = rendered.iter().position(|r| r.src_line == cur_line) {
+                if cur_row < start_row {
+                    start_row = cur_row;
+                } else if cur_row >= start_row + h {
+                    start_row = cur_row + 1 - h;
+                }
+                if let Some(rr) = rendered.get(start_row) {
+                    self.top = rr.src_line;
+                }
             }
-            let text = self.buf.line(line);
-            let kinds = if self.markdown { highlight::classify(text, fences.get(line).copied().unwrap_or(false)) } else { Vec::new() };
-            let chars: Vec<char> = text.chars().collect();
-            let segs = segments(text, w, self.wrap);
-            for (si, &(s, e)) in segs.iter().enumerate() {
-                if row >= h {
-                    break;
-                }
+            self.rendered_rows.clear();
+            for row in 0..h {
                 out.push_str(&format!("\x1b[{};1H\x1b[0m", row + 1 + off));
-                let mut cur_style = (Kind::Plain, false);
-                let base = if self.wrap { 0 } else { self.left };
-                let mut col_abs = 0usize; // display col from segment start
-                for (i, &c) in chars.iter().enumerate().take(e).skip(s) {
-                    let cw = cell_width(c, col_abs);
-                    let abs_start = col_abs;
-                    col_abs += cw;
-                    if line == self.buf.cursor.line && i == self.buf.cursor.col {
-                        cursor_xy = (row, abs_start.saturating_sub(base));
-                    }
-                    if abs_start < base || abs_start + cw > base + w {
-                        continue;
-                    }
-                    let in_sel = sel.is_some_and(|(a, b)| (a.line, a.col) <= (line, i) && (line, i) < (b.line, b.col));
-                    let style = (kinds.get(i).copied().unwrap_or(Kind::Plain), in_sel);
-                    if style != cur_style {
-                        out.push_str(&format!("\x1b[0;{}{}m", style.0.sgr(), if style.1 { ";7" } else { "" }));
-                        cur_style = style;
-                    }
-                    if c == '\t' {
-                        out.push_str(&" ".repeat(cw));
+                if let Some(rr) = rendered.get(start_row + row) {
+                    self.rendered_rows.push((rr.src_line, rr.is_checkbox));
+                    let active = rr.src_line == cur_line;
+                    if active {
+                        out.push_str("\x1b[1;36m▸ \x1b[0m");
                     } else {
-                        out.push(c);
+                        out.push_str("  ");
                     }
-                }
-                if line == self.buf.cursor.line && self.buf.cursor.col >= e && si + 1 == segs.len() {
-                    cursor_xy = (row, col_abs.saturating_sub(base));
+                    out.push_str(&rr.ansi);
+                } else {
+                    out.push_str("\x1b[0;2m~\x1b[0m");
                 }
                 out.push_str("\x1b[0m\x1b[K");
-                row += 1;
             }
-            line += 1;
+            self.rows_cache = Some((version, rw, rendered));
+        } else {
+            self.rendered_rows.clear();
+            let fences = if self.markdown { highlight::fence_states((0..self.buf.line_count()).map(|l| self.buf.line(l))) } else { Vec::new() };
+            let sel = self.buf.selection();
+            let mut row = 0;
+            let mut line = self.top;
+            while row < h {
+                if line >= self.buf.line_count() {
+                    out.push_str(&format!("\x1b[{};1H\x1b[0;2m~\x1b[0m\x1b[K", row + 1 + off));
+                    row += 1;
+                    continue;
+                }
+                let text = self.buf.line(line);
+                let kinds = if self.markdown { highlight::classify(text, fences.get(line).copied().unwrap_or(false)) } else { Vec::new() };
+                let chars: Vec<char> = text.chars().collect();
+                let segs = segments(text, w, self.wrap);
+                for (si, &(s, e)) in segs.iter().enumerate() {
+                    if row >= h {
+                        break;
+                    }
+                    out.push_str(&format!("\x1b[{};1H\x1b[0m", row + 1 + off));
+                    let mut cur_style = (Kind::Plain, false);
+                    let base = if self.wrap { 0 } else { self.left };
+                    let mut col_abs = 0usize; // display col from segment start
+                    for (i, &c) in chars.iter().enumerate().take(e).skip(s) {
+                        let cw = cell_width(c, col_abs);
+                        let abs_start = col_abs;
+                        col_abs += cw;
+                        if line == self.buf.cursor.line && i == self.buf.cursor.col {
+                            cursor_xy = (row, abs_start.saturating_sub(base));
+                        }
+                        if abs_start < base || abs_start + cw > base + w {
+                            continue;
+                        }
+                        let in_sel = sel.is_some_and(|(a, b)| (a.line, a.col) <= (line, i) && (line, i) < (b.line, b.col));
+                        let style = (kinds.get(i).copied().unwrap_or(Kind::Plain), in_sel);
+                        if style != cur_style {
+                            out.push_str(&format!("\x1b[0;{}{}m", style.0.sgr(), if style.1 { ";7" } else { "" }));
+                            cur_style = style;
+                        }
+                        if c == '\t' {
+                            out.push_str(&" ".repeat(cw));
+                        } else if c.is_control() {
+                            out.push('\u{FFFD}');
+                        } else {
+                            out.push(c);
+                        }
+                    }
+                    if line == self.buf.cursor.line && self.buf.cursor.col >= e && si + 1 == segs.len() {
+                        cursor_xy = (row, col_abs.saturating_sub(base));
+                    }
+                    out.push_str("\x1b[0m\x1b[K");
+                    row += 1;
+                }
+                line += 1;
+            }
         }
         let status = self.status_line(w);
         out.push_str(&format!("\x1b[{};1H\x1b[0;7m{status}\x1b[0m", h + 1 + off));
@@ -175,7 +247,7 @@ impl EditorState {
                 out.push_str(&self.paint_keys_dialog(w, h + 2));
             }
         }
-        if matches!(self.mode, Mode::Edit) && !self.menu.is_active() {
+        if matches!(self.mode, Mode::Edit) && !self.menu.is_active() && !self.render_mode {
             out.push_str(&format!("\x1b[{};{}H\x1b[?25h", cursor_xy.0 + 1 + off, cursor_xy.1.min(w.saturating_sub(1)) + 1));
         }
         out
@@ -212,20 +284,43 @@ impl EditorState {
         Some(self.buf.end_pos())
     }
 
-    /// Mouse press: moves the cursor to the clicked cell and clears the selection.
+    /// Mouse press: moves the cursor to the clicked cell (or toggles a Markdown checkbox).
     pub fn click(&mut self, row: u16, col: u16) {
         if self.menu_click(row, col) {
+            return;
+        }
+        if self.render_mode {
+            if let Some(vis_row) = (row as usize).checked_sub(self.bar_rows())
+                && let Some(&(src_line, is_cb)) = self.rendered_rows.get(vis_row)
+            {
+                self.buf.anchor = None;
+                self.buf.cursor = self.buf.clamp(super::buffer::Pos { line: src_line, col: 0 });
+                self.buf.goal_col = None;
+                if is_cb {
+                    let _ = self.toggle_check();
+                }
+            }
             return;
         }
         if let Some(p) = self.pos_at(row, col) {
             self.buf.anchor = None;
             self.buf.cursor = p;
             self.buf.goal_col = None;
+            if self.markdown
+                && let Some(cb) = super::artifact::find_checkbox(self.buf.line(p.line))
+                && p.col >= cb.box_col
+                && p.col < cb.end_col
+            {
+                let _ = self.toggle_check();
+            }
         }
     }
 
     /// Mouse drag: extends the selection from where the press landed.
     pub fn drag(&mut self, row: u16, col: u16) {
+        if self.render_mode {
+            return;
+        }
         if let Some(p) = self.pos_at(row, col) {
             self.buf.anchor.get_or_insert(self.buf.cursor);
             self.buf.cursor = p;

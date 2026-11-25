@@ -14,6 +14,7 @@ pub enum MenuCmd {
     Save,
     SaveAs,
     Revert,
+    Broadcast,
     Close,
     Undo,
     Redo,
@@ -21,11 +22,13 @@ pub enum MenuCmd {
     Copy,
     Paste,
     SelectAll,
+    ToggleCheck,
     Find,
     FindNext,
     FindPrev,
     Goto,
     Wrap,
+    Render,
     Keys,
 }
 
@@ -35,6 +38,7 @@ impl MenuCmd {
         (Self::Save, "save"),
         (Self::SaveAs, "save-as"),
         (Self::Revert, "revert"),
+        (Self::Broadcast, "broadcast"),
         (Self::Close, "close"),
         (Self::Undo, "undo"),
         (Self::Redo, "redo"),
@@ -42,11 +46,13 @@ impl MenuCmd {
         (Self::Copy, "copy"),
         (Self::Paste, "paste"),
         (Self::SelectAll, "select-all"),
+        (Self::ToggleCheck, "toggle-check"),
         (Self::Find, "find"),
         (Self::FindNext, "find-next"),
         (Self::FindPrev, "find-prev"),
         (Self::Goto, "goto"),
         (Self::Wrap, "wrap"),
+        (Self::Render, "render"),
         (Self::Keys, "keys"),
     ];
 
@@ -92,6 +98,7 @@ pub const MENUS: &[Menu] = &[
             it("Save", 's', "Ctrl+S", Some(MenuCmd::Save), "Write the buffer to its file (asks for a name when it has none)"),
             it("Save As...", 'a', "Ctrl+O", Some(MenuCmd::SaveAs), "Write the buffer under a new file name"),
             it("Revert", 'r', "", Some(MenuCmd::Revert), "Reload the file from disk, discarding edits"),
+            it("Broadcast to agents", 'b', "", Some(MenuCmd::Broadcast), "Sync this artifact and notify named agents"),
             SEP,
             it("Close window", 'c', "", Some(MenuCmd::Close), "Close this editor window (a second close discards unsaved changes)"),
         ],
@@ -107,6 +114,8 @@ pub const MENUS: &[Menu] = &[
             it("Copy", 'c', "Ctrl+C", Some(MenuCmd::Copy), "Copy the selection to the clipboard"),
             it("Paste", 'p', "Ctrl+V", Some(MenuCmd::Paste), "Insert the clipboard at the cursor"),
             it("Select all", 'a', "Ctrl+A", Some(MenuCmd::SelectAll), "Select the whole buffer"),
+            SEP,
+            it("Toggle check", 'k', "Ctrl+Space", Some(MenuCmd::ToggleCheck), "Toggle a Markdown task checkbox ([ ] / [x]) on the current line"),
         ],
     },
     Menu {
@@ -125,6 +134,7 @@ pub const MENUS: &[Menu] = &[
         mnemonic: 'v',
         items: &[
             it("Soft wrap", 'w', "Ctrl+L", Some(MenuCmd::Wrap), "Toggle soft wrapping of long lines"),
+            it("Rendered view", 'r', "", Some(MenuCmd::Render), "Toggle rendered Markdown / interactive checklist reading view"),
             it("Line numbers", 'l', "", None, "Not available yet"),
         ],
     },

@@ -228,3 +228,15 @@ fn help_has_rows_for_new_verbs() {
     assert!(demo.1.contains("stop"), "the :agents demo row mentions stop");
     assert!(all.contains(":arrange"));
 }
+
+#[test]
+fn palette_ranks_command_name_matches_above_longer_commands() {
+    for q in ["broadcast", "bcast"] {
+        let mut wm = WindowManager::new_headless(40, 120);
+        open_palette_by_key(&mut wm);
+        for c in q.chars() {
+            handle_wm_key_event(&mut wm, KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)).unwrap();
+        }
+        assert_eq!(wm.filtered_palette_items().first().map(|e| e.0), Some(":broadcast"), "{q}");
+    }
+}

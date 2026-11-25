@@ -874,7 +874,7 @@ impl WindowManager {
             changed = true;
         }
         changed |= self.tick_media_canvases(tm_ms);
-        self.editor_tick();
+        changed |= self.editor_tick();
         registry::capture::tick(self, Instant::now());
         self.sync_clipboard_records();
         self.maybe_rebalance_scrollback(Instant::now());

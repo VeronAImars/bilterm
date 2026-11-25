@@ -348,3 +348,18 @@ fn op_parse_and_colon_form_roundtrip() {
     assert!(EditorOp::parse("editor", &["editor", "goto", "x"]).unwrap().is_err());
     assert!(EditorOp::parse("nope", &["nope"]).is_none());
 }
+
+#[test]
+fn rendered_rows_and_progress_are_cached_per_buffer_version() {
+    let mut ed = EditorState::open_artifact("c", std::path::PathBuf::from("/nonexistent/c.md"), Some(("# T\n- [ ] a\n- [x] b".into(), 1)));
+    ed.set_render_mode(Some(true));
+    ed.render(10, 40);
+    let v = ed.buf.version();
+    assert_eq!(ed.progress_cache, Some((v, (1, 2))));
+    let first = ed.rows_cache.as_ref().map(|c| (c.0, c.1, c.2.len())).unwrap();
+    ed.render(10, 40);
+    assert_eq!(ed.rows_cache.as_ref().map(|c| (c.0, c.1, c.2.len())), Some(first));
+    ed.paste("zzz");
+    ed.render(10, 40);
+    assert_ne!(ed.rows_cache.as_ref().unwrap().0, v);
+}

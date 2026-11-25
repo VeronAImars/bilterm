@@ -54,6 +54,12 @@ fn stamp_of(md: &fs::Metadata) -> Option<DiskStamp> {
     md.modified().ok().map(|m| (m, md.len()))
 }
 
+/// Fast `stat`-only stamp for detecting external file updates on disk.
+pub fn stat_stamp(path: &Path) -> Option<DiskStamp> {
+    let md = fs::metadata(path).ok()?;
+    md.is_file().then(|| stamp_of(&md)).flatten()
+}
+
 /// `true` when `path` does not exist yet (a new file); errors for anything that is not a regular file.
 pub fn check_regular(path: &Path) -> Result<Option<fs::Metadata>, String> {
     match fs::metadata(path) {
