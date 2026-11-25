@@ -70,6 +70,7 @@ impl VtParser {
         let newline_count = bytes.iter().filter(|&&b| b == b'\n').count();
         self.total_lines_scrolled = self.total_lines_scrolled.saturating_add(newline_count);
         let normalized = normalize_extended_sgr_for_vt100(bytes);
+        let normalized = map_scosc_scorc_to_decsc_decrc(normalized);
         // vt100-ctt does not clamp ICH / IL / SD counts; bound them to the grid first.
         let (grid_rows, grid_cols) = self.parser.screen().size();
         let normalized = self.csi_count_clamp.filter(&normalized, grid_rows.max(grid_cols));
@@ -529,6 +530,28 @@ pub(super) fn split_incomplete_utf8_tail(bytes: &[u8]) -> (&[u8], &[u8]) {
         }
     }
     (bytes, &[])
+}
+
+/// vt100-ctt implements `ESC 7` / `ESC 8` (DECSC / DECRC) but ignores the equivalent bare
+/// `CSI s` / `CSI u` (SCOSC / SCORC), so agents that save/restore the cursor that way drift and
+/// scroll. Input is whole sequences, so a literal bare `ESC [ s` / `ESC [ u` is exactly those.
+/// Parameterised forms (`CSI ? u`, `CSI > 1 u`, `CSI 1;2 s` DECSLRM) are left untouched.
+pub(super) fn map_scosc_scorc_to_decsc_decrc(bytes: Vec<u8>) -> Vec<u8> {
+    if !bytes.windows(3).any(|w| w == b"\x1b[s" || w == b"\x1b[u") {
+        return bytes;
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'[') && matches!(bytes.get(i + 2), Some(b's' | b'u')) {
+            out.extend_from_slice(if bytes[i + 2] == b's' { b"\x1b7" } else { b"\x1b8" });
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 /// Rewrites extended SGR sub-parameters (`4:1..4:5` -> `4`, `4:0` -> `24`, and strips `58;2;r;g;b` / `58:2:...`)

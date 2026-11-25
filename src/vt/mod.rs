@@ -938,3 +938,5 @@ fn vt_color_to_cell_color(color: vt100_ctt::Color) -> CellColor {
 mod tests;
 #[cfg(test)]
 mod chunking_tests;
+#[cfg(test)]
+mod garble_tests;
