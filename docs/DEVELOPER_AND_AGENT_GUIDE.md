@@ -534,6 +534,19 @@ cross-target checks, portable-test rules (`tests/common/mod.rs`) and the coverag
 (`scripts/coverage.sh`, `.github/coverage-floor.txt`) are documented in
 [`TEST_COVERAGE.md` section 8](TEST_COVERAGE.md#8-ci-matrix-per-os-gate-cross-checks-and-the-coverage-ratchet).
 
+### Security gate (`scripts/verify.sh --tier security`)
+
+Beyond the security test suites, the tier runs three optional stages through `scripts/sec-tool.sh`.
+A missing tool (or an unreachable advisory DB) prints `SKIPPED <stage>: ...` into `target/verify/skips.txt`
+and does not fail the gate.
+
+- `semgrep`: custom Rust rules in `.semgrep/bilterm.yml` (`unsafe` without `// SAFETY:`, `temp_dir()`/`/tmp`
+  outside `src/secure_fs.rs`, HTML `format!`/`write!` interpolating token/secret/api_key). Pre-existing hits are
+  baselined in `.semgrep/baseline.tsv` (rule, file, count); only an increase fails. After removing hits, ratchet
+  with `python3 scripts/semgrep-gate.py --update-baseline` and review the diff.
+- `cargo-audit` (RustSec advisories) and `cargo-deny` (`deny.toml`: advisories, licenses, bans, sources).
+- Tooling note: semgrep is Rust-aware, but `flowscope` is Python-only and cannot analyse this crate.
+
 The underlying checks, for reference:
 
 ```bash

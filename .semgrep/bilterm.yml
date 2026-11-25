@@ -1,0 +1,38 @@
+# Bilterm custom semgrep rules (Rust). Run via `scripts/verify.sh --tier security` (stage `semgrep`).
+# Existing unsafe hits are baselined in .semgrep/baseline.txt; the gate fails only on increases.
+rules:
+  - id: bilterm-unsafe-without-safety-comment
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      `unsafe` block without a `// SAFETY:` comment on the preceding (or same) line.
+      State the invariant that makes this sound.
+    # Comments are not in the AST, so match the two-line shape textually.
+    pattern-regex: '(?m)^(?![^\n]*SAFETY)[^\n]*\n(?![^\n]*SAFETY)[^\n]*\bunsafe\s*\{'
+    paths:
+      include: ["src/**", "tests/**"]
+
+  - id: bilterm-temp-path-outside-secure-fs
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Use src/secure_fs.rs (0700 dirs, 0600 atomic files) instead of std::env::temp_dir() or a
+      hard-coded /tmp path; shared temp dirs invite symlink and squatting attacks.
+    pattern-either:
+      - pattern: std::env::temp_dir()
+      - pattern: env::temp_dir()
+      - pattern-regex: '"/tmp(/[^"]*)?"'
+    paths:
+      include: ["src/**"]
+      exclude: ["src/secure_fs.rs", "**/*tests.rs", "**/*_tests.rs", "**/tests/**"]
+
+  - id: bilterm-html-interpolates-secret
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      HTML built with format!/write! interpolates an identifier named token/secret/api_key. Secrets
+      must not be rendered into markup (leaks via page source, logs, referrers); pass them out of band.
+    pattern-regex: '(format|write|writeln)!\s*\([^;"]*"[^"]*<[a-zA-Z/!][^"]*"[^;]*?\b(\w*_)?(token|secret|api_key)\b'
+    paths:
+      include: ["src/**"]
+      exclude: ["**/*tests.rs", "**/*_tests.rs", "**/tests/**"]
