@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+mod common;
+use common::ShortSocketDir;
+
 use bilterm::attach::client::link::{connect_unix, Link, LinkError};
 use bilterm::attach::client::state::{Applied, ClientState};
 use bilterm::attach::msg::{ClientMsg, ErrorCode, Role};
@@ -14,6 +17,7 @@ use tokio::net::UnixStream;
 struct Host {
     child: Child,
     dir: PathBuf,
+    _guard: ShortSocketDir,
     sock: PathBuf,
     name: String,
 }
@@ -21,9 +25,9 @@ struct Host {
 impl Host {
     fn start(tag: &str) -> Self {
         let name = format!("a7{tag}");
-        let dir = std::env::temp_dir().join(format!("bt-a7-{}", bilterm::secure_fs::unique_suffix()));
-        bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
-        let sock = dir.join(format!("host-{name}.attach.sock"));
+        let guard = ShortSocketDir::new();
+        let dir = guard.path().to_path_buf();
+        let sock = guard.sock(&format!("host-{name}.attach.sock"));
         let child = Command::new(env!("CARGO_BIN_EXE_bilterm"))
             .args(["--headless", "--host-ptys", "--attach", "--name", &name])
             .env("BILTERM_RUNTIME_DIR", &dir)
@@ -38,7 +42,7 @@ impl Host {
             assert!(Instant::now() < deadline, "host attach socket never appeared");
             std::thread::sleep(Duration::from_millis(50));
         }
-        Self { child, dir, sock, name }
+        Self { child, dir, _guard: guard, sock, name }
     }
 
     fn kill9(&mut self) {
@@ -143,8 +147,8 @@ async fn ro_client_cannot_send_input_but_sees_rw_output() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_sockets_are_clean_errors() {
-    let dir = std::env::temp_dir().join(format!("bt-a7-bad-{}", bilterm::secure_fs::unique_suffix()));
-    bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
+    let guard = ShortSocketDir::new();
+    let dir = guard.path().to_path_buf();
     // Nothing listening / no such file.
     assert!(matches!(connect_unix(&dir.join("none.sock"), Role::Rw, 80, 24).await, Err(LinkError::Io(_))));
     // A plain file at the path.

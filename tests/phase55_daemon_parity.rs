@@ -9,6 +9,8 @@
 //! - MCP tool (`bilterm_daemon`)
 //! - Cross-daemon `:find` session discovery
 
+mod common;
+
 use std::path::PathBuf;
 
 use bilterm::action::{Action, DaemonSupervisorOp};
@@ -35,7 +37,7 @@ const AREA: Rect = Rect {
 fn sandbox_runtime() -> (std::sync::MutexGuard<'static, ()>, tempfile::TempDir) {
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().expect("sandbox runtime dir");
+    let dir = common::short_tempdir();
     // SAFETY: serialized by ENV_LOCK; every test in this file goes through this function.
     unsafe {
         std::env::set_var("XDG_RUNTIME_DIR", dir.path());

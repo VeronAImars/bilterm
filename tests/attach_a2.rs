@@ -11,6 +11,9 @@ use bilterm::api::{AutomationControlPlane, JsonValue};
 use bilterm::attach::frame::{Direction, FrameReader};
 use bilterm::attach::msg::{ByeReason, ClientKind, ClientMsg, HostMsg};
 
+mod common;
+use common::ShortSocketDir;
+
 fn rpc(plane: &mut AutomationControlPlane, method: &str) -> JsonValue {
     let line = format!(r#"{{"jsonrpc":"2.0","id":1,"method":"{method}","params":{{}}}}"#);
     JsonValue::parse(&plane.handle_jsonrpc_line(&line)).expect("json")
@@ -53,10 +56,10 @@ fn recv(s: &mut UnixStream, fr: &mut FrameReader) -> HostMsg {
 
 #[test]
 fn real_host_serves_attach_handshake_and_cleans_up() {
-    let dir = std::env::temp_dir().join(format!("bt-a2-{}", bilterm::secure_fs::unique_suffix()));
-    bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
+    let guard = ShortSocketDir::new();
+    let dir = guard.path().to_path_buf();
     let exe = env!("CARGO_BIN_EXE_bilterm");
-    let sock = dir.join("host-a2.attach.sock");
+    let sock = guard.sock("host-a2.attach.sock");
     let mut child = Command::new(exe)
         .args(["--headless", "--host-ptys", "--attach", "--name", "a2"])
         .env("BILTERM_RUNTIME_DIR", &dir)

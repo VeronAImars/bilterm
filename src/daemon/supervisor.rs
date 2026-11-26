@@ -756,7 +756,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn stop_daemon_does_not_signal_pid_from_stale_lock() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::secure_fs::short_tempdir();
         let runtime_dir = tmp.path();
         // An unrelated live process whose PID ended up in a lockfile no daemon holds.
         let mut victim = Command::new("sleep").arg("30").spawn().unwrap();
@@ -782,7 +782,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn stop_daemon_treats_flocked_lock_as_live() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::secure_fs::short_tempdir();
         let runtime_dir = tmp.path();
         let sock = runtime_dir.join("live.sock");
         let DaemonLockResult::Acquired(_lock) = acquire_lock(runtime_dir, "live", sock).unwrap() else {

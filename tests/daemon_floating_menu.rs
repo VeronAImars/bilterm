@@ -5,6 +5,8 @@
 //! `:daemon status`, footer Refresh) runs under `isolated_runtime()`, which points
 //! `XDG_RUNTIME_DIR` and `TMPDIR` at a fresh `TempDir` while holding a process-wide lock.
 
+mod common;
+
 use std::ffi::OsString;
 use std::sync::{Mutex, MutexGuard};
 
@@ -53,7 +55,7 @@ impl Drop for IsolatedRuntime {
 
 fn isolated_runtime() -> IsolatedRuntime {
     let lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = common::short_tempdir();
     let keys = ["XDG_RUNTIME_DIR", "TMPDIR"];
     let prev = keys.iter().map(|k| (*k, std::env::var_os(k))).collect();
     // SAFETY: serialized by ENV_LOCK; restored in Drop.
@@ -166,7 +168,7 @@ fn gui_overlay_rect_matches_tui_rect() {
 
 #[test]
 fn refresh_lists_default_when_registry_empty() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::short_tempdir();
     let mut wm = wm_open();
     wm.refresh_daemon_window_from(dir.path());
     let w = wm.daemon_window();
@@ -341,7 +343,7 @@ impl Drop for RuntimeDirGuard {
 fn start_opens_window_showing_running_daemon_with_real_pid() {
     use bilterm::daemon::supervisor::{acquire_lock, DaemonLockResult};
     let _env = isolated_runtime();
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = common::short_tempdir();
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();

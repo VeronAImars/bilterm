@@ -1,3 +1,5 @@
+mod common;
+
 use std::process::Command;
 use std::time::Instant;
 
@@ -624,7 +626,7 @@ async fn script_api_json_parser_mcp_tools_and_unix_socket_rpc_work() {
     // 4. Test Unix Domain Socket RPC roundtrip on Unix
     #[cfg(unix)]
     {
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = common::short_tempdir();
         let sock_path = dir.path().join("bilterm-rpc.sock");
         let listener = tokio::net::UnixListener::bind(&sock_path).expect("bind unix socket");
         let sock_str = sock_path.to_string_lossy().to_string();
@@ -685,7 +687,7 @@ fn cli_binary_flags_and_subcommands_work_end_to_end() {
     assert!(String::from_utf8_lossy(&man.stdout).contains(".TH BILTERM 1"));
 
     // 5. --gui-dump <path.ppm>
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = common::short_tempdir();
     let ppm = dir.path().join("cli-dump.ppm");
     let dump = Command::new(bin)
         .args(["--gui-dump", ppm.to_str().unwrap()])

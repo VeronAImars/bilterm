@@ -688,7 +688,7 @@ mod tests {
     fn stale_socket_probe_cleans_refused_but_preserves_live_and_permission_denied() {
         use std::os::unix::fs::PermissionsExt;
 
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::secure_fs::short_tempdir();
         let sock_path = tmp.path().join("daemon.sock");
 
         // 1. Live listener -> returns Ok(true) and does NOT unlink

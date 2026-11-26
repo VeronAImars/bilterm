@@ -1,6 +1,8 @@
 //! Daemon lifecycle regression tests: registry synthesis, non-zero PIDs, stop fallback.
 #![cfg(unix)]
 
+mod common;
+
 use std::os::unix::net::UnixListener;
 use std::process::Command;
 
@@ -27,7 +29,7 @@ fn rec(pid: u32, name: &str, sock: std::path::PathBuf) -> DaemonLockRecord {
 
 #[test]
 fn list_active_synthesizes_from_live_lock() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let dir = tmp.path();
     let sock = dir.join("daemons").join("daemon-w1.sock");
     let DaemonLockResult::Acquired(_lock) = acquire_lock(dir, "w1", sock).unwrap() else {
@@ -41,7 +43,7 @@ fn list_active_synthesizes_from_live_lock() {
 
 #[test]
 fn list_active_dedupes_json_and_lock() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let dir = tmp.path();
     let sock = dir.join("daemons").join("daemon-default.sock");
     let DaemonLockResult::Acquired(_lock) = acquire_lock(dir, "default", sock.clone()).unwrap()
@@ -71,7 +73,7 @@ fn list_active_dedupes_json_and_lock() {
 #[test]
 fn list_active_ignores_dead_lock_and_stale_socket() {
     let _guard = FD_INHERIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let dir = tmp.path();
     let lock = daemon_lock_path_in(dir, "ghost").unwrap();
     std::fs::write(&lock, rec(4_000_000, "ghost", dir.join("g.sock")).to_json()).unwrap();
@@ -84,7 +86,7 @@ fn list_active_ignores_dead_lock_and_stale_socket() {
 
 #[test]
 fn list_active_synthesizes_from_live_socket() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let dir = tmp.path();
     let sp = dir.join("daemons").join("daemon-sockonly.sock");
     std::fs::create_dir_all(sp.parent().unwrap()).unwrap();
@@ -96,7 +98,7 @@ fn list_active_synthesizes_from_live_socket() {
 
 #[test]
 fn ensure_started_reports_nonzero_pid_when_already_running() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let dir = tmp.path();
     let sock = bilterm::daemon::process::session_daemon_socket_path_in(dir, "live").unwrap();
     let DaemonLockResult::Acquired(_lock) = acquire_lock(dir, "live", sock.clone()).unwrap() else {
@@ -111,7 +113,7 @@ fn ensure_started_reports_nonzero_pid_when_already_running() {
 
 #[test]
 fn ensure_started_uses_registry_when_lock_missing() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let dir = tmp.path();
     let sock = bilterm::daemon::process::session_daemon_socket_path_in(dir, "reg").unwrap();
     let _l = UnixListener::bind(&sock).unwrap();
@@ -141,7 +143,7 @@ fn ensure_started_uses_registry_when_lock_missing() {
 #[test]
 fn stop_daemon_falls_back_to_registry_and_kills_live_pid() {
     let _guard = FD_INHERIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let dir = tmp.path();
     let mut child = Command::new("sleep").arg("30").spawn().unwrap();
     let sock = bilterm::daemon::process::session_daemon_socket_path_in(dir, "orphan").unwrap();

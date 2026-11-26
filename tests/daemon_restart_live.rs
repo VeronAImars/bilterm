@@ -2,6 +2,8 @@
 //! shell keeps its pid, the terminal keeps every byte, and the old process is gone.
 #![cfg(unix)]
 
+mod common;
+
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -69,7 +71,7 @@ fn shell_pid(screen: &str) -> Option<u32> {
 
 #[test]
 fn live_restart_keeps_shell_pid_and_terminal_content() {
-    let dir = std::env::temp_dir().join(format!("bt-lr-{}", bilterm::secure_fs::unique_suffix()));
+    let dir = common::short_root().join(format!("bt-lr-{}", bilterm::secure_fs::unique_suffix()));
     bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
     let mut old = spawn_host(&dir, "lr");
     let old_pid = old.id();
@@ -114,7 +116,7 @@ fn live_restart_keeps_shell_pid_and_terminal_content() {
 
 #[test]
 fn live_restart_of_a_missing_or_modelonly_daemon_is_refused_cleanly() {
-    let dir = std::env::temp_dir().join(format!("bt-lr2-{}", bilterm::secure_fs::unique_suffix()));
+    let dir = common::short_root().join(format!("bt-lr2-{}", bilterm::secure_fs::unique_suffix()));
     bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
     let (out, code) = run(&dir, &["daemon", "restart", "--live", "nope"]);
     assert_eq!(code, 1, "{out}");
@@ -127,7 +129,7 @@ fn live_restart_of_a_missing_or_modelonly_daemon_is_refused_cleanly() {
 
 #[test]
 fn transfer_between_two_real_hosts_via_cli() {
-    let dir = std::env::temp_dir().join(format!("bt-tr-{}", bilterm::secure_fs::unique_suffix()));
+    let dir = common::short_root().join(format!("bt-tr-{}", bilterm::secure_fs::unique_suffix()));
     bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
     let mut a = spawn_host(&dir, "ta");
     let mut b = spawn_host(&dir, "tb");

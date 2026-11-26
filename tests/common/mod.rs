@@ -116,7 +116,7 @@ pub struct IsolatedEnv {
 
 impl IsolatedEnv {
     pub fn new() -> Self {
-        let root = tempfile::tempdir().expect("create isolated env root");
+        let root = short_tempdir();
         for d in ["home", "config", "state", "data", "runtime", "appdata/roaming", "appdata/local", "tmp"] {
             let dir = root.path().join(d);
             std::fs::create_dir_all(&dir).expect("create isolated env dir");
@@ -242,4 +242,75 @@ pub fn stdout_of(o: &Output) -> String {
 
 pub fn stderr_of(o: &Output) -> String {
     String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+/// Longest socket path we accept: macOS `sun_path` is 104 bytes including the NUL.
+#[cfg(unix)]
+pub const SUN_PATH_MAX: usize = 103;
+
+/// A private (0700) directory under a SHORT root (`/tmp/bt-<pid>-<n>`) for Unix-socket tests.
+///
+/// `std::env::temp_dir()` is unusable for sockets on macOS (per-user `$TMPDIR` is ~50 bytes, and
+/// `sun_path` is 104), so tests that bind or spawn something that binds a socket must root it here.
+/// Removed on drop.
+#[cfg(unix)]
+pub struct ShortSocketDir {
+    path: PathBuf,
+}
+
+#[cfg(unix)]
+impl ShortSocketDir {
+    pub fn new() -> Self {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+        let root = if Path::new("/tmp").is_dir() { PathBuf::from("/tmp") } else { std::env::temp_dir() };
+        let path = root.join(format!("bt-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        bilterm::secure_fs::create_private_dir_all(&path).expect("create short socket dir");
+        Self { path }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// `<dir>/<name>`, failing fast with a clear message if it would overflow `sun_path`.
+    pub fn sock(&self, name: &str) -> PathBuf {
+        let p = self.path.join(name);
+        assert_sock_path_fits(&p);
+        p
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ShortSocketDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Panics with an actionable message when `p` cannot be a Unix socket path.
+#[cfg(unix)]
+pub fn assert_sock_path_fits(p: &Path) {
+    let n = p.as_os_str().len();
+    assert!(
+        n <= SUN_PATH_MAX,
+        "socket path is {n} bytes (limit {SUN_PATH_MAX}): {}; root socket tests at a short dir (common::ShortSocketDir), not std::env::temp_dir()",
+        p.display()
+    );
+}
+
+/// Short parent for temp dirs that will hold Unix sockets: `/tmp` on Unix (macOS's per-user
+/// `$TMPDIR` plus a socket name overflows the 104-byte `sun_path`), `temp_dir()` elsewhere.
+pub fn short_root() -> PathBuf {
+    if cfg!(unix) && Path::new("/tmp").is_dir() {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    }
+}
+
+/// Drop-in for `tempfile::tempdir()` that lives under [`short_root`] with a short name
+/// (`/tmp/btXXXXXX`), so sockets created inside it fit in `sun_path`.
+pub fn short_tempdir() -> tempfile::TempDir {
+    tempfile::Builder::new().prefix("bt").tempdir_in(short_root()).expect("short tempdir")
 }

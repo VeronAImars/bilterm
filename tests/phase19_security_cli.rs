@@ -1,3 +1,5 @@
+mod common;
+
 use std::process::Command;
 
 #[test]
@@ -35,7 +37,7 @@ fn headless_allow_remote_requires_token_file() {
 fn headless_rejects_world_readable_token_file() {
     use std::os::unix::fs::PermissionsExt;
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = common::short_tempdir();
     let token_file = temp_dir.path().join("insecure.token");
     let sock_path = temp_dir.path().join("test.sock");
     std::fs::write(&token_file, b"0123456789abcdef01234567\n").unwrap();
@@ -71,7 +73,7 @@ fn headless_rejects_world_readable_token_file() {
 fn headless_unix_socket_roundtrip_with_ctl() {
     use std::os::unix::fs::PermissionsExt;
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = common::short_tempdir();
     let sock_path = temp_dir.path().join("roundtrip.sock");
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_bilterm"))
@@ -125,7 +127,7 @@ fn headless_unix_socket_roundtrip_with_ctl() {
 #[test]
 #[cfg(unix)]
 fn ctl_token_flow() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = common::short_tempdir();
     let sock_path = temp_dir.path().join("auth.sock");
     let token_file = temp_dir.path().join("bilterm.token");
     let token = "my-secret-auth-token-12345";

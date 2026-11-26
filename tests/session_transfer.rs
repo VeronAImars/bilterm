@@ -2,6 +2,8 @@
 //! duplicated, terminal state preserved, and rollback leaves the old session working.
 #![cfg(unix)]
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -13,7 +15,7 @@ use bilterm::wm::WindowManager;
 const T: Duration = Duration::from_secs(20);
 
 fn tmp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("bt-xfer-{tag}-{}", bilterm::secure_fs::unique_suffix()));
+    let d = common::short_root().join(format!("bt-xfer-{tag}-{}", bilterm::secure_fs::unique_suffix()));
     bilterm::secure_fs::create_private_dir_all(&d).unwrap();
     d
 }

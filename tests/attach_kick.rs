@@ -12,12 +12,16 @@ use bilterm::attach::client::link::{connect_unix, Link};
 use bilterm::attach::client::state::{Applied, ClientState};
 use bilterm::attach::client::tui::bye_outcome;
 use bilterm::attach::client::EXIT_KICKED;
+mod common;
+use common::ShortSocketDir;
+
 use bilterm::attach::msg::{ByeReason, ClientMsg, ErrorCode, Role};
 use tokio::net::UnixStream;
 
 struct Host {
     child: Child,
     dir: PathBuf,
+    _guard: ShortSocketDir,
     sock: PathBuf,
     name: String,
 }
@@ -25,10 +29,9 @@ struct Host {
 impl Host {
     fn start(tag: &str) -> Self {
         let name = format!("kk{tag}");
-        let dir =
-            std::env::temp_dir().join(format!("bt-kick-{}", bilterm::secure_fs::unique_suffix()));
-        bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
-        let sock = dir.join(format!("host-{name}.attach.sock"));
+        let guard = ShortSocketDir::new();
+        let dir = guard.path().to_path_buf();
+        let sock = guard.sock(&format!("host-{name}.attach.sock"));
         let child = Command::new(env!("CARGO_BIN_EXE_bilterm"))
             .args(["--headless", "--host-ptys", "--attach", "--name", &name])
             .env("BILTERM_RUNTIME_DIR", &dir)
@@ -49,6 +52,7 @@ impl Host {
         Self {
             child,
             dir,
+            _guard: guard,
             sock,
             name,
         }

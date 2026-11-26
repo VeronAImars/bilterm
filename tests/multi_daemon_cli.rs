@@ -2,6 +2,8 @@
 //! socket, and are listed / targeted / stopped by name from the CLI.
 #![cfg(unix)]
 
+mod common;
+
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -14,7 +16,7 @@ struct Sandbox {
 
 impl Sandbox {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = common::short_tempdir();
         for d in ["home", "run", "state", "config"] {
             std::fs::create_dir(root.path().join(d)).unwrap();
         }
