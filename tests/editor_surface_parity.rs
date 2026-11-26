@@ -23,6 +23,8 @@ fn sandbox() -> (std::sync::MutexGuard<'static, ()>, tempfile::TempDir) {
         std::env::set_var("XDG_CONFIG_HOME", d.path().join("config"));
         std::env::set_var("HOME", d.path());
     }
+    // API file verbs are confined to the editor's working directory (`editor_path_denied`).
+    std::env::set_current_dir(d.path()).unwrap();
     (g, d)
 }
 

@@ -1345,7 +1345,9 @@ All API-originated operations (invoked via RPC `wm.command` or MCP `bilterm_colo
    ```
    config writes over the API are disabled; set [api] allow_config_write = true in config.toml
    ```
-3. **Protection of `[api]` Section**:
+3. **Artifact-only switch `[api] allow_artifact_write`** (default `false`): allows only `editor.artifact` and `editor.broadcast` (and their colon, MCP and `bilterm ctl` forms) so an agent can share artifacts without the broad switch. `allow_config_write = true` also allows them (backwards compatible). It does not allow `:set`, config save, DOS, key changes, system browser launch or any editor file verb (`open` with a path, `save`, `save_as`, `revert`). Refusal message: `editor artifact and broadcast over the API are disabled; set [api] allow_artifact_write = true (or allow_config_write = true) in config.toml`.
+4. **Editor path confinement**: even with `allow_config_write = true`, `editor.open <path>`, `editor.save` and `editor.save_as` over the API only touch files under the editor window's working directory. The deepest existing ancestor of the path is canonicalised, so `..`, absolute paths elsewhere, symlinked directories, symlinks to files outside, dangling symlinks, Windows device names (`NUL`, `con.txt`, `COM1`, ...) and UNC/`\\.\` paths are refused. Overwriting an existing file still needs `force: true`. Local (keyboard, colon) callers are not confined.
+5. **Protection of `[api]` Section**:
    Even when `allow_config_write = true`, any attempt to modify keys in the `[api]` section over the API is unconditionally refused:
    ```
    the [api] section cannot be changed over the API

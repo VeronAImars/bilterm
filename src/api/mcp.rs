@@ -368,7 +368,7 @@ impl AutomationControlPlane {
             ),
             Self::mcp_tool_schema(
                 "bilterm_editor",
-                "Built-in text/markdown editor window, scratchpad, and live ContextBus-backed shared artifact editor. Same verbs as `:edit`, `:scratch`, `:artifact`, and `:editor ...`. open (with path), save, save_as and revert touch host files and need [api] allow_config_write; overwriting needs force=true. Plain UTF-8 text only, regular files only, 4 MiB max.",
+                "Built-in text/markdown editor window, scratchpad, and live ContextBus-backed shared artifact editor. Same verbs as `:edit`, `:scratch`, `:artifact`, and `:editor ...`. open (with path), save, save_as and revert touch host files, need [api] allow_config_write and must stay under the editor working directory; artifact and broadcast need [api] allow_artifact_write (or allow_config_write); overwriting needs force=true. Plain UTF-8 text only, regular files only, 4 MiB max.",
                 &[
                     ("action", "string", "Operation: open | scratch | artifact | save | save_as | wrap | render | check | broadcast | find | undo | redo | goto | revert | insert | text | status | close | menu"),
                     ("path", "string", "With open (optional; omitted = new unnamed buffer) or save_as"),

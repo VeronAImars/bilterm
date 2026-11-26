@@ -50,6 +50,57 @@ pub fn resolve_path(raw: &str, cwd: &Path) -> Result<PathBuf, String> {
     Ok(if p.is_absolute() { p } else { cwd.join(p) })
 }
 
+/// `true` when a path component names a Windows device (`CON`, `NUL`, `COM1`, ...), with or without
+/// an extension or trailing dots/spaces (`nul.txt`, `CON.`): such a name opens the device on Windows.
+fn is_device_component(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").trim_end_matches([' ', ':']);
+    let up = stem.to_ascii_uppercase();
+    matches!(up.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || ["COM", "LPT"].iter().any(|p| up.strip_prefix(p).is_some_and(|d| d.len() == 1 && d.as_bytes()[0].is_ascii_digit()))
+}
+
+/// Confines a host `path` to `root` for API callers (`SEC-R01`). The deepest existing ancestor of
+/// `path` is canonicalised (resolving every symlink and `..` along it), the not-yet-existing tail
+/// must be plain names, and the result must stay inside the canonical `root`. A target that exists
+/// is canonicalised too, so a symlink pointing outside is refused, and a dangling symlink is refused
+/// because writing through it would create its target elsewhere. Windows device names, `\\.\` and
+/// `\\?\` prefixes and UNC shares are refused. Returns the confined absolute path.
+pub fn confine_to_root(path: &Path, root: &Path) -> Result<PathBuf, String> {
+    use std::path::Component;
+    let deny = |why: &str| format!("{}: {why}; API callers may only use files under {}", path.display(), root.display());
+    let root = fs::canonicalize(root).map_err(|e| format!("{}: workspace root unavailable: {e}", root.display()))?;
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut base = path.to_path_buf();
+    // Walk up to the deepest ancestor that exists (a dangling symlink counts as existing).
+    while fs::symlink_metadata(&base).is_err() {
+        let Some(name) = base.file_name().map(|n| n.to_os_string()) else { return Err(deny("no existing ancestor (or '..' in a path that does not exist yet)")) };
+        tail.push(name);
+        if !base.pop() {
+            return Err(deny("no existing ancestor"));
+        }
+    }
+    for c in path.components() {
+        match c {
+            Component::Prefix(p) => {
+                let s = p.as_os_str().to_string_lossy();
+                if s.starts_with("\\\\") || s.starts_with("//") {
+                    return Err(deny("UNC, device and verbatim paths are refused"));
+                }
+            }
+            Component::Normal(n) if is_device_component(&n.to_string_lossy()) => return Err(deny("reserved device name")),
+            _ => {}
+        }
+    }
+    let mut full = fs::canonicalize(&base).map_err(|e| deny(&format!("cannot resolve ({e})")))?;
+    for n in tail.iter().rev() {
+        full.push(n);
+    }
+    if !full.starts_with(&root) {
+        return Err(deny("outside the workspace root"));
+    }
+    Ok(full)
+}
+
 fn stamp_of(md: &fs::Metadata) -> Option<DiskStamp> {
     md.modified().ok().map(|m| (m, md.len()))
 }

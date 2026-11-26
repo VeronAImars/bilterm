@@ -18,6 +18,10 @@ use super::BiltermConfig;
 pub struct ApiConfig {
     /// Allows `:set`, `:config save` and `:appearance save` over the API (default `false`).
     pub allow_config_write: bool,
+    /// Allows only `editor.artifact` and `editor.broadcast` over the API (default `false`), without
+    /// the broad `allow_config_write`. Never settable over the API. `allow_config_write = true`
+    /// also allows these two verbs.
+    pub allow_artifact_write: bool,
     /// Allows agent-to-agent messaging and coordination (`AGT-01..03`, Phase 52).
     pub allow_agent_messaging: bool,
 }
