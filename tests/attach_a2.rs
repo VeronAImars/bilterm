@@ -68,7 +68,11 @@ fn real_host_serves_attach_handshake_and_cleans_up() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    wait_for(|| sock.exists(), "attach socket");
+    // The file appears at bind(); the 0600 chmod and listen() follow, so wait for the final mode.
+    wait_for(
+        || std::fs::metadata(&sock).is_ok_and(|m| m.permissions().mode() & 0o777 == 0o600),
+        "attach socket",
+    );
     assert_eq!(std::fs::metadata(&sock).unwrap().permissions().mode() & 0o777, 0o600);
 
     let mut s = UnixStream::connect(&sock).unwrap();
