@@ -101,7 +101,16 @@ fn ready(st: &mut ClientState, _: &Errors) -> bool {
 }
 
 async fn attach(host: &Host, role: Role) -> (Link<UnixStream>, ClientState, Errors) {
-    let link = connect_unix(&host.sock, role, 80, 24).await.expect("connect");
+    // The socket file appears at bind(), a hair before listen(): retry a refused connect briefly.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let link = loop {
+        match connect_unix(&host.sock, role, 80, 24).await {
+            Err(LinkError::Io(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused && Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            r => break r.expect("connect"),
+        }
+    };
     let st = ClientState::new(link.info.client_id);
     (link, st, Vec::new())
 }
