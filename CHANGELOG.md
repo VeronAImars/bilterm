@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-25
+
 ### Added
 - MCP resources: shared `artifact:*` `ContextBus` entries are listed and readable as `bilterm://context/artifact:<name>` (`text/markdown`, read-only, scoped to the `artifact:` prefix, capped at the 64 KiB bus value limit). `resources/list` uses a metadata-only bus listing (no value clones) with `cursor`/`nextCursor` pagination (100 entries per page), keys are percent-encoded in URIs, artifact content is labelled untrusted data, and unknown resources return `-32002`. See `docs/API.md` section 5.
+- Opt-in TUI pixel rendering (images/media in the terminal UI) with theme mapping; placements are bounded, throttled and cleared safely.
+- Shared ContextBus artifacts in the built-in editor, with live checklists, compare-and-set sync, and gated, restricted broadcast. Editor artifact and broadcast operations over the API are gated by `allow_config_write`.
+- Security gate: `scripts/verify.sh --tier security` adds semgrep rules, `cargo audit` and `cargo deny` stages (each skips gracefully when the tool is missing), with a baseline count gate.
+
+### Fixed
+- Bare `ESC[s` / `ESC[u` (SCOSC/SCORC) are now mapped to save/restore cursor; the VT engine ignored them, which made spinner redraws scroll the screen (seen with agy).
+- GUI: redundant per-frame resizes are guarded (also keyed on layout), and framed multi-pane browser textures align to the inner canvas.
+- Command palette ranks command-name matches above fuzzy hits in longer commands.
+- `validate_safe_name` rejects Windows reserved device names.
+- MCP: the `bilterm_editor` error lists the artifact, render, check and broadcast actions.
 
 ## [3.4.4] - 2026-11-22
 
