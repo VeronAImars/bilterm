@@ -429,6 +429,23 @@ pub fn validate_safe_name(name: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
+/// Test-only: parent for temp dirs holding Unix sockets. macOS's per-user `$TMPDIR` (~50 bytes)
+/// plus a socket name overflows `sun_path` (104), so socket tests root under `/tmp` instead.
+#[cfg(test)]
+pub(crate) fn short_test_root() -> std::path::PathBuf {
+    if cfg!(unix) && std::path::Path::new("/tmp").is_dir() {
+        "/tmp".into()
+    } else {
+        std::env::temp_dir()
+    }
+}
+
+/// Test-only drop-in for `tempfile::tempdir()` rooted at [`short_test_root`] (`/tmp/btXXXXXX`).
+#[cfg(test)]
+pub(crate) fn short_tempdir() -> tempfile::TempDir {
+    tempfile::Builder::new().prefix("bt").tempdir_in(short_test_root()).expect("short tempdir")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -720,21 +737,4 @@ mod tests {
         let too_long = "a".repeat(65);
         assert!(validate_safe_name(&too_long).is_err());
     }
-}
-
-/// Test-only: parent for temp dirs holding Unix sockets. macOS's per-user `$TMPDIR` (~50 bytes)
-/// plus a socket name overflows `sun_path` (104), so socket tests root under `/tmp` instead.
-#[cfg(test)]
-pub(crate) fn short_test_root() -> std::path::PathBuf {
-    if cfg!(unix) && std::path::Path::new("/tmp").is_dir() {
-        "/tmp".into()
-    } else {
-        std::env::temp_dir()
-    }
-}
-
-/// Test-only drop-in for `tempfile::tempdir()` rooted at [`short_test_root`] (`/tmp/btXXXXXX`).
-#[cfg(test)]
-pub(crate) fn short_tempdir() -> tempfile::TempDir {
-    tempfile::Builder::new().prefix("bt").tempdir_in(short_test_root()).expect("short tempdir")
 }
