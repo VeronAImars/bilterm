@@ -11,7 +11,7 @@
 # `build-windows-vm.sh` to drive a Windows 11 ARM VM (win-devvm) instead.
 #
 # Usage:
-#   ./scripts/build-release-mac-win.sh [vX.Y.Z] [--upload] [--windows] [--windows-arm64] [--no-build]
+#   ./scripts/build-release-mac-win.sh [vX.Y.Z] [--upload] [--windows] [--windows-arm64] [--no-build] [--dos] [--dry-run]
 #
 #   vX.Y.Z           Release tag (default: v<version in Cargo.toml>). Checked out clean
 #                    in a temporary git worktree so local changes never leak in.
@@ -21,6 +21,12 @@
 #   --no-build       Skip building; upload archives already in the dist dir
 #                    (e.g. pulled back from a VM). Implies nothing without --upload.
 #
+#   --dos            DOS-mode variant: adds the `dos` cargo feature (appended to
+#                    $BILTERM_FEATURES; BILTERM_FEATURES=dos is equivalent), names archives
+#                    bilterm-<tag>-dos-<triple>.* and SKIPS the unversioned
+#                    `bilterm-<triple>.*` aliases so `latest` assets are never replaced.
+#   --dry-run        Print the cargo commands and archive names; build nothing.
+#
 #   CARGO_TARGET_DIR is honoured (keeps the build cache between runs).
 #
 # Output: target/release-dist/<tag>/ (same names the installers expect:
@@ -29,20 +35,37 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/release-dos.sh
+source "$REPO_ROOT/scripts/lib/release-dos.sh"
 REPO="${BILTERM_GITHUB_REPO:-bsommers/bilterm}"
-TAG=""; UPLOAD=0; BUILD=1; WIN_TRIPLES=()
+TAG=""; UPLOAD=0; BUILD=1; WIN_TRIPLES=(); DRY=0
 for a in "$@"; do
     case "$a" in
         --upload) UPLOAD=1 ;;
         --no-build) BUILD=0 ;;
+        --dos) ;;
+        --dry-run) DRY=1 ;;
         --windows) WIN_TRIPLES+=(x86_64-pc-windows-msvc) ;;
         --windows-arm64) WIN_TRIPLES+=(aarch64-pc-windows-msvc) ;;
         v*) TAG="$a" ;;
         *) echo "unknown argument: $a" >&2; exit 2 ;;
     esac
 done
+release_dos_init "$@"
 TAG="${TAG:-v$(awk -F'"' '/^version = / {print $2; exit}' "$REPO_ROOT/Cargo.toml")}"
 WINDOWS=0; [[ ${#WIN_TRIPLES[@]} -gt 0 ]] && WINDOWS=1
+
+if [[ $DRY -eq 1 ]]; then
+    if [[ $WINDOWS -eq 1 ]]; then dry_triples=("${WIN_TRIPLES[@]}"); ext=zip
+    else dry_triples=(aarch64-apple-darwin x86_64-apple-darwin); ext=tar.gz; fi
+    for t in "${dry_triples[@]}"; do
+        echo "cargo build --release --target $t $(release_cargo_feature_args)"
+        echo "  archive: $(release_archive_name "$TAG" "$t").$ext"
+        alias_n="$(release_alias_name "$t")"
+        if [[ -n "$alias_n" ]]; then echo "  alias:   $alias_n.$ext"; else echo "  alias:   (skipped for DOS)"; fi
+    done
+    exit 0
+fi
 
 if [[ $BUILD -eq 1 && $WINDOWS -eq 0 && "$(uname -s)" != "Darwin" ]]; then
     echo "error: macOS targets must be built on macOS (needs the macOS SDK)." >&2
@@ -60,9 +83,10 @@ if [[ $BUILD -eq 1 ]]; then
 fi
 
 pkg_unix() {
-    local triple="$1" name="bilterm-$TAG-$1"
+    local triple="$1" name alias_n
+    name="$(release_archive_name "$TAG" "$1")"; alias_n="$(release_alias_name "$1")"
     rustup target add "$triple"
-    (cd "$WT" && cargo build --release --target "$triple")
+    (cd "$WT" && cargo build --release --target "$triple" ${RELEASE_FEATURES:+--features "$RELEASE_FEATURES"})
     mkdir -p "$DIST/$name"
     cp "$TGT/$triple/release/bilterm" "$DIST/$name/"
     chmod 0755 "$DIST/$name/bilterm"
@@ -71,14 +95,15 @@ pkg_unix() {
     fi
     cp "$WT"/{README.md,LICENSE,CHANGELOG.md} "$DIST/$name/"
     tar -czf "$DIST/$name.tar.gz" -C "$DIST" "$name"
-    cp "$DIST/$name.tar.gz" "$DIST/bilterm-$triple.tar.gz"
+    if [[ -n "$alias_n" ]]; then cp "$DIST/$name.tar.gz" "$DIST/$alias_n.tar.gz"; fi
     rm -rf "${DIST:?}/$name"
 }
 
 pkg_windows() {
-    local triple="$1" name="bilterm-$TAG-$1"
+    local triple="$1" name alias_n
+    name="$(release_archive_name "$TAG" "$1")"; alias_n="$(release_alias_name "$1")"
     rustup target add "$triple"
-    (cd "$WT" && cargo build --release --target "$triple")
+    (cd "$WT" && cargo build --release --target "$triple" ${RELEASE_FEATURES:+--features "$RELEASE_FEATURES"})
     mkdir -p "$DIST/$name"
     cp "$TGT/$triple/release/bilterm.exe" "$DIST/$name/"
     cp "$WT"/{README.md,LICENSE,CHANGELOG.md} "$DIST/$name/"
@@ -98,7 +123,7 @@ pkg_windows() {
     if unzip -Z1 "$DIST/$name.zip" 2>/dev/null | grep -q '\\'; then
         echo "error: $name.zip has '\\' in entry names" >&2; exit 1
     fi
-    cp "$DIST/$name.zip" "$DIST/bilterm-$triple.zip"
+    if [[ -n "$alias_n" ]]; then cp "$DIST/$name.zip" "$DIST/$alias_n.zip"; fi
     rm -rf "${DIST:?}/$name"
 }
 
@@ -114,6 +139,8 @@ if [[ $UPLOAD -eq 1 ]]; then
     # Only this run's platform(s); nullglob so a missing .zip/.tar.gz isn't fatal.
     if [[ $WINDOWS -eq 1 ]]; then pat="$(IFS='|'; echo "${WIN_TRIPLES[*]}")"; else pat=apple-darwin; fi
     new=$(cd "$DIST" && shopt -s nullglob && printf '%s\n' bilterm-*.tar.gz bilterm-*.zip | grep -E "$pat" || true)
+    # DOS runs ship only -dos- archives; normal runs never pick them up.
+    if [[ $RELEASE_DOS -eq 1 ]]; then new=$(grep -- '-dos-' <<<"$new" || true); else new=$(grep -v -- '-dos-' <<<"$new" || true); fi
     [[ -n "$new" ]] || { echo "error: no archives matching '$pat' in $DIST" >&2; exit 1; }
     # Merge with the checksums already on the release, then upload new assets.
     rm -rf "$DIST/prev"
