@@ -450,7 +450,16 @@ fn handle_api(sub: &str, method: &str, body: &[u8], shared: &SharedPreview) -> (
             let name = v.get("name").and_then(JsonValue::as_str).unwrap_or("").to_ascii_lowercase();
             let raw_text = v.get("text").and_then(JsonValue::as_str).unwrap_or("");
             let clean_text = sanitize_multiline(raw_text);
-            let expected_rev = v.get("expected_revision").and_then(JsonValue::as_i64).and_then(|n| u64::try_from(n).ok());
+            let Some(expected_rev) = v
+                .get("expected_revision")
+                .and_then(JsonValue::as_i64)
+                .and_then(|n| u64::try_from(n).ok())
+            else {
+                return (
+                    "400 Bad Request",
+                    r#"{"ok":false,"error":"expected_revision required"}"#.into(),
+                );
+            };
             if let Err(e) = crate::secure_fs::validate_safe_name(&name) {
                 return (
                     "400 Bad Request",
@@ -459,10 +468,8 @@ fn handle_api(sub: &str, method: &str, body: &[u8], shared: &SharedPreview) -> (
             }
             let _guard = shared.save_lock.lock().unwrap_or_else(|e| e.into_inner());
             let key = artifact_bus_key(&name);
-            let bus_res = match expected_rev {
-                Some(exp) => shared.bus.set_if_revision(&key, &clean_text, None, exp),
-                None => shared.bus.set(&key, &clean_text, None),
-            };
+            let previous = shared.bus.get(&key).map(|e| e.value);
+            let bus_res = shared.bus.set_if_revision(&key, &clean_text, None, expected_rev);
             let rev = match bus_res {
                 Ok(rev) => rev,
                 Err(ContextBusError::Conflict { actual, .. }) => {
@@ -486,6 +493,10 @@ fn handle_api(sub: &str, method: &str, body: &[u8], shared: &SharedPreview) -> (
             };
             if let Err(e) = persist_artifact(shared, &name, &clean_text) {
                 tracing::warn!("artifact studio persist failed for '{name}': {e}");
+                // Keep bus and disk consistent: restore the pre-save text (bumps the revision).
+                if let Some(prev) = &previous {
+                    let _ = shared.bus.set(&key, prev, None);
+                }
                 return (
                     "500 Internal Server Error",
                     JsonValue::obj([("ok", JsonValue::Bool(false)), ("error", JsonValue::String(e))]).to_json_string(),
@@ -544,9 +555,15 @@ fn handle_api(sub: &str, method: &str, body: &[u8], shared: &SharedPreview) -> (
                 );
             }
             let _guard = shared.save_lock.lock().unwrap_or_else(|e| e.into_inner());
-            let deleted = shared.bus.delete(&artifact_bus_key(&name));
+            let del_key = artifact_bus_key(&name);
+            let previous = shared.bus.get(&del_key).map(|e| e.value);
+            let deleted = shared.bus.delete(&del_key);
             if deleted && let Err(e) = remove_persisted_artifact(shared, &name) {
                 tracing::warn!("artifact studio delete persist failed for '{name}': {e}");
+                // Keep bus and disk consistent: put the artifact back.
+                if let Some(prev) = &previous {
+                    let _ = shared.bus.set(&del_key, prev, None);
+                }
                 return (
                     "500 Internal Server Error",
                     JsonValue::obj([("ok", JsonValue::Bool(false)), ("error", JsonValue::String(e))]).to_json_string(),
@@ -890,9 +907,18 @@ mod tests {
         // Unwritable persist_dir (a regular file instead of directory) yields a 500 error report
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let bad_shared = test_shared(None, Some(tmp.path().to_path_buf()));
-        let (st, res) = handle_api("/api/save", "POST", br#"{"name":"plan","text":"fail"}"#, &bad_shared);
+        let bad_rev = bad_shared.bus.get(&artifact_bus_key("plan")).unwrap().revision;
+        let bad_payload = format!(r#"{{"name":"plan","text":"fail","expected_revision":{bad_rev}}}"#);
+        let (st, res) = handle_api("/api/save", "POST", bad_payload.as_bytes(), &bad_shared);
         assert_eq!(st, "500 Internal Server Error", "{res}");
         assert!(res.contains("\"ok\":false"), "{res}");
+        // Failed persist rolls the bus back to the pre-save text.
+        assert_eq!(bad_shared.bus.get(&artifact_bus_key("plan")).unwrap().value, "# Plan\nParagraph here\n- [ ] Task 1");
+
+        // Missing expected_revision is refused rather than clobbering.
+        let (st, res) = handle_api("/api/save", "POST", br#"{"name":"plan","text":"x"}"#, &shared);
+        assert_eq!(st, "400 Bad Request", "{res}");
+        assert!(res.contains("expected_revision required"), "{res}");
     }
 
     #[test]
@@ -910,8 +936,9 @@ mod tests {
         assert_eq!(st, "200 OK");
         assert!(res.contains("\"name\":\"v1-0-spec\""), "{res}");
 
-        let payload = br##"{"name":"plan","text":"# Plan\nUpdated instruction paragraph!\n- [x] Task 1"}"##;
-        let (st, res) = handle_api("/api/save", "POST", payload, &shared);
+        let rev = shared.bus.get(&artifact_bus_key("plan")).unwrap().revision;
+        let payload = format!(r##"{{"name":"plan","text":"# Plan\nUpdated instruction paragraph!\n- [x] Task 1","expected_revision":{rev}}}"##);
+        let (st, res) = handle_api("/api/save", "POST", payload.as_bytes(), &shared);
         assert_eq!(st, "200 OK");
         assert!(res.contains("\"ok\":true"), "{res}");
 

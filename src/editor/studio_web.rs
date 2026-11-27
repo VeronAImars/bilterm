@@ -233,7 +233,8 @@ async function api(path, body) {
 }
 
 async function saveText(name, text, quiet, expectedRev) {
-  const exp = typeof expectedRev === "number" ? expectedRev : lastRevByName[name];
+  const known = (docs.find(d => d.name === name) || {}).revision;
+  const exp = typeof expectedRev === "number" ? expectedRev : (typeof lastRevByName[name] === "number" ? lastRevByName[name] : known);
   const payload = typeof exp === "number" ? { name, text, expected_revision: exp } : { name, text };
   const r = await api("/api/save", payload);
   if (!r.ok) {
@@ -533,8 +534,9 @@ function insertSampleUi() {
 
 function injectIframeCsp(html) {
   const meta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'">`;
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head[^>]*>/i, m => m + meta);
+  const headRe = /<head(?:\s[^>]*)?>/i;
+  if (headRe.test(html)) {
+    return html.replace(headRe, m => m + meta);
   }
   return meta + html;
 }
