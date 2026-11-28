@@ -76,6 +76,12 @@ pub struct DaemonSessionSummary {
 }
 
 /// Wire protocol requests accepted by the background session daemon (`DAEM-01`, `DAEM-02`).
+///
+/// Note (P2 T-A8 decision, `docs/plans/session-host-p2-attach.md` §11 Q3): `Attach`, `Detach`, and
+/// `ResizeClient` here drive the in-process `:mcp attach` / [`SessionTree`] viewport model via
+/// [`BackgroundDaemon::handle_request`]. Out-of-process session-host clients (`bilterm attach
+/// <host|socket> [--ro]`) use the `BTHS` v1 framing protocol in [`crate::attach`] over the sibling
+/// `host-<name>.attach.sock` socket instead.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DaemonRequest {
     Ping,
