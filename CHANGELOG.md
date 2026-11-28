@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `[api] allow_artifact_write` (default off, never settable over the API): lets API callers use only `editor.artifact` and `editor.broadcast` without the broad `allow_config_write` (which still allows them).
+- Release scripts (`build-release-assets.sh`, `build-release-mac-win.sh`, `build-windows-vm.sh`) gain `--dos` (or `BILTERM_FEATURES=dos`) to build the DOS-mode variant: `dos` cargo feature, `bilterm-<tag>-dos-<triple>` archives, and no unversioned `latest` aliases. Also `--dry-run` and `scripts/tests/release_dos_names_test.sh`.
 
 ### Security
 - Editor file verbs over the API (`editor.open` with a path, `save`, `save_as`) are now confined to the editor window's working directory: `..`, absolute paths outside it, symlink escapes, dangling symlinks, and Windows device/UNC names are refused. Local callers are unchanged.

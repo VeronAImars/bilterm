@@ -9,12 +9,14 @@
 # optionally smoke-tests them in the guest and uploads them from this host.
 #
 # Usage:
-#   ./scripts/build-windows-vm.sh [vX.Y.Z] [--arch arm64|x64|all] [--test] [--cargo-test] [--upload]
+#   ./scripts/build-windows-vm.sh [vX.Y.Z] [--arch arm64|x64|all] [--test] [--cargo-test] [--upload] [--dos]
 #
 #   vX.Y.Z        Tag to build (default: v<version in Cargo.toml>). Must exist locally.
 #   --arch        arm64 (default) | x64 | all — Windows targets to build in the guest.
 #   --test        Install + smoke-test each archive in the guest (windows-smoke-test.ps1).
 #   --cargo-test  Also run `cargo test --release` natively in the guest (slow).
+#   --dos         DOS-mode variant (`dos` cargo feature, bilterm-<tag>-dos-<triple>.zip,
+#                 no unversioned aliases); also enabled by BILTERM_FEATURES=dos.
 #   --upload      Attach the archives to the GitHub release (merged SHA256SUMS), from this host.
 #
 #   WIN_DEVVM_DIR  win-devvm checkout (default: ../win-devvm next to this repo)
@@ -27,6 +29,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VMDIR="${WIN_DEVVM_DIR:-$ROOT/../win-devvm}"
 VM="$VMDIR/vm.sh"
+# shellcheck source=lib/release-dos.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/release-dos.sh"
 TAG=""; ARCH=arm64; TEST=0; CARGO_TEST=0; UPLOAD=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -34,11 +38,14 @@ while [[ $# -gt 0 ]]; do
         --test) TEST=1 ;;
         --cargo-test) CARGO_TEST=1 ;;
         --upload) UPLOAD=1 ;;
+        --dos) ;;
         v*) TAG="$1" ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
 done
+release_dos_init "$@"
+DOSFLAG=(); [[ $RELEASE_DOS -eq 1 ]] && DOSFLAG=(--dos)
 TAG="${TAG:-v$(awk -F'"' '/^version = / {print $2; exit}' "$ROOT/Cargo.toml")}"
 case "$ARCH" in
     arm64) FLAGS=(--windows-arm64); TRIPLES=(aarch64-pc-windows-msvc) ;;
@@ -81,16 +88,17 @@ EOS
 gbash() { "$VM" ssh "& 'C:\\Program Files\\Git\\bin\\bash.exe' -l bt/run.sh $*"; }
 
 echo "==> building ${TRIPLES[*]} in the guest"
-gbash build "$TAG" "${FLAGS[@]}"
+gbash build "$TAG" "${FLAGS[@]}" ${DOSFLAG[@]+"${DOSFLAG[@]}"}
 
 echo "==> pulling archives into $DIST"
 for t in "${TRIPLES[@]}"; do
-    for f in "bilterm-$TAG-$t.zip" "bilterm-$t.zip"; do
+    vname="$(release_archive_name "$TAG" "$t")"; aname="$(release_alias_name "$t")"
+    for f in "$vname.zip" ${aname:+"$aname.zip"}; do
         "$VM" pull "bt/src/target/release-dist/$TAG/$f" "$DIST/$f"
     done
-    zip="$DIST/bilterm-$TAG-$t.zip"
+    zip="$DIST/$vname.zip"
     if unzip -Z1 "$zip" | grep -q '\\'; then echo "error: $zip has '\\' in entry names" >&2; exit 1; fi
-    unzip -p "$zip" "bilterm-$TAG-$t/bilterm.exe" > "$TMP/b.exe"
+    unzip -p "$zip" "$vname/bilterm.exe" > "$TMP/b.exe"
     echo "    $t: $(file -b "$TMP/b.exe")"
 done
 
@@ -98,7 +106,7 @@ rc=0
 if [[ $TEST -eq 1 ]]; then
     for t in "${TRIPLES[@]}"; do
         echo "==> smoke test $t in the guest"
-        gbash test -Archive "target/release-dist/$TAG/bilterm-$TAG-$t.zip" -ExpectArch "${t%%-*}" || rc=1
+        gbash test -Archive "target/release-dist/$TAG/$(release_archive_name "$TAG" "$t").zip" -ExpectArch "${t%%-*}" || rc=1
     done
 fi
 if [[ $CARGO_TEST -eq 1 ]]; then
@@ -108,7 +116,7 @@ fi
 [[ $rc -eq 0 ]] || { echo "error: guest tests failed; not uploading" >&2; exit 1; }
 
 if [[ $UPLOAD -eq 1 ]]; then
-    "$ROOT/scripts/build-release-mac-win.sh" "$TAG" "${FLAGS[@]}" --no-build --upload
+    "$ROOT/scripts/build-release-mac-win.sh" "$TAG" "${FLAGS[@]}" ${DOSFLAG[@]+"${DOSFLAG[@]}"} --no-build --upload
 else
     echo "Built in $DIST (re-run with --upload to attach to the release)"
 fi
