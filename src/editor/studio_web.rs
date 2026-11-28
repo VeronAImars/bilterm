@@ -662,3 +662,48 @@ setInterval(() => poll(false), 1200);
 </html>"###;
     format!("{head}const BASE = {base_js};\nlet activeName = {init_js};\n{body}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::studio_app_html;
+
+    fn extract_inject_fn(html: &str) -> String {
+        let start = html.find("function injectIframeCsp(").expect("injectIframeCsp present");
+        let rest = &html[start..];
+        let end = rest.find("\n}\n").expect("function end") + 3;
+        rest[..end].to_string()
+    }
+
+    #[test]
+    fn inject_iframe_csp_head_regex_requires_head_boundary() {
+        let f = extract_inject_fn(&studio_app_html("/t", "plan"));
+        // Source-level: the regex must require whitespace, `>` after `<head`, so `<header>` never matches.
+        assert!(f.contains(r"/<head(?:\s[^>]*)?>/i"), "{f}");
+    }
+
+    #[test]
+    fn inject_iframe_csp_behaviour_under_node() {
+        let Ok(ver) = std::process::Command::new("node").arg("--version").output() else {
+            eprintln!("node missing; skipping");
+            return;
+        };
+        if !ver.status.success() {
+            return;
+        }
+        let f = extract_inject_fn(&studio_app_html("/t", "plan"));
+        let script = format!(
+            "{f}\nconst a = injectIframeCsp('<header>x</header><p>y</p>');\n\
+             if (!a.startsWith('<meta http-equiv=\"Content-Security-Policy\"')) throw new Error('header: meta not prepended: ' + a);\n\
+             if (a.indexOf('<header>') < a.indexOf('<meta')) throw new Error('meta inside/after header');\n\
+             const b = injectIframeCsp('<html><head lang=\"en\"><title>t</title></head><body></body></html>');\n\
+             if (!b.includes('<head lang=\"en\"><meta http-equiv')) throw new Error('head not injected: ' + b);\n\
+             const c = injectIframeCsp('<HEAD><title>t</title></HEAD>');\n\
+             if (!c.startsWith('<HEAD><meta')) throw new Error('uppercase: ' + c);\n"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("t.js");
+        std::fs::write(&p, script).unwrap();
+        let out = std::process::Command::new("node").arg(&p).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+}

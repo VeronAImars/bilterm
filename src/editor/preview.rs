@@ -922,6 +922,19 @@ mod tests {
     }
 
     #[test]
+    fn api_delete_rolls_back_bus_when_persist_removal_fails() {
+        // A regular file used as persist_dir makes removal fail with a non-NotFound error.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let shared = test_shared(None, Some(tmp.path().to_path_buf()));
+        let key = artifact_bus_key("plan");
+        let before = shared.bus.get(&key).unwrap().value;
+        let (st, res) = handle_api("/api/delete", "POST", br#"{"name":"plan"}"#, &shared);
+        assert_eq!(st, "500 Internal Server Error", "{res}");
+        assert!(res.contains("\"ok\":false"), "{res}");
+        assert_eq!(shared.bus.get(&key).expect("bus entry restored").value, before);
+    }
+
+    #[test]
     fn slugify_strips_dots_and_api_crud_and_broadcast_work_end_to_end() {
         assert_eq!(slugify_artifact_name("README.md"), "readme-md");
         assert_eq!(slugify_artifact_name("v1.0 spec"), "v1-0-spec");
