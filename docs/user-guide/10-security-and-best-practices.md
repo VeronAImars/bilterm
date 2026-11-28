@@ -137,6 +137,8 @@ User key bindings (`[keys.bind]`, and the older `[keybindings]` table) are check
 
 **Caps.** `[keys.bind]` and `[keys.window_mode]` accept at most 512 entries, and a chord string may be at most 64 characters. Larger tables or longer chords are rejected at load, so a hostile or generated config cannot inflate the keymap.
 
+**Editor over the API.** `editor.artifact` and `editor.broadcast` need `[api] allow_artifact_write = true` (or the broader `allow_config_write`); editor file verbs need `allow_config_write` and are confined to the editor window's working directory (no `..`, outside absolute paths, symlink escapes or Windows device/UNC names). Neither flag can be set over the API.
+
 **API clients.** Over JSON-RPC or MCP, switching the key profile, entering Window mode and opening the menu bar are refused unless `[api] allow_config_write = true`; listing, checking and explaining chords are always read-only (see [API reference](../API.md#keyboard-surface-keys-menuopen-and-bilterm_keys-phase-63)).
 
 The `[keys]` table itself (profiles, `legacy_alt`, `kitty_protocol`, `bind`, `unbind`) is described in [Chapter 6](06-keyboard-mouse-and-command-reference.md).

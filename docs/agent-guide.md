@@ -75,6 +75,6 @@ structured interfaces instead of screen scraping or blind `sleep` loops. This te
 ### 7. Hard rules
 - Bearer tokens go in a `0600` file (`-t FILE` or `BILTERM_TOKEN_FILE`), never on argv.
 - Config writes over the API (`:set KEY VALUE`, `:config save`, `:appearance save`) are refused unless the
-  user set `[api] allow_config_write = true`; do not try to work around that.
+  user set `[api] allow_config_write = true`; do not try to work around that. Sharing editor artifacts (`editor.artifact`, `editor.broadcast`) only needs the narrower `[api] allow_artifact_write = true`. Editor file paths over the API must stay under the editor window's working directory.
 - Snapshot and export paths are plain file names inside Bilterm's own directories; `..` and `/`
   are rejected.

@@ -108,11 +108,11 @@ impl WindowManager {
 
     /// Executes `Action::Editor`. Outcomes go to the status bar and the structured command data.
     pub fn apply_editor_op(&mut self, op: EditorOp) {
-        if self.is_api_origin()
-            && op.touches_files()
-            && !self.config.api.allow_config_write
-        {
-            return self.editor_reply(false, "editor file access over the API is disabled; set [api] allow_config_write = true in config.toml".into(), vec![]);
+        if self.is_api_origin() {
+            let denied = self.editor_write_denied(&op).or_else(|| self.editor_path_denied(self.editor_target(), &op));
+            if let Some(msg) = denied {
+                return self.editor_reply(false, msg, vec![]);
+            }
         }
         match op {
             EditorOp::Open { path } => self.editor_open(path),

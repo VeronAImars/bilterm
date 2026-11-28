@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `[api] allow_artifact_write` (default off, never settable over the API): lets API callers use only `editor.artifact` and `editor.broadcast` without the broad `allow_config_write` (which still allows them).
+
+### Security
+- Editor file verbs over the API (`editor.open` with a path, `save`, `save_as`) are now confined to the editor window's working directory: `..`, absolute paths outside it, symlink escapes, dangling symlinks, and Windows device/UNC names are refused. Local callers are unchanged.
+
 ## [3.5.0] - 2026-11-25
 
 ### Added

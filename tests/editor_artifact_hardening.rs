@@ -19,6 +19,8 @@ fn sandbox() -> (std::sync::MutexGuard<'static, ()>, tempfile::TempDir) {
         std::env::set_var("XDG_CONFIG_HOME", d.path().join("config"));
         std::env::set_var("HOME", d.path());
     }
+    // API file verbs are confined to the editor's working directory (`editor_path_denied`).
+    std::env::set_current_dir(d.path()).unwrap();
     (g, d)
 }
 
@@ -112,6 +114,35 @@ fn artifact_and_broadcast_are_gated_for_api_callers() {
     let e = cp.dispatch_method("editor.broadcast", &json("{}")).unwrap_err();
     assert!(e.contains("shared artifact"), "{e}");
     assert!(cp.wm.context_bus().list(None).iter().all(|e| !e.value.contains("top secret")));
+}
+
+#[test]
+fn narrow_artifact_flag_allows_artifact_and_broadcast_only() {
+    let (_g, d) = sandbox();
+    let mut cp = AutomationControlPlane::new_headless(30, 100);
+    cp.wm.config_mut().api.allow_artifact_write = true;
+    assert!(!cp.wm.config().api.allow_config_write);
+    cp.dispatch_method("editor.artifact", &json(r#"{"name":"n"}"#)).unwrap();
+    cp.dispatch_method("editor.broadcast", &json("{}")).unwrap();
+    // Host file verbs and config writes stay behind allow_config_write.
+    let f = d.path().join("x.md");
+    let p = json(&format!(r#"{{"path":"{}"}}"#, f.display()));
+    for m in ["editor.save_as", "editor.open"] {
+        let e = cp.dispatch_method(m, &p).unwrap_err();
+        assert!(e.contains("allow_config_write"), "{m}: {e}");
+    }
+    assert!(!f.exists());
+    // The colon form over wm.command is gated the same way.
+    let e = cp.dispatch_method("wm.command", &json(r#"{"command":":set theme dark"}"#)).unwrap_err();
+    assert!(e.contains("allow_config_write"), "{e}");
+    // The flag itself cannot be set over the API.
+    let e = cp.dispatch_method("wm.command", &json(r#"{"command":":set api.allow_artifact_write true"}"#)).unwrap_err();
+    assert!(e.contains("[api] section"), "{e}");
+}
+
+#[test]
+fn artifact_flag_defaults_off() {
+    assert!(!bilterm::config::dotted::ApiConfig::default().allow_artifact_write);
 }
 
 #[test]

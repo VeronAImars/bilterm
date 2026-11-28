@@ -1,7 +1,9 @@
 //! JSON-RPC handlers for `editor.*` (`EDIT-01`, `UNI-R01`): every method builds an
 //! `Action::Editor` and runs it through `WindowManager::apply`, the same path as `:edit`,
 //! `:scratch` and `:editor ...`. File verbs (open with a path, save, save_as, revert) need
-//! `[api] allow_config_write`; overwriting needs an explicit `force: true`.
+//! `[api] allow_config_write` and are confined to the editor's working directory; `artifact` and
+//! `broadcast` need `[api] allow_artifact_write` (or `allow_config_write`); overwriting needs an
+//! explicit `force: true`.
 
 use super::json::JsonValue;
 use super::rpc::{AutomationControlPlane, SnapshotPolicy};
@@ -77,7 +79,12 @@ impl AutomationControlPlane {
             return Err(err);
         }
         self.wm.take_command_data();
-        self.apply_with_policy(action, SnapshotPolicy::Trusted)?;
+        // API origin: apply_editor_op re-checks the gates and confines host paths to the workspace.
+        let prev = self.wm.is_api_origin();
+        self.wm.set_api_origin(true);
+        let applied = self.apply_with_policy(action, SnapshotPolicy::Trusted);
+        self.wm.set_api_origin(prev);
+        applied?;
         let data = self.wm.take_command_data().ok_or_else(|| format!("no {method} data"))?;
         let v = JsonValue::parse(&data).ok_or_else(|| format!("invalid {method} data"))?;
         if v.get("status").and_then(JsonValue::as_str) == Some("error") {

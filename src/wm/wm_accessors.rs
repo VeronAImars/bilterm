@@ -33,6 +33,44 @@ impl WindowManager {
         self.command_data.take()
     }
 
+    /// Why the editor verb `op` must be refused for an API-originated caller. File verbs need
+    /// `[api] allow_config_write`; the shared-artifact verbs (`editor.artifact`, `editor.broadcast`)
+    /// need `[api] allow_artifact_write` or the broader `allow_config_write`.
+    pub fn editor_write_denied(&self, op: &crate::editor::EditorOp) -> Option<String> {
+        let api = &self.config.api;
+        if op.touches_files() && !api.allow_config_write {
+            return Some("editor file access over the API is disabled; set [api] allow_config_write = true in config.toml".to_string());
+        }
+        if op.shares_artifacts() && !api.allow_config_write && !api.allow_artifact_write {
+            return Some("editor artifact and broadcast over the API are disabled; set [api] allow_artifact_write = true (or allow_config_write = true) in config.toml".to_string());
+        }
+        None
+    }
+
+    /// Why an API-originated editor verb must be refused because its host path leaves the editor's
+    /// workspace root (the window's working directory). `None` when allowed or not path-bearing.
+    pub fn editor_path_denied(&self, id: Option<crate::pane::PaneId>, op: &crate::editor::EditorOp) -> Option<String> {
+        use crate::editor::EditorOp;
+        use crate::editor::io;
+        let check = |raw: Option<&str>, bound: Option<&std::path::Path>, cwd: &std::path::Path| -> Option<String> {
+            let p = match (raw, bound) {
+                (Some(r), _) => io::resolve_path(r, cwd).ok()?,
+                (None, Some(b)) => b.to_path_buf(),
+                _ => return None,
+            };
+            io::confine_to_root(&p, cwd).err()
+        };
+        let ed = id.and_then(|i| self.panes.get(&i)).and_then(|p| p.editor());
+        match op {
+            EditorOp::Open { path: Some(raw) } => check(Some(raw), None, &self.active_pane().resolve_cwd()),
+            EditorOp::SaveAs { path, .. } => ed.and_then(|e| check(Some(path), None, &e.cwd)),
+            EditorOp::Save { .. } | EditorOp::Menu(crate::editor::MenuOp::Do(crate::editor::MenuCmd::Save)) => {
+                ed.and_then(|e| check(None, e.path.as_deref(), &e.cwd))
+            }
+            _ => None,
+        }
+    }
+
     /// Why `action` must be refused for an API-originated caller (config write gate, `[api]`).
     /// Returns `None` when the action is allowed. Local (non-API) callers are never gated.
     pub fn config_write_denied(&self, action: &Action) -> Option<String> {
@@ -44,8 +82,7 @@ impl WindowManager {
         }
         // Editor verbs that read or write host files are mutations too (`editor.*` RPC, MCP, `wm.command`).
         if let Action::Editor(op) = action {
-            return (op.touches_files() && !self.config.api.allow_config_write)
-                .then(|| "editor file access over the API is disabled; set [api] allow_config_write = true in config.toml".to_string());
+            return self.editor_write_denied(op);
         }
         // DOS lifecycle verbs that download, delete or overwrite images are mutations too.
         let dos_mutates = match action {
