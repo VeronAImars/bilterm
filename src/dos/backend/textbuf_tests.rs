@@ -201,22 +201,29 @@ fn run_loop_forwards_keys_and_streams_frames() {
     let (mut b, _t) = attached(g.clone(), None);
     let (tx, rx) = channel::<Vec<DosKey>>();
     let stop = AtomicBool::new(false);
-    let frames = Arc::new(Mutex::new(Vec::<String>::new()));
-    let f2 = frames.clone();
+    let (ftx, frx) = channel::<String>();
     let h = std::thread::spawn(move || {
         run_loop(&mut b, &rx, &stop, |_, s| {
-            f2.lock().unwrap().push(s.lines()[0].clone());
+            let _ = ftx.send(s.lines()[0].clone());
         })
     });
     tx.send(vec![DosKey::Char('h'), DosKey::Char('i')]).unwrap();
-    let t0 = Instant::now();
-    while !frames.lock().unwrap().iter().any(|l| l.starts_with("hi")) {
-        assert!(t0.elapsed() < Duration::from_secs(5), "frame with typed text never arrived");
-        std::thread::sleep(Duration::from_millis(10));
+    // Condition wait on the frame channel (no sleep polling); generous bound only for hangs.
+    let mut frames = Vec::<String>::new();
+    loop {
+        let l = frx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("frame with typed text never arrived");
+        let done = l.starts_with("hi");
+        frames.push(l);
+        if done {
+            break;
+        }
     }
     drop(tx);
     assert!(h.join().unwrap().is_ok());
-    let n = frames.lock().unwrap().len();
+    frames.extend(frx.try_iter());
+    let n = frames.len();
     assert!((2..=6).contains(&n), "{n} frames: initial + changes only");
     assert_eq!(g.lock().unwrap().keys.len(), 2);
 }
