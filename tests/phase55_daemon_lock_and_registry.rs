@@ -1,5 +1,7 @@
 //! Phase 55 Wave 1 Test Suite: Singleton Lock, Stale-Lock Recovery, and Daemon Registry (`DAEM-05`, `DAEM-06`, `SEC-R01..03`).
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -28,7 +30,7 @@ fn test_validate_safe_name_boundaries() {
 
 #[test]
 fn test_singleton_lock_and_recovery() {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::short_tempdir();
     let runtime_dir = tmp.path();
     let sock_path = runtime_dir.join("daemons/daemon-default.sock");
 
@@ -95,7 +97,7 @@ fn test_singleton_lock_and_recovery() {
 
 #[test]
 fn test_multi_daemon_isolation() {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::short_tempdir();
     let runtime_dir = tmp.path();
 
     let sock_1 = runtime_dir.join("daemons/daemon-worker-1.sock");
@@ -123,7 +125,7 @@ fn test_multi_daemon_isolation() {
 
 #[test]
 fn test_daemon_registry_lifecycle_and_pruning() {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::short_tempdir();
     let runtime_dir = tmp.path();
 
     let entry_1 = DaemonRegistryEntry {

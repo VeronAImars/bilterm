@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn bare_name_selects_host_only_when_its_socket_exists() {
-        let dir = std::env::temp_dir().join(format!("bt-a7-name-{}", crate::secure_fs::unique_suffix()));
+        let dir = crate::secure_fs::short_test_root().join(format!("bt-a7-name-{}", crate::secure_fs::unique_suffix()));
         std::fs::create_dir_all(&dir).unwrap();
         assert!(!is_host_attach_in(&v(&["attach", "dev"]), &dir));
         std::fs::write(dir.join("host-dev.attach.sock"), b"").unwrap();
@@ -214,7 +214,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn socket_check_rejects_missing_and_non_sockets() {
-        let dir = std::env::temp_dir().join(format!("bt-a7-sock-{}", crate::secure_fs::unique_suffix()));
+        let dir = crate::secure_fs::short_test_root().join(format!("bt-a7-sock-{}", crate::secure_fs::unique_suffix()));
         crate::secure_fs::create_private_dir_all(&dir).unwrap();
         assert!(check_socket_file(&dir.join("nope.sock")).unwrap_err().contains("no attach socket"));
         let f = dir.join("f.sock");

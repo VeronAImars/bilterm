@@ -1,6 +1,8 @@
 //! P1 session host (`docs/plans/session-host-architecture.md`): opt-in PTY-owning headless daemon.
 #![cfg(unix)]
 
+mod common;
+
 use std::time::{Duration, Instant};
 
 use bilterm::api::{AutomationControlPlane, JsonValue};
@@ -75,7 +77,7 @@ fn wait_for(mut f: impl FnMut() -> bool, what: &str) {
 #[test]
 fn host_state_file_lifecycle_across_real_daemon() {
     use std::process::{Command, Stdio};
-    let dir = std::env::temp_dir().join(format!("bt-p1life-{}", bilterm::secure_fs::unique_suffix()));
+    let dir = common::short_root().join(format!("bt-p1life-{}", bilterm::secure_fs::unique_suffix()));
     bilterm::secure_fs::create_private_dir_all(&dir).unwrap();
     let exe = env!("CARGO_BIN_EXE_bilterm");
     let state = dir.join("host-p1life.state");

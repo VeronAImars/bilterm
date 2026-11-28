@@ -2,6 +2,8 @@
 //! panes without ever binding `instances/<pid>.sock`. `GuiLive` is what they now start and pump.
 #![cfg(unix)]
 
+mod common;
+
 use bilterm::api::live::GuiLive;
 use bilterm::api::instance_registry::{instance_socket_path, list_live_instances};
 use bilterm::wm::WindowManager;
@@ -9,7 +11,7 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn gui_instance_binds_serves_and_cleans_up_its_socket_despite_inherited_env() {
-    let root = tempfile::tempdir().unwrap();
+    let root = common::short_tempdir();
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();

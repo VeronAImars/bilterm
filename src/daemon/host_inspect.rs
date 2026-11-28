@@ -70,7 +70,7 @@ mod tests {
     }
 
     fn tmp() -> PathBuf {
-        let d = std::env::temp_dir().join(format!("bt-hinsp-{}", crate::secure_fs::unique_suffix()));
+        let d = crate::secure_fs::short_test_root().join(format!("bt-hinsp-{}", crate::secure_fs::unique_suffix()));
         crate::secure_fs::create_private_dir_all(&d).unwrap();
         d
     }

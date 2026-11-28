@@ -1,5 +1,7 @@
 //! Phase 55 Wave 2 Test Suite: Daemon Lifecycle, RPC, MCP, Colon Commands, and Version Handshake (`DAEM-05`, `DAEM-07`, `DAEM-08`).
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -157,7 +159,7 @@ fn test_version_mismatch_diagnostic() {
 
 #[test]
 fn test_graceful_stop_and_cleanup() {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::short_tempdir();
     let runtime_dir = tmp.path();
 
     // Setup a dummy registered daemon with lockfile

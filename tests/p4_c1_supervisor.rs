@@ -20,7 +20,7 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 /// Throwaway runtime dir; serialized because it sets process env.
 fn sandbox() -> (MutexGuard<'static, ()>, tempfile::TempDir) {
     let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().expect("sandbox");
+    let dir = common::short_tempdir();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

@@ -277,7 +277,7 @@ fn fast_long() -> ConnConfig {
 #[tokio::test]
 async fn real_unix_socket_is_0600_and_speaks_the_handshake() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = std::env::temp_dir().join(format!("bt-a2-{}", crate::secure_fs::unique_suffix()));
+    let dir = crate::secure_fs::short_test_root().join(format!("bt-a2-{}", crate::secure_fs::unique_suffix()));
     crate::secure_fs::create_private_dir_all(&dir).unwrap();
     let path = super::listener::attach_socket_path_in(&dir, "t").unwrap();
     assert!(path.ends_with("host-t.attach.sock"));

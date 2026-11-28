@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn list_status_and_endpoint_on_empty_runtime_dir() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::secure_fs::short_tempdir();
         let (text, code) = run(&DaemonCmd::List { json: false }, dir.path());
         assert!(text.starts_with("No bilterm daemons running"), "{text}");
         assert_eq!(code, 0);
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn lists_and_resolves_a_lock_holding_daemon() {
         use crate::daemon::supervisor::{acquire_lock, DaemonLockResult};
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::secure_fs::short_tempdir();
         let sock = dir.path().join("custom.sock");
         let DaemonLockResult::Acquired(lock) = acquire_lock(dir.path(), "alpha", sock.clone()).unwrap() else {
             panic!("expected to acquire the lock");

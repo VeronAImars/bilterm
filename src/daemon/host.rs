@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn read_rejects_oversized_and_garbage_files_without_panic() {
-        let dir = std::env::temp_dir().join(format!("bt-host-{}", crate::secure_fs::unique_suffix()));
+        let dir = crate::secure_fs::short_test_root().join(format!("bt-host-{}", crate::secure_fs::unique_suffix()));
         crate::secure_fs::create_private_dir_all(&dir).unwrap();
         let big = dir.join("host-big.state");
         std::fs::write(&big, vec![b'B'; HEADER_LEN + MAX_HOST_FRAME_BYTES + 100]).unwrap();
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn state_file_is_private_and_validated() {
-        let dir = std::env::temp_dir().join(format!("bt-host-{}", crate::secure_fs::unique_suffix()));
+        let dir = crate::secure_fs::short_test_root().join(format!("bt-host-{}", crate::secure_fs::unique_suffix()));
         crate::secure_fs::create_private_dir_all(&dir).unwrap();
         assert!(host_state_path_in(&dir, "../x").is_err());
         let p = host_state_path_in(&dir, "h").unwrap();

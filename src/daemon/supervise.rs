@@ -718,7 +718,7 @@ mod tests {
             last_exit_cause: Some(ExitCause::Limit),
         };
         assert_eq!(SupervisorRecord::from_json(&rec.to_json()), Ok(rec.clone()));
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::secure_fs::short_tempdir();
         write_supervisor_record(dir.path(), &rec).unwrap();
         assert_eq!(read_supervisor_record(dir.path(), "w"), Some(rec));
         clear_supervisor_record(dir.path(), "w");

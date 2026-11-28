@@ -186,7 +186,7 @@ fn default_socket_path_rejects_overlong_path() {
 fn load_token_file_enforces_private_mode() {
     use std::os::unix::fs::PermissionsExt;
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = crate::secure_fs::short_tempdir();
     let token_path = temp_dir.path().join("token.secret");
     crate::secure_fs::write_private_file(&token_path, b"0123456789abcdef0123\n").unwrap();
 
@@ -325,7 +325,7 @@ async fn tokenless_server_accepts_auth_login() {
 async fn unix_socket_server_is_0600_and_roundtrips() {
     use std::os::unix::fs::PermissionsExt;
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = crate::secure_fs::short_tempdir();
     let sock_path = temp_dir.path().join("bilterm.sock");
     let cfg = ListenConfig {
         endpoint: ListenEndpoint::Unix(sock_path.clone()),
@@ -367,7 +367,7 @@ async fn unix_socket_server_is_0600_and_roundtrips() {
 #[tokio::test]
 #[cfg(unix)]
 async fn unix_socket_stale_file_is_replaced() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = crate::secure_fs::short_tempdir();
     let sock_path = temp_dir.path().join("stale.sock");
     {
         let _ = std::os::unix::net::UnixListener::bind(&sock_path).unwrap();
@@ -405,7 +405,7 @@ async fn unix_socket_stale_file_is_replaced() {
 #[tokio::test]
 #[cfg(unix)]
 async fn unix_socket_live_daemon_is_not_stolen() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = crate::secure_fs::short_tempdir();
     let sock_path = temp_dir.path().join("live.sock");
     let cfg1 = ListenConfig {
         endpoint: ListenEndpoint::Unix(sock_path.clone()),
@@ -502,7 +502,7 @@ async fn client_wrong_token_is_error() {
 #[tokio::test]
 #[cfg(unix)]
 async fn client_unix_prefix_endpoint() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = crate::secure_fs::short_tempdir();
     let sock_path = temp_dir.path().join("bilterm.sock");
     let cfg = ListenConfig {
         endpoint: ListenEndpoint::Unix(sock_path.clone()),

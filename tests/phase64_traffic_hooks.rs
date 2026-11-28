@@ -1,6 +1,8 @@
 //! Phase 64-02 (`TMON-01`, `TMON-02`, `TMON-05`): per-hook byte-boundary tests with real PTYs,
 //! in-memory streams and loopback sockets; conservation on the real `WindowManager`.
 
+mod common;
+
 #[path = "support/phase60.rs"]
 mod support;
 
@@ -154,7 +156,7 @@ fn live_pty_pane_input_is_counted_at_the_pty_only() {
 #[cfg(target_os = "linux")]
 #[test]
 fn tick_adopts_local_and_ssh_panes_idempotently() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::short_tempdir();
     let ssh = dir.path().join("ssh");
     std::os::unix::fs::symlink("/bin/sleep", &ssh).unwrap();
     let mut wm = WindowManager::new_headless(24, 80);
@@ -279,7 +281,7 @@ async fn metered_counts_exact_bytes_including_partial_writes() {
 async fn rpc_unix_connection_is_metered() {
     let plane = AutomationControlPlane::new_headless(24, 80);
     let meter = plane.wm.traffic_meter();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::short_tempdir();
     let path = dir.path().join("rpc.sock");
     let listener = tokio::net::UnixListener::bind(&path).unwrap();
     tokio::spawn(bilterm::api::serve_jsonrpc_unix(listener, plane, None));

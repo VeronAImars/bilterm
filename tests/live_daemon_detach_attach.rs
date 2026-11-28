@@ -10,6 +10,8 @@
 // Daemon sockets and signals are Unix-only; the imports they need are unused on other targets.
 #![cfg_attr(not(unix), allow(unused_imports))]
 
+mod common;
+
 use ratatui::layout::Rect;
 
 use bilterm::api::{AutomationControlPlane, JsonValue};
@@ -28,7 +30,7 @@ fn sanitize_session_name_and_socket_path_confinement() {
     assert_eq!(sanitize_session_name("../../../"), "default");
     assert_eq!(sanitize_session_name(""), "default");
 
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let sock = session_daemon_socket_path_in(tmp.path(), "../evil/session\0name").unwrap();
     assert_eq!(
         sock,
@@ -42,7 +44,7 @@ fn sanitize_session_name_and_socket_path_confinement() {
 fn probe_and_list_active_daemon_sessions_unlinks_stale_and_keeps_live_sockets() {
     use std::os::unix::net::UnixListener;
 
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let live_sock = session_daemon_socket_path_in(tmp.path(), "alpha-live").unwrap();
     let stale_sock = session_daemon_socket_path_in(tmp.path(), "beta-stale").unwrap();
 
@@ -82,7 +84,7 @@ fn probe_and_list_active_daemon_sessions_unlinks_stale_and_keeps_live_sockets() 
 
 #[test]
 fn rpc_session_save_and_restore_preserves_split_tree_zstack_and_pane_output() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::short_tempdir();
     let sess_dir = tmp.path().join("sessions");
     std::fs::create_dir_all(&sess_dir).unwrap();
 

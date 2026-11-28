@@ -89,13 +89,13 @@ mod tests {
 
     #[test]
     fn auto_name_is_first_free() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::secure_fs::short_tempdir();
         assert_eq!(next_free_name(dir.path()), "daemon-1");
     }
 
     #[test]
     fn rejects_invalid_names() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::secure_fs::short_tempdir();
         assert!(check_new_name(dir.path(), "../x").is_err());
         assert!(check_new_name(dir.path(), "a b").is_err());
         assert_eq!(check_new_name(dir.path(), "ok-1").unwrap(), "ok-1");
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn existing_crashed_record_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::secure_fs::short_tempdir();
         // A lock record for a dead pid reads as `crashed`.
         let lock = crate::daemon::supervisor::daemon_lock_path_in(dir.path(), "old").unwrap();
         let rec = crate::daemon::supervisor::DaemonLockRecord {

@@ -5,6 +5,8 @@
 //! required fields, target (`bilterm::link`), log levels, and zero leakage of typed passwords,
 //! identity-file paths, pane screen text, or the legacy string `Attached`.
 
+mod common;
+
 use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
@@ -139,7 +141,23 @@ impl LinkConnector for TraceConnector {
     }
 }
 
+/// The ssh ControlPath directory comes from the private runtime dir; macOS's default `$TMPDIR`
+/// makes it exceed the 40-byte limit and logs an unrelated `bilterm::remote` warning. Pin it short.
+fn pin_short_runtime_dir() {
+    #[cfg(unix)]
+    {
+        static ONCE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        ONCE.get_or_init(|| {
+            let d = common::short_tempdir();
+            // SAFETY: set once, before the scenarios spawn anything that reads the env.
+            unsafe { std::env::set_var("XDG_RUNTIME_DIR", d.path()) };
+            d
+        });
+    }
+}
+
 fn run_all_scenarios() {
+    pin_short_runtime_dir();
     const SECRET_PASSWORD: &str = "SuperSecretPass99!";
     const SECRET_KEY_PATH: &str = "/home/u/.ssh/id_secret";
     const SECRET_SCREEN_TEXT: &str = "CONFIDENTIAL_PANE_SCREEN_PAYLOAD_42";

@@ -4,6 +4,8 @@
 //! Parity (parse/chord/palette/menu/window) runs everywhere and never spawns; the real-process
 //! test drives `bilterm daemon new` end to end (Unix only).
 
+mod common;
+
 use std::sync::{Mutex, MutexGuard};
 
 use bilterm::action::{Action, DaemonSupervisorOp};
@@ -20,7 +22,7 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn sandbox() -> (MutexGuard<'static, ()>, tempfile::TempDir) {
     let g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::short_tempdir();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -165,7 +167,7 @@ mod real {
 
     #[test]
     fn cli_new_auto_names_refuses_duplicates_and_host_ptys_reaches_the_host() {
-        let root = tempfile::tempdir().unwrap();
+        let root = super::common::short_tempdir();
         for d in ["home", "run", "state", "config"] {
             std::fs::create_dir(root.path().join(d)).unwrap();
         }

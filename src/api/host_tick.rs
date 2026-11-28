@@ -157,7 +157,7 @@ mod tests {
         let plane = AutomationControlPlane::new_headless(24, 80);
         assert!(!plane.is_host());
 
-        let dir = std::env::temp_dir().join(format!("bt-hosttick-{}", crate::secure_fs::unique_suffix()));
+        let dir = crate::secure_fs::short_test_root().join(format!("bt-hosttick-{}", crate::secure_fs::unique_suffix()));
         crate::secure_fs::create_private_dir_all(&dir).unwrap();
         let path = dir.join("host-t.state");
         let wm = crate::wm::WindowManager::new_host(24, 80).expect("spawn host pane");
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn persist_is_debounced_and_skips_unchanged() {
-        let dir = std::env::temp_dir().join(format!("bt-hostdb-{}", crate::secure_fs::unique_suffix()));
+        let dir = crate::secure_fs::short_test_root().join(format!("bt-hostdb-{}", crate::secure_fs::unique_suffix()));
         crate::secure_fs::create_private_dir_all(&dir).unwrap();
         let path = dir.join("host-d.state");
         let mut p = HostPersist {
