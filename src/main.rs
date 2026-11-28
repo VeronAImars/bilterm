@@ -64,6 +64,17 @@ async fn real_main() -> color_eyre::Result<()> {
         std::process::exit(code);
     }
 
+    // `bilterm dos setup|remove|doctor|status|run|reset|snapshot|restore`: opt-in DOS mode (feature `dos`).
+    if args.first().map(String::as_str) == Some("dos") {
+        #[cfg(feature = "dos")]
+        std::process::exit(bilterm::dos::cli::run(&args[1..]));
+        #[cfg(not(feature = "dos"))]
+        {
+            eprintln!("bilterm: built without the `dos` feature (rebuild with `cargo build --features dos`)");
+            std::process::exit(2);
+        }
+    }
+
     if has_switch(&args, &["-v", "-V", "--version"]) {
         println!("{}", bilterm::version_info::short());
         if has_switch(&args, &["--verbose"]) {
@@ -82,6 +93,7 @@ async fn real_main() -> color_eyre::Result<()> {
                bilterm attach <HOST|SOCKET> [--ro]   (TUI client of a session host started with --headless --host-ptys --attach; detach: Ctrl-] d)\n  \
                bilterm ls / bilterm sessions\n  \
                bilterm daemon list|start [NAME] [--restart never|on-crash]|stop [NAME] [--force]|status [NAME]   (manage named background daemons)\n  \
+               bilterm dos <run|setup|doctor|status|remove|reset|snapshot|restore> ...   (opt-in FreeDOS pane & image lifecycle; requires feature `dos`)\n  \
                bilterm run <PLAYBOOK.toml>\n  \
                bilterm ctl [-t|--token-file <PATH>] [--daemon-name <NAME>] [ENDPOINT] <METHOD> [JSON_PARAMS]\n  \
                bilterm agent|pane|workspace|coords|find <SUBCOMMAND> ...   (live control; run `bilterm agent` for usage)\n  \
@@ -173,16 +185,6 @@ async fn real_main() -> color_eyre::Result<()> {
     if let Err(msg) = bilterm::cli::leading_opts::normalize_leading_options(&mut args) {
         eprintln!("{msg}");
         std::process::exit(2);
-    }
-    // `bilterm dos setup|remove|doctor`: opt-in DOS mode host setup (feature `dos`).
-    if args.first().map(String::as_str) == Some("dos") {
-        #[cfg(feature = "dos")]
-        std::process::exit(bilterm::dos::cli::run(&args[1..]));
-        #[cfg(not(feature = "dos"))]
-        {
-            eprintln!("bilterm: built without the `dos` feature (rebuild with `cargo build --features dos`)");
-            std::process::exit(2);
-        }
     }
     // `bilterm attach <host|socket> [--ro]` / `attach-host`: TUI client of a session host's attach
     // socket (T-A7). Plain `bilterm attach [SESSION]` keeps its layout re-attach meaning below.

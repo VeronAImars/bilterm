@@ -334,6 +334,10 @@ pub fn with_host_ctx<R>(f: impl FnOnce(&Ctx) -> R) -> Result<R, String> {
 
 /// Process entry point used by `main.rs`: returns the exit code.
 pub fn run(args: &[String]) -> i32 {
+    if args.first().is_some_and(|a| matches!(a.as_str(), "-h" | "--help" | "help")) {
+        print!("{USAGE}");
+        return 0;
+    }
     let cmd = match parse(args) {
         Ok(c) => c,
         Err(msg) => {
@@ -602,5 +606,12 @@ mod tests {
         );
         let _ = Status::Ok;
         assert!(out.contains("[FAIL] emulator"));
+    }
+
+    #[test]
+    fn help_flag_exits_zero() {
+        for flag in ["--help", "-h", "help"] {
+            assert_eq!(run(&[flag.to_string()]), 0, "{flag}");
+        }
     }
 }

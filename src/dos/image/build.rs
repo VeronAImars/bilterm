@@ -278,4 +278,17 @@ mod tests {
         assert_eq!(md.permissions().mode() & 0o777, 0o600);
         assert!(md.blocks() * 512 < 64 << 20, "image not sparse: {} blocks", md.blocks());
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn image_is_sparse_on_windows() {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_SPARSE_FILE: u32 = 0x0000_0200;
+        let d = tempfile::tempdir().unwrap();
+        let out = d.path().join("c.img");
+        build_image(&BuildOpts { out: &out, size_bytes: 128 << 20, boot_sector: None }, &Tiny).unwrap();
+        let md = std::fs::metadata(&out).unwrap();
+        assert_eq!(md.len(), 128 << 20);
+        assert_ne!(md.file_attributes() & FILE_ATTRIBUTE_SPARSE_FILE, 0, "expected sparse attribute on NTFS: {:#x}", md.file_attributes());
+    }
 }

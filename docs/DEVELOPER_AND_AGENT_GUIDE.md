@@ -148,6 +148,13 @@ src/
 │   ├── process.rs              # Live OS process daemonization (daemon-<session>.sock, stale cleanup, session discovery)
 │   ├── journal.rs              # Atomic WorkspaceJournal & crash-safe checkpoint rotation
 │   └── session_tree.rs         # Hierarchical SessionTree (root -> branch -> leaf, graft, freeze/thaw, derez)
+├── dos/                        # Opt-in DOS mode (`--features dos`, never bundled; plan: docs/plans/dos-mode.md)
+│   ├── mod.rs                  # Module exports (`manifest`, `download`, `verify`, `paths`, `doctor`, `backend`, `image`, `launch`, `ops`, `status`, `cli`)
+│   ├── manifest.toml           # Pinned FreeDOS 1.4 & QEMU Windows installer URLs, SHA256 digests, sizes, and minimum emulator versions
+│   ├── backend/                # `DosBackend` contract (`qemu-curses`, `qemu-textbuf` QMP 0xB8000/BDA reader + CP437 ANSI renderer, `mock` conformance)
+│   ├── image/                  # Pure-Rust sparse MBR+FAT16 image builder (`fatfs` 0.3.6 + `fscommon`, `FSCTL_SET_SPARSE` on Windows), boot-sector capture via guest `sys c:`, lock + `.dirty` marker, snapshot/restore/reset
+│   ├── launch/                 # `LaunchPlan` (`Pty` curses or `Bridge` textbuf + QMP clean stop + run-dir cleanup) & safety checks (`-nic none`, >= 80x25, non-root)
+│   └── cli.rs / ops.rs / status.rs # Unified `bilterm dos <run|setup|doctor|status|remove|reset|snapshot|restore>`, `Action::Dos*`, `:dos ...`, `dos.*` RPC, `bilterm_dos` MCP
 ├── mcp_console/
 │   └── mod.rs                  # Master Control Program (:mcp) state, McpDisplayMode (Float/Push), McpRowAction & parser
 ├── ui/
