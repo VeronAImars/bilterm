@@ -497,6 +497,16 @@ pub(crate) fn short_tempdir() -> tempfile::TempDir {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn random_token_hex_is_64_hex_chars_and_unique() {
+        let a = random_token_hex().unwrap();
+        let b = random_token_hex().unwrap();
+        assert_eq!(a.len(), 64, "{a}");
+        assert!(a.bytes().all(|c| c.is_ascii_hexdigit()), "{a}");
+        assert_ne!(a, b);
+        assert_ne!(a, "0".repeat(64));
+    }
+
     use super::*;
     #[cfg(unix)]
     use std::fs::Permissions;

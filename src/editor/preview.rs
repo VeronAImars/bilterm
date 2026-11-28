@@ -923,9 +923,12 @@ mod tests {
 
     #[test]
     fn api_delete_rolls_back_bus_when_persist_removal_fails() {
-        // A regular file used as persist_dir makes removal fail with a non-NotFound error.
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let shared = test_shared(None, Some(tmp.path().to_path_buf()));
+        // A directory squatting on the artifact's file path makes remove_file fail with a
+        // non-NotFound error on every OS.
+        let dir = tempfile::tempdir().unwrap();
+        let victim = editor_io::scratch_file(dir.path(), "plan").unwrap();
+        std::fs::create_dir_all(&victim).unwrap();
+        let shared = test_shared(None, Some(dir.path().to_path_buf()));
         let key = artifact_bus_key("plan");
         let before = shared.bus.get(&key).unwrap().value;
         let (st, res) = handle_api("/api/delete", "POST", br#"{"name":"plan"}"#, &shared);
