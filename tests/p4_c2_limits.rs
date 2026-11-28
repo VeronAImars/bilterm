@@ -52,6 +52,40 @@ fn high_without_max_or_bad_sizes_are_rejected_on_every_surface() {
     assert!(tools.contains("memory_max") && tools.contains("memory_high"), "MCP bilterm_daemon schema lacks limit params");
 }
 
+#[test]
+fn job_object_backend_roundtrips_in_supervisor_record_and_selection() {
+    use bilterm::daemon::limits::{choose_backend_with_job, classify_exit_with_code, BackendPref, ExitCause, LimitBackend, Probe};
+    use bilterm::daemon::restart_policy::{LastExit, RestartMode};
+    use bilterm::daemon::supervise::{SupState, SupervisorRecord};
+
+    let sel = choose_backend_with_job(BackendPref::Auto, &Probe::default(), true);
+    assert_eq!(sel.backend, LimitBackend::JobObject);
+    assert_eq!(LimitBackend::parse(sel.backend.as_str()), Some(LimitBackend::JobObject));
+
+    let lim = limits("64M", Some("48M"));
+    assert_eq!(
+        classify_exit_with_code(None, Some(1), LimitBackend::JobObject, &lim, 56 << 20, false),
+        Some(ExitCause::Limit)
+    );
+
+    let rec = SupervisorRecord {
+        name: "winhost".into(),
+        supervisor_pid: 42,
+        daemon_pid: None,
+        state: SupState::Backoff,
+        mode: RestartMode::OnCrash,
+        restart_count: 1,
+        last_exit: Some(LastExit { code: Some(1), signal: None, at_ms: 500 }),
+        next_restart_at_ms: Some(1500),
+        updated_at_ms: 500,
+        limit_max_bytes: lim.max_bytes,
+        limit_high_bytes: lim.high_bytes,
+        limit_backend: Some(LimitBackend::JobObject),
+        last_exit_cause: Some(ExitCause::Limit),
+    };
+    assert_eq!(SupervisorRecord::from_json(&rec.to_json()), Ok(rec));
+}
+
 #[cfg(unix)]
 mod live {
     use super::*;
